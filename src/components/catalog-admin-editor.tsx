@@ -123,6 +123,19 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song" }:
                       <input className="min-h-11 border border-[#d8dfd1] bg-white px-3 text-sm font-bold text-[#171916] outline-none focus:border-[#28c950]" value={draft.folder} onChange={(event) => updateDraft("folder", event.target.value)} />
                     </label>
                   </div>
+                  <label className="grid gap-1 text-xs font-black uppercase text-[#596153] sm:max-w-[calc(50%-0.375rem)]">
+                    Folder position
+                    <input
+                      className="min-h-11 border border-[#d8dfd1] bg-white px-3 text-sm font-bold text-[#171916] outline-none focus:border-[#28c950]"
+                      type="number"
+                      min="1"
+                      step="1"
+                      inputMode="numeric"
+                      value={draft.folderPosition ?? ""}
+                      onChange={(event) => updateDraft("folderPosition", event.target.value === "" ? null : Number(event.target.value))}
+                      placeholder="1"
+                    />
+                  </label>
                   <label className="grid gap-1 text-xs font-black uppercase text-[#596153]">
                     Tags
                     <input
@@ -183,6 +196,7 @@ function payloadFromSong(song: PublicSong): CatalogEditorPayload {
     title: song.title,
     artist: song.artist,
     folder: song.folder ?? "",
+    folderPosition: song.folderPosition,
     series: song.series ?? "",
     tags: song.tags,
     chartTokens: song.chartSummary,

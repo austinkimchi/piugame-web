@@ -4,6 +4,7 @@ import { ChevronDown, ExternalLink, Filter, Link2, ListSortAscending, ListSortDe
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { GuestFeatureShowcase } from "@/components/guest-feature-showcase";
 import { SongCard } from "@/components/song-card";
 import { SongDetailView } from "@/components/song-detail-view";
 import type { SongCommunityState } from "@/lib/auth";
@@ -19,6 +20,7 @@ interface SearchResponse {
 
 interface SongExplorerProps {
   initialSongs: PublicSong[];
+  featureSong: PublicSong | null;
   filterOptions: CatalogFilterOptions;
   canFavorite: boolean;
 }
@@ -32,6 +34,8 @@ const SORT_OPTIONS: Array<{ value: SongSortOption; label: string }> = [
   { value: "folder", label: "Folder" },
 ];
 const SEARCH_HASH = "#search";
+const NOTEBOOK_RESIZE_HANDLE_SIZE = 40;
+const NOTEBOOK_SIZE_STORAGE_KEY = "mypiu-song-notebook-size:v2";
 const EMPTY_COMMUNITY_STATE: SongCommunityState = {
   saved: false,
   note: "",
@@ -41,7 +45,7 @@ const EMPTY_COMMUNITY_STATE: SongCommunityState = {
   posts: [],
 };
 
-export function SongExplorer({ initialSongs, filterOptions, canFavorite }: SongExplorerProps) {
+export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavorite }: SongExplorerProps) {
   const landingSectionRef = useRef<HTMLElement | null>(null);
   const searchSectionRef = useRef<HTMLElement | null>(null);
   const filterPanelRef = useRef<HTMLElement | null>(null);
@@ -338,56 +342,60 @@ export function SongExplorer({ initialSongs, filterOptions, canFavorite }: SongE
 
   return (
     <MotionConfig reducedMotion="user">
-      <motion.section
-        ref={landingSectionRef}
-        className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10"
-        initial={{ opacity: 0, y: 18 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-80px" }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <div className="mb-5 flex items-end justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-[#11130f]">New Songs</h2>
-            <p className="mt-1 text-sm font-medium text-[#66705f]">PHOENIX 2 released 07/2026</p>
-          </div>
-          <PreviewToggleButton
-            enabled={previewEnabled}
-            onToggle={() => setPreviewEnabled((value) => !value)}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-          {favoritedInitialSongs.map((song, index) => (
-            <div key={`new-${song.slug}`} className={landingSongVisibilityClass(index)}>
-                <SongCard
-                onOpen={openSongDetail}
-                previewEnabled={previewEnabled}
-                sequence={index}
-                song={song}
-              />
+      {canFavorite ? (
+        <motion.section
+          ref={landingSectionRef}
+          className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10"
+          initial={{ opacity: 0, y: 18 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-[#11130f]">New Songs</h2>
+              <p className="mt-1 text-sm font-medium text-[#66705f]">PHOENIX 2 released 07/2026</p>
             </div>
-          ))}
-        </div>
+            <PreviewToggleButton
+              enabled={previewEnabled}
+              onToggle={() => setPreviewEnabled((value) => !value)}
+            />
+          </div>
 
-        <div className="mt-8 flex justify-center">
-          <motion.button
-            className="inline-flex items-center gap-2 border border-[#171916] bg-[#171916] px-6 py-3 font-bold text-white transition hover:bg-[#343b30]"
-            type="button"
-            whileHover={{ y: -3, scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={scrollToSearch}
-          >
-            View More
-            <motion.span
-              animate={{ y: [0, 4, 0] }}
-              transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+            {favoritedInitialSongs.map((song, index) => (
+              <div key={`new-${song.slug}`} className={landingSongVisibilityClass(index)}>
+                <SongCard
+                  onOpen={openSongDetail}
+                  previewEnabled={previewEnabled}
+                  sequence={index}
+                  song={song}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex justify-center">
+            <motion.button
+              className="inline-flex items-center gap-2 border border-[#171916] bg-[#171916] px-6 py-3 font-bold text-white transition hover:bg-[#343b30]"
+              type="button"
+              whileHover={{ y: -3, scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={scrollToSearch}
             >
-              <ChevronDown aria-hidden="true" size={18} />
-            </motion.span>
-          </motion.button>
-        </div>
-      </motion.section>
+              View More
+              <motion.span
+                animate={{ y: [0, 4, 0] }}
+                transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <ChevronDown aria-hidden="true" size={18} />
+              </motion.span>
+            </motion.button>
+          </div>
+        </motion.section>
+      ) : (
+        <GuestFeatureShowcase featureSong={featureSong ?? favoritedInitialSongs[0] ?? null} onExplore={scrollToSearch} />
+      )}
 
       <motion.section
         ref={searchSectionRef}
@@ -702,6 +710,73 @@ function SongDetailNotebook({
   onCopy: (song: PublicSong, chartToken?: string | null) => void;
   onToggleFavorite: (song: PublicSong) => void;
 }) {
+  const notebookRef = useRef<HTMLDivElement | null>(null);
+  const resizingNotebookRef = useRef(false);
+  const pendingNotebookSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const [notebookSize, setNotebookSize] = useState(readStoredNotebookSize);
+
+  useEffect(() => {
+    const element = notebookRef.current;
+    if (!element || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(([entry]) => {
+      const { height, width } = entry.contentRect;
+      const nextSize = clampNotebookSize({ width: Math.round(width), height: Math.round(height) });
+      pendingNotebookSizeRef.current = nextSize;
+
+      if (resizingNotebookRef.current) {
+        setNotebookSize((current) => (current?.width === nextSize.width && current.height === nextSize.height ? current : nextSize));
+      }
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [song]);
+
+  useEffect(() => {
+    function finishResize() {
+      if (!resizingNotebookRef.current) {
+        return;
+      }
+
+      resizingNotebookRef.current = false;
+      if (pendingNotebookSizeRef.current) {
+        const nextSize = pendingNotebookSizeRef.current;
+        setNotebookSize(nextSize);
+        writeStoredNotebookSize(nextSize);
+      }
+    }
+
+    window.addEventListener("pointerup", finishResize);
+    window.addEventListener("pointercancel", finishResize);
+    window.addEventListener("blur", finishResize);
+
+    return () => {
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
+      window.removeEventListener("blur", finishResize);
+    };
+  }, []);
+
+  function maybeStartResize(event: React.PointerEvent<HTMLDivElement>) {
+    const element = notebookRef.current;
+    if (!element) {
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const isResizeHandle =
+      event.clientX >= rect.right - NOTEBOOK_RESIZE_HANDLE_SIZE &&
+      event.clientY >= rect.bottom - NOTEBOOK_RESIZE_HANDLE_SIZE;
+
+    if (isResizeHandle) {
+      resizingNotebookRef.current = true;
+      pendingNotebookSizeRef.current = clampNotebookSize({ width: Math.round(rect.width), height: Math.round(rect.height) });
+    }
+  }
+
   return (
     <AnimatePresence>
       {song ? (
@@ -721,11 +796,14 @@ function SongDetailNotebook({
           }}
         >
             <motion.div
+              ref={notebookRef}
               className="notebook-modal relative flex h-[min(92vh,880px)] w-[min(94vw,1180px)] flex-col overflow-hidden rounded-2xl border border-[#d6ddcf] bg-[#fbfcf7] shadow-[0_30px_90px_rgba(12,18,10,0.32)]"
               initial={{ opacity: 0, y: 24, scale: 0.96, rotate: -0.4 }}
               animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
               exit={{ opacity: 0, y: 18, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 260, damping: 28 }}
+              style={notebookSize ? { height: notebookSize.height, width: notebookSize.width } : undefined}
+              onPointerDown={maybeStartResize}
           >
             <div className="absolute right-7 top-8 z-20 flex shrink-0 items-center gap-2">
               <a
@@ -780,6 +858,51 @@ function SongDetailNotebook({
       ) : null}
     </AnimatePresence>
   );
+}
+
+function readStoredNotebookSize(): { width: number; height: number } | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(NOTEBOOK_SIZE_STORAGE_KEY);
+    if (!stored) {
+      return null;
+    }
+
+    const value = JSON.parse(stored) as Partial<{ width: unknown; height: unknown }>;
+    if (typeof value.width !== "number" || typeof value.height !== "number" || !Number.isFinite(value.width) || !Number.isFinite(value.height)) {
+      return null;
+    }
+
+    return clampNotebookSize({ width: value.width, height: value.height });
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredNotebookSize(size: { width: number; height: number }) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(NOTEBOOK_SIZE_STORAGE_KEY, JSON.stringify(size));
+  } catch {
+    // Storage can be unavailable in private or restricted browser contexts.
+  }
+}
+
+function clampNotebookSize(size: { width: number; height: number }): { width: number; height: number } {
+  if (typeof window === "undefined") {
+    return size;
+  }
+
+  return {
+    width: Math.min(Math.max(size.width, Math.min(672, window.innerWidth * 0.94)), window.innerWidth * 0.94),
+    height: Math.min(Math.max(size.height, Math.min(544, window.innerHeight * 0.82)), window.innerHeight * 0.92),
+  };
 }
 
 function songDetailHref(song: PublicSong, chartToken: string | null = null): string {

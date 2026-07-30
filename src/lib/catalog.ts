@@ -49,12 +49,14 @@ interface CatalogDocument extends Document {
   images?: string[];
   previewUrl?: string | null;
   audioPreviewUrl?: string | null;
+  bpm?: string | number | null;
+  bpmRaw?: string | number | null;
   chartsFull?: PublicChart[];
   chartTokens?: string[];
   folder?: string;
   series?: string;
   tags?: string[];
-  folderPosition?: number;
+  folderPosition?: number | null;
 }
 
 function slugify(value: string): string {
@@ -291,6 +293,23 @@ function numericPosition(value: unknown): number | null {
   return Number.isInteger(position) && position > 0 ? position : null;
 }
 
+function editableFolderPosition(value: unknown): number | null {
+  if (value === null || value === undefined || cleanText(value) === "") {
+    return null;
+  }
+
+  const position = Number(value);
+  if (!Number.isInteger(position) || position < 1) {
+    throw new Error("Folder position must be a positive whole number.");
+  }
+
+  return position;
+}
+
+function bpmFromDocument(document: CatalogDocument): string | null {
+  return cleanText(document.bpm ?? document.bpmRaw) || null;
+}
+
 function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersion: PiuCatalogVersion, stats?: CatalogStats): PublicSong {
   const title = cleanText(document.songName ?? document.songKey ?? "Untitled Song");
   const artist = cleanText(document.artist ?? "Unknown Artist");
@@ -308,6 +327,7 @@ function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersi
     imageUrl: imageUrlFor(version, image || null),
     previewUrl,
     previewAvailable: Boolean(previewUrl),
+    bpm: bpmFromDocument(document),
     chartSummary: chartSummary(document),
     folder,
     folderPosition: numericPosition(document.folderPosition),
@@ -323,6 +343,7 @@ function catalogEditorPayloadFromSong(song: PublicSong): CatalogEditorPayload {
     title: song.title,
     artist: song.artist,
     folder: song.folder ?? "",
+    folderPosition: song.folderPosition,
     series: song.series ?? "",
     tags: song.tags,
     chartTokens: song.chartSummary,
@@ -339,6 +360,8 @@ function projection() {
     images: { $slice: 1 },
     previewUrl: 1,
     audioPreviewUrl: 1,
+    bpm: 1,
+    bpmRaw: 1,
     chartTokens: 1,
     chartsFull: 1,
     folder: 1,
@@ -469,6 +492,8 @@ function aggregateProjection() {
     images: { $slice: ["$images", 1] },
     previewUrl: 1,
     audioPreviewUrl: 1,
+    bpm: 1,
+    bpmRaw: 1,
     chartTokens: 1,
     chartsFull: 1,
     folder: 1,
@@ -575,6 +600,7 @@ async function fallbackSongs(version: PiuCatalogVersion, offset = 0, limit = PAG
       imageUrl: imageUrlFor(version, filename),
       previewUrl: null,
       previewAvailable: false,
+      bpm: null,
       chartSummary: [],
       folder: null,
       folderPosition: offset + index + 1,
@@ -852,6 +878,7 @@ function normalizeCatalogEditorPayload(input: Partial<CatalogEditorPayload>): Ca
   const title = cleanText(input.title).slice(0, 180);
   const artist = cleanText(input.artist).slice(0, 180);
   const folder = cleanText(input.folder).slice(0, 120);
+  const folderPosition = editableFolderPosition(input.folderPosition);
   const series = cleanText(input.series).slice(0, 120);
   const tags = cleanEditableList(input.tags, 24).map((tag) => tag.slice(0, 60));
   const chartTokens = cleanEditableList(input.chartTokens, 80).map((token) => token.toUpperCase().replace(/\s+/g, ""));
@@ -871,6 +898,7 @@ function normalizeCatalogEditorPayload(input: Partial<CatalogEditorPayload>): Ca
     title,
     artist,
     folder,
+    folderPosition,
     series,
     tags,
     chartTokens,
@@ -915,6 +943,7 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
     songName: payload.title,
     artist: payload.artist,
     folder: payload.folder,
+    folderPosition: payload.folderPosition,
     series: payload.series,
     tags: payload.tags,
     chartTokens: payload.chartTokens,

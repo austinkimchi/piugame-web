@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Disc3, Folder, History, Music2, Star, Tag } from "lucide-react";
+import { ArrowLeft, Disc3, Folder, History, Music, Music2, Star, Tag } from "lucide-react";
 import { MotionConfig, motion, useScroll, useSpring, useTransform } from "motion/react";
 import Image from "next/image";
 import Link from "next/link";
@@ -38,8 +38,8 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
   const [favoriteSaved, setFavoriteSaved] = useState(community?.initialState.saved ?? false);
   const [favoriteSaving, setFavoriteSaving] = useState(false);
   const { scrollY } = useScroll();
-  const imageScale = useSpring(useTransform(scrollY, [0, 420], [1, 0.78]), { stiffness: 180, damping: 28 });
-  const notebookImageWidth = useSpring(useTransform(scrollY, [0, 420], [360, 281]), { stiffness: 180, damping: 28 });
+  const imageWidth = useSpring(useTransform(scrollY, [0, 420], [360, 281]), { stiffness: 180, damping: 28 });
+  const imageColumnWidth = useTransform(imageWidth, (value) => `${value}px`);
   const imageShadow = useTransform(
     scrollY,
     [0, 420],
@@ -50,6 +50,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
   const canFavorite = Boolean(community?.user);
   const seriesLabel = (song.series ?? "Unknown series").toUpperCase();
   const folderLabel = formatFolderLabel(song);
+  const bpmLabel = formatBpmLabel(song.bpm);
   const historySection = (
     <motion.section {...sectionMotion} className="mt-6 border-b border-[#d9ded2] pb-6">
       <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase text-[#596153]">
@@ -85,8 +86,11 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
 
   return (
     <MotionConfig reducedMotion="user">
-      <section className={`song-detail-shell mx-auto grid max-w-6xl gap-8 px-5 py-8 sm:px-8 lg:px-10 ${isNotebook ? "pb-12 lg:grid-cols-[auto_minmax(0,1fr)]" : "lg:grid-cols-[360px_minmax(0,1fr)]"}`}>
-        <motion.div className="lg:sticky lg:top-6 lg:self-start" style={isNotebook ? { width: notebookImageWidth } : undefined}>
+      <motion.section
+        className={`song-detail-shell mx-auto grid max-w-6xl gap-8 px-5 py-8 sm:px-8 lg:px-10 ${isNotebook ? "pb-12 lg:grid-cols-[auto_minmax(0,1fr)]" : "lg:grid-cols-[var(--song-detail-art-width)_minmax(0,1fr)]"}`}
+        style={!isNotebook ? ({ "--song-detail-art-width": imageColumnWidth } as React.CSSProperties) : undefined}
+      >
+        <motion.div className="lg:sticky lg:top-6 lg:self-start" style={isNotebook ? { width: imageWidth } : undefined}>
           {onBack ? (
             <button className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-[#56604e] hover:text-[#28c950]" type="button" onClick={onBack}>
               <ArrowLeft aria-hidden="true" size={17} />
@@ -103,7 +107,6 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
             style={{
               borderRadius: imageRadius,
               boxShadow: imageShadow,
-              scale: isNotebook ? 1 : imageScale,
             }}
           >
             {song.imageUrl ? (
@@ -125,6 +128,12 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
               <Folder aria-hidden="true" size={16} />
               {folderLabel}
             </span>
+            {bpmLabel ? (
+              <span className="inline-flex items-center gap-2 border border-[#cdd5c5] bg-white px-3 py-1.5 text-sm font-black uppercase text-[#596153]" aria-label={bpmLabel}>
+                <Music aria-hidden="true" size={16} />
+                {bpmLabel}
+              </span>
+            ) : null}
             <CatalogAdminEditor focus="song" label="song details" song={song} userIsAdmin={userIsAdmin} />
           </div>
           {community && !isNotebook ? (
@@ -230,7 +239,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
         {!community ? historySection : null}
 
       </div>
-      </section>
+      </motion.section>
     </MotionConfig>
   );
 }
@@ -244,4 +253,9 @@ function formatFolderLabel(song: PublicSong): string {
     return `${folder} ${song.folderSongCount} songs`;
   }
   return folder;
+}
+
+function formatBpmLabel(bpm: string | null): string | null {
+  const value = bpm?.replace(/\s*\bBPM\b\s*$/i, "").trim();
+  return value ? `${value} BPM` : null;
 }

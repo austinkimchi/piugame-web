@@ -266,9 +266,6 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
         {!readOnly && !user ? (
           <div className="border border-[#d8dfd1] bg-white p-4">
             <p className="text-sm font-bold text-[#3d4638]">Sign in to post comments, add videos, contribute tags, and keep private notes.</p>
-            <a className="mt-3 inline-flex items-center gap-2 bg-[#171916] px-4 py-2 text-sm font-black text-white hover:bg-[#28c950]" href={`/api/auth/google/login?next=/songs/${song.slug}`}>
-              Sign in with Google
-            </a>
           </div>
         ) : null}
         {canCreatePost ? (
@@ -305,6 +302,11 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
                   <p className="text-xs font-bold uppercase text-[#66705f]">{new Date(post.createdAt).toLocaleDateString()}</p>
                 </div>
                 <div className="flex gap-2">
+                  {!readOnly && post.canArchive ? (
+                    <button aria-label="Archive post" className="inline-flex h-8 w-8 items-center justify-center text-[#66705f] hover:text-[#28c950] disabled:opacity-55" disabled={status === "saving"} onClick={() => void archivePost(post)} title="Archive post" type="button">
+                      <Archive aria-hidden="true" size={14} />
+                    </button>
+                  ) : null}
                   {!readOnly && post.canDelete && (!post.canModerate || !canViewModeration) ? (
                     <button aria-label="Delete post" className="inline-flex h-8 w-8 items-center justify-center text-[#66705f] hover:text-[#9b2b1f]" onClick={() => void deletePost(post)} title="Delete post" type="button">
                       <Trash2 aria-hidden="true" size={14} />
@@ -354,25 +356,6 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
           </button>
           {notesOpen ? (
             <div className="mt-3">
-              {activeUserPost ? (
-                <div className="mb-4 border border-[#d8dfd1] bg-white p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-black text-[#171916]">Current community post</p>
-                      <p className="text-xs font-bold uppercase text-[#66705f]">{new Date(activeUserPost.createdAt).toLocaleDateString()}</p>
-                    </div>
-                    <button
-                      className="inline-flex items-center gap-2 bg-[#171916] px-3 py-2 text-xs font-black uppercase text-white hover:bg-[#28c950] disabled:bg-[#aeb8a5]"
-                      disabled={status === "saving"}
-                      onClick={() => void archivePost(activeUserPost)}
-                      type="button"
-                    >
-                      <Archive aria-hidden="true" size={15} />
-                      Archive post
-                    </button>
-                  </div>
-                </div>
-              ) : null}
               <textarea
                 className="min-h-32 w-full resize-y border border-[#d8dfd1] bg-white p-3 text-sm font-medium text-[#171916] outline-none focus:border-[#28c950]"
                 maxLength={4000}

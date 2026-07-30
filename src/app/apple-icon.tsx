@@ -13,35 +13,36 @@ export default function AppleIcon() {
       <div
         style={{
           alignItems: "center",
-          background: "#10130f",
-          color: "#eff7e8",
+          background: "#07110b",
           display: "flex",
-          fontFamily: "Arial, sans-serif",
-          fontSize: 64,
-          fontWeight: 900,
           height: "100%",
           justifyContent: "center",
-          letterSpacing: 0,
           position: "relative",
           width: "100%",
         }}
       >
-        <div style={{ background: "#28c950", height: 34, left: 24, position: "absolute", top: 24, width: 34 }} />
-        <div style={{ background: "#157bda", height: 34, position: "absolute", right: 24, top: 24, width: 34 }} />
-        <div style={{ background: "#e3412f", bottom: 24, height: 34, position: "absolute", right: 24, width: 34 }} />
-        <div style={{ background: "#f2d84b", bottom: 24, height: 34, left: 24, position: "absolute", width: 34 }} />
-        <div
-          style={{
-            border: "8px solid #eff7e8",
-            height: 92,
-            left: 44,
-            position: "absolute",
-            top: 44,
-            transform: "rotate(45deg)",
-            width: 92,
-          }}
-        />
-        <span style={{ position: "relative" }}>MP</span>
+        <svg height="180" viewBox="0 0 180 180" width="180">
+          <defs>
+            <filter colorInterpolationFilters="sRGB" height="170%" id="neonGlow" width="170%" x="-35%" y="-35%">
+              <feGaussianBlur in="SourceGraphic" result="wide" stdDeviation="11" />
+              <feGaussianBlur in="SourceGraphic" result="tight" stdDeviation="4" />
+              <feMerge>
+                <feMergeNode in="wide" />
+                <feMergeNode in="tight" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <linearGradient id="arrowFace" x1="90" x2="90" y1="31" y2="136">
+              <stop offset="0" stopColor="#f4ff33" />
+              <stop offset="0.42" stopColor="#88ff21" />
+              <stop offset="1" stopColor="#18e85a" />
+            </linearGradient>
+          </defs>
+          <path d="M90 20 L158 88 L124 88 L124 122 L90 156 L56 122 L56 88 L22 88 Z" fill="#dfff28" filter="url(#neonGlow)" opacity="0.84" />
+          <path d="M90 20 L158 88 L124 88 L124 122 L90 156 L56 122 L56 88 L22 88 Z" fill="#06130d" />
+          <path d="M90 35 L141 86 L110 86 L110 113 L90 133 L70 113 L70 86 L39 86 Z" fill="url(#arrowFace)" />
+          <path d="M90 43 L130 83 L110 83 L90 63 L70 83 L50 83 Z" fill="#f6ff98" opacity="0.78" />
+        </svg>
       </div>
     ),
     size,

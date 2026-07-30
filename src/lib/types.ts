@@ -17,6 +17,7 @@ export interface PublicSong {
   imageUrl: string | null;
   previewUrl: string | null;
   previewAvailable: boolean;
+  bpm: string | null;
   chartSummary: string[];
   folder: string | null;
   folderPosition: number | null;
@@ -31,6 +32,7 @@ export interface CatalogEditorPayload {
   title: string;
   artist: string;
   folder: string;
+  folderPosition: number | null;
   series: string;
   tags: string[];
   chartTokens: string[];

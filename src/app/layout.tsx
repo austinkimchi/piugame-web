@@ -36,6 +36,17 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
   },
+  icons: {
+    icon: [
+      { url: "/favicon-light.ico", media: "(prefers-color-scheme: light)", sizes: "any" },
+      { url: "/favicon.ico", media: "(prefers-color-scheme: dark)", sizes: "any" },
+      { url: "/icon", type: "image/png", sizes: "64x64" },
+    ],
+    apple: [
+      { url: "/apple-icon-light.png", media: "(prefers-color-scheme: light)", sizes: "180x180", type: "image/png" },
+      { url: "/apple-icon", media: "(prefers-color-scheme: dark)", sizes: "180x180", type: "image/png" },
+    ],
+  },
   openGraph: {
     title: `${siteName} | Pump It Up Song Catalog`,
     description: siteDescription,

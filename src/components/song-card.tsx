@@ -155,14 +155,14 @@ export function SongCard({ song, previewEnabled, sequence = 0, onOpen }: SongCar
             </motion.div>
           ) : null}
           {song.chartSummary.length > 0 ? (
-            <div className="absolute bottom-2 right-2 z-20 grid grid-cols-4 gap-1">
+            <div className="pointer-events-none absolute bottom-2 right-2 z-20 grid grid-cols-4 gap-1">
               {Array.from({ length: emptyChartSlots }, (_, index) => (
                 <span key={`empty-${index}`} aria-hidden="true" className="min-h-6 min-w-8" />
               ))}
               {song.chartSummary.map((chart, index) => (
                 <motion.button
                   key={`${chart}-${index}`}
-                  className="song-chart-chip flex min-h-6 min-w-8 items-center justify-center border border-white/60 bg-[#f5f7f0]/75 px-[0px] text-[11px] font-bold text-[#263020] shadow-[0_2px_8px_rgba(0,0,0,0.16)] transition hover:border-[#28c950] hover:bg-white focus:outline-none focus-visible:border-[#28c950] focus-visible:ring-2 focus-visible:ring-[#28c950]/35"
+                  className="song-chart-chip pointer-events-auto flex min-h-6 min-w-8 items-center justify-center border border-white/60 bg-[#f5f7f0]/75 px-[0px] text-[11px] font-bold text-[#263020] shadow-[0_2px_8px_rgba(0,0,0,0.16)] transition hover:border-[#28c950] hover:bg-white focus:outline-none focus-visible:border-[#28c950] focus-visible:ring-2 focus-visible:ring-[#28c950]/35"
                   initial={{ opacity: 0, y: 8, scale: 0.9 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={{ delay: entryDelay + Math.min(index, 11) * 0.028, duration: 0.28, ease: [0.22, 1, 0.36, 1] }}

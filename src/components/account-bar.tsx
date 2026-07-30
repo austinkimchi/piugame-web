@@ -1,5 +1,6 @@
-import { LogIn, LogOut, UserRound } from "lucide-react";
+import { LogOut, UserRound } from "lucide-react";
 
+import { AccountSignInPopup } from "@/components/account-sign-in-popup";
 import { AdminViewBadge } from "@/components/admin-view-badge";
 import { AccountIntegrations } from "@/components/account-integrations";
 import { UsernamePrompt } from "@/components/username-prompt";
@@ -37,29 +38,8 @@ export async function AccountBar() {
           </form>
         </>
       ) : (
-        <>
-          <AuthLink href={googleReady ? "/api/auth/google/login" : "#"} ready={googleReady} title="Sign in with Google" />
-          <AuthLink accent="discord" href={discordReady ? "/api/auth/discord/login" : "#"} ready={discordReady} title="Sign in with Discord" />
-        </>
+        <AccountSignInPopup discordReady={discordReady} googleReady={googleReady} />
       )}
     </div>
-  );
-}
-
-function AuthLink({ accent = "default", href, ready, title }: { accent?: "default" | "discord"; href: string; ready: boolean; title: string }) {
-  return (
-    <a
-      className={`group inline-flex items-center gap-3 border px-4 py-2.5 text-sm font-black shadow-[0_14px_34px_rgba(29,35,24,0.08)] backdrop-blur transition ${ready ? "border-[#cdd5c5] bg-white/78 text-[#171916] hover:border-[#171916] hover:bg-white hover:shadow-[0_18px_44px_rgba(29,35,24,0.12)]" : "border-[#d6ddcf] bg-white/55 text-[#66705f]"}`}
-      href={href}
-      aria-disabled={!ready}
-    >
-      <span className={`grid h-8 w-8 place-items-center text-white transition ${accent === "discord" ? "bg-[#5865f2] group-hover:bg-[#4651c9]" : "bg-[#171916] group-hover:bg-[#28c950]"}`}>
-        <LogIn aria-hidden="true" size={16} />
-      </span>
-      <span className="flex flex-col leading-none">
-        <span className="text-[10px] font-black uppercase text-[#66705f]">Account</span>
-        <span className="mt-1">{title}</span>
-      </span>
-    </a>
   );
 }
