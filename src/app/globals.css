@@ -18,6 +18,10 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 button,
 a,
 input {
@@ -33,6 +37,284 @@ button:disabled {
 }
 
 ::selection {
-  background: #f2b6ae;
+  background: #baf5c5;
   color: #171916;
+}
+
+.hero-stage {
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.88) 0%, rgba(239, 250, 242, 0.92) 45%, rgba(231, 246, 250, 0.88) 100%),
+    #fbfcf7;
+}
+
+.hero-stage::before,
+.hero-stage::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+}
+
+.hero-stage::before {
+  background:
+    linear-gradient(90deg, rgba(17, 19, 15, 0.045) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(17, 19, 15, 0.04) 1px, transparent 1px);
+  background-size: 5.5rem 5.5rem;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.52), transparent 82%);
+}
+
+.hero-stage::after {
+  background:
+    linear-gradient(112deg, transparent 0 48%, rgba(40, 201, 80, 0.13) 48% 58%, rgba(21, 123, 218, 0.11) 58% 70%, transparent 70%),
+    linear-gradient(180deg, transparent 0 62%, rgba(17, 19, 15, 0.045) 100%);
+}
+
+.hero-title {
+  text-shadow: 0 14px 34px rgba(29, 35, 24, 0.08);
+}
+
+.hero-chip,
+.hero-control-card,
+.song-card-surface {
+  will-change: transform;
+}
+
+.hero-control-card {
+  transform-style: preserve-3d;
+}
+
+.song-card-surface {
+  position: relative;
+}
+
+.song-card-surface::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+
+.group:hover .song-card-surface::after,
+.group:focus-visible .song-card-surface::after {
+  opacity: 1;
+}
+
+.song-card-image {
+  will-change: transform, opacity;
+}
+
+.group:hover .song-card-image,
+.group:focus-visible .song-card-image {
+  transform: scale(1.065);
+}
+
+.song-card-glint {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 18%, rgba(255, 255, 255, 0.52) 44%, transparent 62%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-80%);
+  transition:
+    opacity 220ms ease,
+    transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.group:hover .song-card-glint,
+.group:focus-visible .song-card-glint {
+  opacity: 0.34;
+  transform: translateX(80%);
+}
+
+.song-new-badge {
+  box-shadow: 0 10px 24px rgba(227, 65, 47, 0.24);
+}
+
+.audio-pill {
+  text-transform: uppercase;
+}
+
+.notebook-modal {
+  max-height: 92vh;
+  max-width: 94vw;
+  min-height: min(34rem, 82vh);
+  min-width: min(42rem, 94vw);
+  resize: both;
+}
+
+.notebook-action {
+  border-radius: 9999px;
+}
+
+.notebook-scroll {
+  scrollbar-width: none;
+}
+
+.notebook-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.notebook-resize-cue {
+  position: absolute;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  height: 1.15rem;
+  width: 1.15rem;
+  background:
+    linear-gradient(135deg, transparent 0 46%, rgba(89, 97, 83, 0.44) 47% 53%, transparent 54%),
+    linear-gradient(135deg, transparent 0 64%, rgba(89, 97, 83, 0.32) 65% 71%, transparent 72%);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.search-field {
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.search-field:focus-within {
+  border-color: #28c950;
+  box-shadow: 0 12px 28px rgba(30, 34, 26, 0.1);
+  transform: translateY(-2px);
+}
+
+@keyframes song-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes song-image-in {
+  from {
+    opacity: 0;
+    transform: scale(1.025);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes skeleton-sheen {
+  0%,
+  100% {
+    opacity: 0.58;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes filter-chip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes filter-chip-wave {
+  0% {
+    transform: translateX(0);
+  }
+
+  38% {
+    transform: translateX(10px);
+  }
+
+  72% {
+    transform: translateX(-3px);
+  }
+
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.filter-chip {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    max-width 220ms ease,
+    padding 220ms ease,
+    margin 220ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.filter-chip-enter {
+  animation: filter-chip-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  max-width: 12rem;
+}
+
+.filter-chip-wave {
+  animation: filter-chip-wave 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--filter-wave-delay, 0ms);
+  max-width: 12rem;
+}
+
+.filter-chip-exit {
+  max-width: 0;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  opacity: 0;
+  padding-left: 0;
+  padding-right: 0;
+  transform: scale(0.72);
+}
+
+.song-card-enter {
+  animation: song-card-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.song-image-enter {
+  animation: song-image-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.skeleton-sheen {
+  animation: skeleton-sheen 1150ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .song-card-enter,
+  .song-image-enter,
+  .filter-chip-enter,
+  .filter-chip-wave,
+  .skeleton-sheen {
+    animation: none;
+  }
+
+  .filter-chip {
+    transition: none;
+  }
+}
+
+@media (max-width: 720px), (pointer: coarse) {
+  .notebook-modal {
+    min-height: auto;
+    min-width: auto;
+    resize: none;
+  }
+
+  .notebook-resize-cue {
+    display: none;
+  }
 }
