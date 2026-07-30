@@ -59,10 +59,10 @@ export function GuestFeatureShowcase({
       <div className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 py-10 sm:px-8 lg:grid-cols-[minmax(330px,0.84fr)_minmax(0,1.16fr)] lg:items-center lg:px-10 lg:py-14">
         <div>
           <h2 className="max-w-2xl text-4xl font-black leading-none tracking-normal text-[#11130f] sm:text-5xl">
-            Turn every song page into a personal PIU notebook.
+            Turn every<br/>song into your<br/>personal notebook.
           </h2>
           <p className="mt-5 max-w-xl text-base font-medium leading-7 text-[#56604e]">
-            MyPIU combines the official-feeling catalog flow with the player context people usually keep scattered across screenshots, spreadsheets, and chat threads.
+            MyPIU offers a home for Pump It Up players that want to  share their plays and keep track of their favorite songs. 
           </p>
 
           <div className="mt-7 grid gap-3">
