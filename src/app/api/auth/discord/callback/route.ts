@@ -11,12 +11,13 @@ import {
   upsertDiscordUser,
 } from "@/lib/auth";
 import { discordOAuthOrigin, exchangeDiscordCode } from "@/lib/discord-oauth";
+import { publicRequestOrigin } from "@/lib/oauth-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const publicOrigin = discordOAuthOrigin(request.nextUrl.origin);
+  const publicOrigin = discordOAuthOrigin(publicRequestOrigin(request.headers, request.nextUrl.origin));
   const cookieStore = await cookies();
   const expectedState = cookieStore.get(OAUTH_STATE_COOKIE_NAME)?.value;
   const actualState = request.nextUrl.searchParams.get("state");

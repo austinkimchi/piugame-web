@@ -1,5 +1,7 @@
 import "server-only";
 
+import { resolveOAuthOrigin } from "@/lib/oauth-origin";
+
 interface GoogleTokenResponse {
   access_token?: string;
   expires_in?: number;
@@ -27,7 +29,10 @@ export function hasGoogleOAuthConfig(): boolean {
 }
 
 export function googleOAuthOrigin(fallbackOrigin: string): string {
-  return process.env.GOOGLE_OAUTH_ORIGIN?.trim().replace(/\/+$/, "") || fallbackOrigin;
+  return resolveOAuthOrigin({
+    fallbackOrigin,
+    override: process.env.GOOGLE_OAUTH_ORIGIN,
+  });
 }
 
 export function googleAuthUrl(args: { origin: string; state: string }): string {

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { resolveOAuthOrigin } from "@/lib/oauth-origin";
+
 interface DiscordTokenResponse {
   access_token?: string;
   token_type?: string;
@@ -29,11 +31,14 @@ export interface DiscordProfile {
 }
 
 export function hasDiscordOAuthConfig(): boolean {
-  return Boolean(process.env.DISCORD_CLIENT_ID?.trim() && process.env.DISCORD_CLIENT_SECRET?.trim());
+  return Boolean(process.env.DISCORD_CLIENT_ID?.trim());
 }
 
 export function discordOAuthOrigin(fallbackOrigin: string): string {
-  return process.env.DISCORD_OAUTH_ORIGIN?.trim().replace(/\/+$/, "") || fallbackOrigin;
+  return resolveOAuthOrigin({
+    fallbackOrigin,
+    override: process.env.DISCORD_OAUTH_ORIGIN,
+  });
 }
 
 export function discordAuthUrl(args: { origin: string; state: string }): string {

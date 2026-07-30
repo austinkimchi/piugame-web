@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { OAUTH_NEXT_COOKIE_NAME, OAUTH_STATE_COOKIE_NAME } from "@/lib/auth";
 import { googleAuthUrl, googleOAuthOrigin, hasGoogleOAuthConfig } from "@/lib/google-oauth";
+import { publicRequestOrigin } from "@/lib/oauth-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Google OAuth is not configured." }, { status: 503 });
   }
 
-  const origin = googleOAuthOrigin(request.nextUrl.origin);
+  const origin = googleOAuthOrigin(publicRequestOrigin(request.headers, request.nextUrl.origin));
   const state = randomBytes(24).toString("base64url");
   const nextPath = safeNextPath(request.nextUrl.searchParams.get("next"));
   const cookieStore = await cookies();

@@ -66,7 +66,7 @@ export function AccountIntegrations({ user, discordReady }: { user: PublicUser; 
                   </div>
                   <a
                     className={`shrink-0 px-3 py-2 text-xs font-black ${discordReady ? "bg-[#5865f2] text-white hover:bg-[#4651c9]" : "bg-[#d6ddcf] text-[#66705f]"}`}
-                    href={discordReady ? "/api/auth/discord/login?next=/" : "#"}
+                    href="/api/auth/discord/login?next=/"
                     aria-disabled={!discordReady}
                   >
                     {user.discord ? "Reconnect" : "Link"}

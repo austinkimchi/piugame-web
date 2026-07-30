@@ -10,12 +10,13 @@ import {
   upsertGoogleUser,
 } from "@/lib/auth";
 import { exchangeGoogleCode, googleOAuthOrigin } from "@/lib/google-oauth";
+import { publicRequestOrigin } from "@/lib/oauth-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const publicOrigin = googleOAuthOrigin(request.nextUrl.origin);
+  const publicOrigin = googleOAuthOrigin(publicRequestOrigin(request.headers, request.nextUrl.origin));
   const cookieStore = await cookies();
   const expectedState = cookieStore.get(OAUTH_STATE_COOKIE_NAME)?.value;
   const actualState = request.nextUrl.searchParams.get("state");
