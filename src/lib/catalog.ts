@@ -3,17 +3,42 @@ import "server-only";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import type { Collection, Document, Filter, WithId } from "mongodb";
+import { cache } from "react";
 
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
-import type { PiuCatalogVersion, PublicChart, PublicSong, SongSearchResult } from "@/lib/types";
+import type {
+  CatalogFilterOptions,
+  CatalogEditorPayload,
+  LevelFilterMode,
+  PiuCatalogVersion,
+  PublicChart,
+  PublicSong,
+  SongSearchResult,
+  SongSortOption,
+  SortDirection,
+} from "@/lib/types";
 
 const PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 48;
+const LANDING_NEW_SONG_LIMIT = 12;
 const DB_NAME = process.env.SONG_CATALOG_DB ?? "piugame_sdk";
 const COLLECTIONS: Record<PiuCatalogVersion, string> = {
   phoenix: process.env.PHOENIX_CATALOG_COLLECTION ?? "song_catalog",
   phoenix2: process.env.PHOENIX2_CATALOG_COLLECTION ?? "song_catalog_2",
 };
+const MAIN_CATALOG_VERSION: PiuCatalogVersion = "phoenix2";
+const SERIES_ORDER = ["1st", "nx", "fiesta", "prime", "prime2", "xx", "phoenix", "phoenix2"];
+
+interface CatalogStats {
+  folderCounts: Map<string, number>;
+  seriesCounts: Map<string, number>;
+  totalSongs: number;
+}
+
+interface CountGroup {
+  _id: string | null;
+  count: number;
+}
 
 interface CatalogDocument extends Document {
   songName?: string;
@@ -58,6 +83,176 @@ function cleanText(value: unknown): string {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
+function cleanList(values?: string[]): string[] {
+  return Array.from(new Set((values ?? []).map(cleanText).filter(Boolean)));
+}
+
+function statsKey(value: string | null): string {
+  return cleanText(value).toLowerCase();
+}
+
+function normalizedSeries(value: string | null): string {
+  return cleanText(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function seriesSortValue(value: string | null): number {
+  const index = SERIES_ORDER.indexOf(normalizedSeries(value));
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
+function compareSeries(left: string | null, right: string | null): number {
+  return seriesSortValue(left) - seriesSortValue(right) || compareNullableText(left, right);
+}
+
+function compareSeriesForDirection(left: string | null, right: string | null, sortDirection: SortDirection): number {
+  const leftRank = seriesSortValue(left);
+  const rightRank = seriesSortValue(right);
+  const leftKnown = leftRank !== Number.MAX_SAFE_INTEGER;
+  const rightKnown = rightRank !== Number.MAX_SAFE_INTEGER;
+
+  if (leftKnown && !rightKnown) {
+    return -1;
+  }
+  if (!leftKnown && rightKnown) {
+    return 1;
+  }
+
+  return (leftRank - rightRank) * (sortDirection === "asc" ? 1 : -1) || compareNullableText(left, right);
+}
+
+function normalizeSortOption(value?: string | null): SongSortOption {
+  return value === "title" || value === "artist" || value === "folder" ? value : "series";
+}
+
+function normalizeSortDirection(value?: string | null): SortDirection {
+  return value === "asc" ? "asc" : "desc";
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function levelSortValue(value: string): number {
+  const level = Number.parseInt(value.replace(/\D/g, ""), 10);
+  return Number.isFinite(level) ? level : Number.MAX_SAFE_INTEGER;
+}
+
+function isCoOpToken(token: string): boolean {
+  return /^C(?:O-?OP|X\d+)?$/i.test(cleanText(token));
+}
+
+function coOpPlayerCountFromToken(token: string): string | null {
+  const match = cleanText(token).match(/^CX([2-5])$/i);
+  return match ? match[1] : null;
+}
+
+function levelFromChartToken(token: string): string | null {
+  if (isCoOpToken(token)) {
+    return null;
+  }
+
+  const match = token.match(/(\d{1,2})$/);
+  if (!match) {
+    return token ? "+" : null;
+  }
+
+  const level = Number.parseInt(match[1], 10);
+  return Number.isFinite(level) && level >= 1 && level <= 27 ? String(level) : "+";
+}
+
+function chartTypeFromToken(token: string): string | null {
+  const normalized = token.toUpperCase();
+  if (normalized.startsWith("CO") || normalized.startsWith("C")) {
+    return "co-op";
+  }
+  if (normalized.startsWith("D")) {
+    return "doubles";
+  }
+  if (normalized.startsWith("S")) {
+    return "singles";
+  }
+  return null;
+}
+
+function chartModeFromToken(token: string): string {
+  return chartTypeFromToken(token) ?? "unknown";
+}
+
+function chartRegexFor(chart: string): RegExp | null {
+  if (chart === "singles") {
+    return /^S/i;
+  }
+  if (chart === "doubles") {
+    return /^D/i;
+  }
+  if (chart === "co-op") {
+    return /^C/i;
+  }
+  return null;
+}
+
+function compatibleLevelsFromTokens(tokens: string[], charts?: string[]): string[] {
+  const selectedCharts = cleanList(charts);
+  if (selectedCharts.length === 1 && selectedCharts.includes("co-op")) {
+    return sortLevels(cleanList(tokens.map((token) => coOpPlayerCountFromToken(token) ?? "")));
+  }
+
+  return sortLevels(cleanList(tokens.map((token) => levelFromChartToken(token) ?? "")));
+}
+
+function filterOptionsFromValues(values: {
+  folders: string[];
+  series: string[];
+  chartTokens: string[];
+  charts?: string[];
+}): CatalogFilterOptions {
+  const tokens = cleanList(values.chartTokens.map(cleanText));
+
+  return {
+    folders: cleanList(values.folders.map(cleanText)).sort(),
+    series: sortSeries(cleanList(values.series.map(cleanText))),
+    levels: compatibleLevelsFromTokens(tokens, values.charts),
+    charts: sortCharts(cleanList(tokens.map((token) => chartTypeFromToken(token) ?? ""))),
+  };
+}
+
+function levelRegexesFor(level: string, charts: string[]): RegExp[] {
+  const regexes: RegExp[] = [];
+
+  if (charts.includes("co-op") && /^[2-5]$/.test(level)) {
+    regexes.push(new RegExp(`^CX${escapeRegex(level)}$`, "i"));
+  }
+
+  if (level === "+") {
+    regexes.push(new RegExp("^(?!C(?:O-?OP|X\\d+)?$)\\D+(?!(?:[1-9]|1\\d|2[0-7])$).+$", "i"));
+  } else {
+    regexes.push(new RegExp(`\\D${escapeRegex(level)}$`, "i"));
+  }
+
+  return regexes;
+}
+
+function sortLevels(levels: string[]): string[] {
+  return levels.sort((left, right) => {
+    if (left === "+") {
+      return 1;
+    }
+    if (right === "+") {
+      return -1;
+    }
+    return levelSortValue(left) - levelSortValue(right);
+  });
+}
+
+function sortCharts(charts: string[]): string[] {
+  const order = ["singles", "doubles", "co-op"];
+  return charts.sort((left, right) => order.indexOf(left) - order.indexOf(right));
+}
+
+function sortSeries(series: string[]): string[] {
+  return series.sort(compareSeries);
+}
+
 function versionFromDocument(document: CatalogDocument, fallback: PiuCatalogVersion): PiuCatalogVersion {
   const raw = cleanText(document.piuVersion ?? document.catalogVersion);
   return raw === "phoenix2" ? "phoenix2" : fallback;
@@ -75,12 +270,11 @@ function imageUrlFor(version: PiuCatalogVersion, filename: string | null): strin
 
 function chartSummary(document: CatalogDocument): string[] {
   if (Array.isArray(document.chartTokens) && document.chartTokens.length > 0) {
-    return document.chartTokens.slice(0, 8).map(cleanText).filter(Boolean);
+    return document.chartTokens.map(cleanText).filter(Boolean);
   }
 
   if (Array.isArray(document.chartsFull)) {
     return document.chartsFull
-      .slice(0, 8)
       .map((chart) => cleanText(chart.token || `${chart.mode}${chart.level}`))
       .filter(Boolean);
   }
@@ -88,12 +282,23 @@ function chartSummary(document: CatalogDocument): string[] {
   return [];
 }
 
-function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersion: PiuCatalogVersion): PublicSong {
+function chartLevelForEditor(token: string): string {
+  return levelFromChartToken(token) ?? coOpPlayerCountFromToken(token) ?? "";
+}
+
+function numericPosition(value: unknown): number | null {
+  const position = Number(value);
+  return Number.isInteger(position) && position > 0 ? position : null;
+}
+
+function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersion: PiuCatalogVersion, stats?: CatalogStats): PublicSong {
   const title = cleanText(document.songName ?? document.songKey ?? "Untitled Song");
   const artist = cleanText(document.artist ?? "Unknown Artist");
   const version = versionFromDocument(document, fallbackVersion);
   const image = Array.isArray(document.images) ? cleanText(document.images[0]) : "";
   const previewUrl = cleanText(document.previewUrl ?? document.audioPreviewUrl) || null;
+  const folder = cleanText(document.folder) || null;
+  const series = cleanText(document.series) || null;
 
   return {
     slug: `${slugify(title)}-${slugify(artist) || "unknown"}-${version}`,
@@ -104,9 +309,23 @@ function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersi
     previewUrl,
     previewAvailable: Boolean(previewUrl),
     chartSummary: chartSummary(document),
-    folder: cleanText(document.folder) || null,
-    series: cleanText(document.series) || null,
+    folder,
+    folderPosition: numericPosition(document.folderPosition),
+    folderSongCount: folder && stats ? stats.folderCounts.get(statsKey(folder)) ?? null : null,
+    series,
+    seriesSongCount: series && stats ? stats.seriesCounts.get(statsKey(series)) ?? null : null,
     tags: Array.isArray(document.tags) ? document.tags.map(cleanText).filter(Boolean).slice(0, 12) : [],
+  };
+}
+
+function catalogEditorPayloadFromSong(song: PublicSong): CatalogEditorPayload {
+  return {
+    title: song.title,
+    artist: song.artist,
+    folder: song.folder ?? "",
+    series: song.series ?? "",
+    tags: song.tags,
+    chartTokens: song.chartSummary,
   };
 }
 
@@ -120,8 +339,8 @@ function projection() {
     images: { $slice: 1 },
     previewUrl: 1,
     audioPreviewUrl: 1,
-    chartTokens: { $slice: 8 },
-    chartsFull: { $slice: 8 },
+    chartTokens: 1,
+    chartsFull: 1,
     folder: 1,
     series: 1,
     tags: { $slice: 12 },
@@ -134,18 +353,203 @@ async function collectionFor(version: PiuCatalogVersion): Promise<Collection<Cat
   return client.db(DB_NAME).collection<CatalogDocument>(COLLECTIONS[version]);
 }
 
+function countMap(groups: CountGroup[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const group of groups) {
+    const key = statsKey(group._id);
+    if (key) {
+      counts.set(key, group.count);
+    }
+  }
+  return counts;
+}
+
+async function fallbackCatalogStats(version: PiuCatalogVersion): Promise<CatalogStats> {
+  const songs = await fallbackSongs(version, 0, Number.MAX_SAFE_INTEGER);
+
+  return {
+    folderCounts: countValues(songs.map((song) => song.folder)),
+    seriesCounts: countValues(songs.map((song) => song.series)),
+    totalSongs: songs.length,
+  };
+}
+
+function countValues(values: Array<string | null>): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const key = statsKey(value);
+    if (key) {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+export const getCatalogStats = cache(async (version: PiuCatalogVersion = MAIN_CATALOG_VERSION): Promise<CatalogStats> => {
+  if (!hasMongoConfig()) {
+    return fallbackCatalogStats(version);
+  }
+
+  const collection = await collectionFor(version);
+  const [result] = await collection
+    .aggregate<{
+      folders: CountGroup[];
+      series: CountGroup[];
+      total: Array<{ count: number }>;
+    }>([
+      {
+        $facet: {
+          folders: [
+            {
+              $group: {
+                _id: {
+                  $trim: {
+                    input: { $ifNull: ["$folder", ""] },
+                  },
+                },
+                count: { $sum: 1 },
+              },
+            },
+          ],
+          series: [
+            {
+              $group: {
+                _id: {
+                  $trim: {
+                    input: { $ifNull: ["$series", ""] },
+                  },
+                },
+                count: { $sum: 1 },
+              },
+            },
+          ],
+          total: [{ $count: "count" }],
+        },
+      },
+    ])
+    .toArray();
+
+  return {
+    folderCounts: countMap(result?.folders ?? []),
+    seriesCounts: countMap(result?.series ?? []),
+    totalSongs: result?.total[0]?.count ?? 0,
+  };
+});
+
+function seriesOrderExpression(sortDirection: SortDirection) {
+  return {
+    $switch: {
+      branches: SERIES_ORDER.map((series, index) => ({
+        case: {
+          $eq: [
+            {
+              $replaceAll: {
+                input: { $toLower: { $ifNull: ["$series", ""] } },
+                find: " ",
+                replacement: "",
+              },
+            },
+            series,
+          ],
+        },
+        then: index,
+      })),
+      default: sortDirection === "asc" ? Number.MAX_SAFE_INTEGER : -1,
+    },
+  };
+}
+
+function aggregateProjection() {
+  return {
+    songName: 1,
+    songKey: 1,
+    artist: 1,
+    piuVersion: 1,
+    catalogVersion: 1,
+    images: { $slice: ["$images", 1] },
+    previewUrl: 1,
+    audioPreviewUrl: 1,
+    chartTokens: 1,
+    chartsFull: 1,
+    folder: 1,
+    series: 1,
+    tags: { $slice: ["$tags", 12] },
+    folderPosition: 1,
+  };
+}
+
+function mongoSortFor(sortBy: SongSortOption, sortDirection: SortDirection): Record<string, 1 | -1> {
+  const direction = sortDirection === "asc" ? 1 : -1;
+
+  if (sortBy === "title") {
+    return { songName: direction, artist: direction, __seriesOrder: direction, series: direction, folderPosition: direction };
+  }
+  if (sortBy === "artist") {
+    return { artist: direction, songName: direction, __seriesOrder: direction, series: direction, folderPosition: direction };
+  }
+  if (sortBy === "folder") {
+    return { folderPosition: direction, folder: direction, __seriesOrder: direction, series: direction, songName: direction, artist: direction };
+  }
+
+  return { __seriesOrder: direction, series: direction, folderPosition: direction, songName: direction, artist: direction };
+}
+
+function compareNullableText(left: string | null, right: string | null): number {
+  if (!left && !right) {
+    return 0;
+  }
+  if (!left) {
+    return 1;
+  }
+  if (!right) {
+    return -1;
+  }
+
+  return left.localeCompare(right, undefined, { sensitivity: "base", numeric: true });
+}
+
+function compareSongText(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { sensitivity: "base", numeric: true });
+}
+
+function sortFallbackSongs(songs: PublicSong[], sortBy: SongSortOption, sortDirection: SortDirection): PublicSong[] {
+  const direction = sortDirection === "asc" ? 1 : -1;
+
+  return [...songs].sort((left, right) => {
+    let comparison: number;
+    if (sortBy === "title") {
+      comparison = compareSongText(left.title, right.title) || compareSongText(left.artist, right.artist);
+    } else if (sortBy === "artist") {
+      comparison = compareSongText(left.artist, right.artist) || compareSongText(left.title, right.title);
+    } else if (sortBy === "folder") {
+      comparison = compareNullableText(left.folder, right.folder) || compareSongText(left.title, right.title);
+    } else {
+      comparison = compareSeriesForDirection(left.series, right.series, sortDirection) || compareNullableText(left.folder, right.folder) || compareSongText(left.title, right.title);
+      return comparison;
+    }
+
+    return comparison * direction;
+  });
+}
+
 async function findMongoSongs(
   version: PiuCatalogVersion,
   filter: Filter<CatalogDocument>,
   offset: number,
   limit: number,
+  sortBy: SongSortOption = "series",
+  sortDirection: SortDirection = "asc",
 ): Promise<PublicSong[]> {
   const collection = await collectionFor(version);
   const documents = await collection
-    .find(filter, { projection: projection() })
-    .sort({ folderPosition: 1, songName: 1, artist: 1 })
-    .skip(offset)
-    .limit(limit)
+    .aggregate<WithId<CatalogDocument>>([
+      { $match: filter },
+      { $addFields: { __seriesOrder: seriesOrderExpression(sortDirection) } },
+      { $sort: mongoSortFor(sortBy, sortDirection) },
+      { $skip: offset },
+      { $limit: limit },
+      { $project: aggregateProjection() },
+    ])
     .toArray();
 
   return documents.map((document) => publicSongFromDocument(document, version));
@@ -173,7 +577,10 @@ async function fallbackSongs(version: PiuCatalogVersion, offset = 0, limit = PAG
       previewAvailable: false,
       chartSummary: [],
       folder: null,
+      folderPosition: offset + index + 1,
+      folderSongCount: null,
       series: version === "phoenix2" ? "Phoenix 2" : "Phoenix",
+      seriesSongCount: null,
       tags: [],
     }));
   } catch {
@@ -183,86 +590,358 @@ async function fallbackSongs(version: PiuCatalogVersion, offset = 0, limit = PAG
 
 export async function getLandingSongs(): Promise<PublicSong[]> {
   if (!hasMongoConfig()) {
-    const [phoenix2, phoenix] = await Promise.all([
-      fallbackSongs("phoenix2", 0, 18),
-      fallbackSongs("phoenix", 0, 6),
-    ]);
-    return [...phoenix2, ...phoenix];
+    return fallbackSongs(MAIN_CATALOG_VERSION, 0, LANDING_NEW_SONG_LIMIT);
   }
 
-  const [phoenix2, phoenix] = await Promise.all([
-    findMongoSongs("phoenix2", {}, 0, 18),
-    findMongoSongs("phoenix", {}, 0, 6),
-  ]);
-  return [...phoenix2, ...phoenix];
+  return findMongoSongs(
+    MAIN_CATALOG_VERSION,
+    { series: { $regex: "^Phoenix 2$", $options: "i" } },
+    0,
+    LANDING_NEW_SONG_LIMIT,
+  );
+}
+
+function buildSearchFilter(params: {
+  query: string;
+  folders?: string[];
+  series?: string[];
+  levels?: string[];
+  charts?: string[];
+  levelMode?: LevelFilterMode;
+}): Filter<CatalogDocument> {
+  const clauses: Filter<CatalogDocument>[] = [];
+  const query = cleanText(params.query);
+
+  if (query.length > 0) {
+    const escaped = escapeRegex(query);
+    clauses.push({
+      $or: [
+        { songName: { $regex: escaped, $options: "i" } },
+        { songKey: { $regex: escaped, $options: "i" } },
+        { artist: { $regex: escaped, $options: "i" } },
+        { folder: { $regex: escaped, $options: "i" } },
+        { series: { $regex: escaped, $options: "i" } },
+        { tags: { $regex: escaped, $options: "i" } },
+        { chartTokens: { $regex: escaped, $options: "i" } },
+      ],
+    });
+  }
+
+  const folders = cleanList(params.folders);
+  if (folders.length > 0) {
+    clauses.push({ folder: { $in: folders } });
+  }
+
+  const series = cleanList(params.series);
+  if (series.length > 0) {
+    clauses.push({ series: { $in: series } });
+  }
+
+  const levels = cleanList(params.levels);
+  if (levels.length > 0) {
+    const charts = cleanList(params.charts);
+    const levelClauses = levels.map((level) => ({ chartTokens: { $in: levelRegexesFor(level, charts) } }));
+    clauses.push(params.levelMode === "and" ? { $and: levelClauses } : { chartTokens: { $in: levels.flatMap((level) => levelRegexesFor(level, charts)) } });
+  }
+
+  const charts = cleanList(params.charts);
+  if (charts.length > 0) {
+    const chartRegexes = charts.map(chartRegexFor).filter((regex): regex is RegExp => Boolean(regex));
+
+    if (chartRegexes.length > 0) {
+      clauses.push(params.levelMode === "and" ? { $and: chartRegexes.map((regex) => ({ chartTokens: { $in: [regex] } })) } : { chartTokens: { $in: chartRegexes } });
+    }
+  }
+
+  return clauses.length > 0 ? { $and: clauses } : {};
+}
+
+function fallbackMatchesFilters(
+  song: PublicSong,
+  filters: {
+    query: string;
+    folders?: string[];
+    series?: string[];
+    levels?: string[];
+    charts?: string[];
+    levelMode?: LevelFilterMode;
+  },
+): boolean {
+  const query = cleanText(filters.query).toLowerCase();
+  const folders = cleanList(filters.folders);
+  const series = cleanList(filters.series);
+  const levels = cleanList(filters.levels);
+  const charts = cleanList(filters.charts);
+
+  if (query.length > 0) {
+    const haystack = `${song.title} ${song.artist} ${song.version} ${song.folder ?? ""} ${song.series ?? ""} ${song.chartSummary.join(" ")}`.toLowerCase();
+    if (!haystack.includes(query)) {
+      return false;
+    }
+  }
+
+  if (folders.length > 0 && (!song.folder || !folders.includes(song.folder))) {
+    return false;
+  }
+
+  if (series.length > 0 && (!song.series || !series.includes(song.series))) {
+    return false;
+  }
+
+  if (
+    levels.length > 0 &&
+    !levels[filters.levelMode === "and" ? "every" : "some"]((level) =>
+      song.chartSummary.some((token) => {
+        if (charts.includes("co-op") && level === coOpPlayerCountFromToken(token)) {
+          return true;
+        }
+
+        if (level === levelFromChartToken(token)) {
+          return true;
+        }
+
+        return false;
+      }),
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    charts.length > 0 &&
+    !charts[filters.levelMode === "and" ? "every" : "some"]((chart) =>
+      song.chartSummary.some((token) => chart === chartTypeFromToken(token)),
+    )
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export async function searchSongs(params: {
   query: string;
-  version?: PiuCatalogVersion;
   cursor?: string | null;
   limit?: number;
+  folders?: string[];
+  series?: string[];
+  levels?: string[];
+  charts?: string[];
+  levelMode?: LevelFilterMode;
+  sortBy?: SongSortOption;
+  sortDirection?: SortDirection;
 }): Promise<SongSearchResult> {
-  const query = cleanText(params.query);
-  if (query.length < 2) {
-    return { songs: [], nextCursor: null };
-  }
-
   const limit = Math.min(Math.max(params.limit ?? PAGE_SIZE, 1), MAX_PAGE_SIZE);
   const offset = decodeCursor(params.cursor ?? null);
-  const versions = params.version ? [params.version] : (["phoenix2", "phoenix"] as PiuCatalogVersion[]);
+  const version = MAIN_CATALOG_VERSION;
+  const sortBy = normalizeSortOption(params.sortBy);
+  const sortDirection = normalizeSortDirection(params.sortDirection);
 
   if (!hasMongoConfig()) {
-    const chunks = await Promise.all(versions.map((version) => fallbackSongs(version, 0, 250)));
-    const all = chunks.flat().filter((song) => {
-      const haystack = `${song.title} ${song.artist} ${song.version}`.toLowerCase();
-      return haystack.includes(query.toLowerCase());
-    });
+    const all = sortFallbackSongs(
+      (await fallbackSongs(version, 0, 250)).filter((song) => fallbackMatchesFilters(song, params)),
+      sortBy,
+      sortDirection,
+    );
     const page = all.slice(offset, offset + limit);
     return {
       songs: page,
       nextCursor: offset + limit < all.length ? encodeCursor(offset + limit) : null,
+      total: all.length,
+      filterOptions: filterOptionsFromValues({
+        folders: all.map((song) => song.folder ?? ""),
+        series: all.map((song) => song.series ?? ""),
+        chartTokens: all.flatMap((song) => song.chartSummary),
+        charts: params.charts,
+      }),
     };
   }
 
-  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const filter: Filter<CatalogDocument> = {
-    $or: [
-      { songName: { $regex: escaped, $options: "i" } },
-      { songKey: { $regex: escaped, $options: "i" } },
-      { artist: { $regex: escaped, $options: "i" } },
-      { folder: { $regex: escaped, $options: "i" } },
-      { series: { $regex: escaped, $options: "i" } },
-      { tags: { $regex: escaped, $options: "i" } },
-    ],
-  };
-
-  const chunks = await Promise.all(versions.map((version) => findMongoSongs(version, filter, offset, limit + 1)));
-  const merged = chunks.flat().sort((left, right) => left.title.localeCompare(right.title)).slice(0, limit + 1);
+  const filter = buildSearchFilter(params);
+  const collection = await collectionFor(version);
+  const [songs, total, filterOptions] = await Promise.all([
+    findMongoSongs(version, filter, offset, limit + 1, sortBy, sortDirection),
+    collection.countDocuments(filter),
+    getCatalogFilterOptions(version, filter, params.charts),
+  ]);
 
   return {
-    songs: merged.slice(0, limit),
-    nextCursor: merged.length > limit ? encodeCursor(offset + limit) : null,
+    songs: songs.slice(0, limit),
+    nextCursor: songs.length > limit ? encodeCursor(offset + limit) : null,
+    total,
+    filterOptions,
   };
+}
+
+export async function getCatalogFilterOptions(
+  version: PiuCatalogVersion = MAIN_CATALOG_VERSION,
+  filter: Filter<CatalogDocument> = {},
+  charts?: string[],
+): Promise<CatalogFilterOptions> {
+  if (!hasMongoConfig()) {
+    const songs = await fallbackSongs(version, 0, 250);
+    return filterOptionsFromValues({
+      folders: songs.map((song) => song.folder ?? ""),
+      series: songs.map((song) => song.series ?? ""),
+      chartTokens: songs.flatMap((song) => song.chartSummary),
+      charts,
+    });
+  }
+
+  const collection = await collectionFor(version);
+  const [folders, series, chartTokens] = await Promise.all([
+    collection.distinct("folder", filter),
+    collection.distinct("series", filter),
+    collection.distinct("chartTokens", filter),
+  ]);
+
+  return filterOptionsFromValues({
+    folders: folders.map(cleanText),
+    series: series.map(cleanText),
+    chartTokens: chartTokens.map(cleanText),
+    charts,
+  });
 }
 
 export async function getSongBySlug(slug: string): Promise<PublicSong | null> {
   if (!hasMongoConfig()) {
-    const all = [...(await fallbackSongs("phoenix2", 0, 250)), ...(await fallbackSongs("phoenix", 0, 250))];
+    const stats = await getCatalogStats(MAIN_CATALOG_VERSION);
+    const all = (await fallbackSongs(MAIN_CATALOG_VERSION, 0, 250)).map((song) => ({
+      ...song,
+      folderSongCount: song.folder ? stats.folderCounts.get(statsKey(song.folder)) ?? null : null,
+      seriesSongCount: song.series ? stats.seriesCounts.get(statsKey(song.series)) ?? null : null,
+    }));
     return all.find((song) => song.slug === slug) ?? null;
   }
 
-  const versions: PiuCatalogVersion[] = ["phoenix2", "phoenix"];
-  for (const version of versions) {
-    const collection = await collectionFor(version);
-    const documents = await collection.find({}, { projection: projection() }).limit(5000).toArray();
-    const match = documents
-      .map((document) => publicSongFromDocument(document, version))
-      .find((song) => song.slug === slug);
-    if (match) {
-      return match;
-    }
+  const collection = await collectionFor(MAIN_CATALOG_VERSION);
+  const [documents, stats] = await Promise.all([
+    collection.find({}, { projection: projection() }).limit(5000).toArray(),
+    getCatalogStats(MAIN_CATALOG_VERSION),
+  ]);
+  const match = documents
+    .map((document) => publicSongFromDocument(document, MAIN_CATALOG_VERSION, stats))
+    .find((song) => song.slug === slug);
+
+  return match ?? null;
+}
+
+async function getCatalogDocumentBySlug(slug: string): Promise<WithId<CatalogDocument> | null> {
+  const collection = await collectionFor(MAIN_CATALOG_VERSION);
+  const documents = await collection.find({}, { projection: projection() }).limit(5000).toArray();
+
+  return documents.find((document) => publicSongFromDocument(document, MAIN_CATALOG_VERSION).slug === slug) ?? null;
+}
+
+function cleanEditableList(values: unknown, maxItems: number): string[] {
+  if (!Array.isArray(values)) {
+    return [];
   }
 
-  return null;
+  return Array.from(
+    new Set(
+      values
+        .map((value) => cleanText(value))
+        .filter(Boolean)
+        .slice(0, maxItems),
+    ),
+  );
+}
+
+function normalizeCatalogEditorPayload(input: Partial<CatalogEditorPayload>): CatalogEditorPayload {
+  const title = cleanText(input.title).slice(0, 180);
+  const artist = cleanText(input.artist).slice(0, 180);
+  const folder = cleanText(input.folder).slice(0, 120);
+  const series = cleanText(input.series).slice(0, 120);
+  const tags = cleanEditableList(input.tags, 24).map((tag) => tag.slice(0, 60));
+  const chartTokens = cleanEditableList(input.chartTokens, 80).map((token) => token.toUpperCase().replace(/\s+/g, ""));
+  const invalidChartTokens = chartTokens.filter((token) => !/^[A-Z0-9+-]{1,12}$/.test(token));
+
+  if (title.length < 1) {
+    throw new Error("Title is required.");
+  }
+  if (artist.length < 1) {
+    throw new Error("Artist is required.");
+  }
+  if (invalidChartTokens.length > 0) {
+    throw new Error(`Chart tokens can only use letters, numbers, +, or -: ${invalidChartTokens.join(", ")}`);
+  }
+
+  return {
+    title,
+    artist,
+    folder,
+    series,
+    tags,
+    chartTokens,
+  };
+}
+
+function updatedChartsFull(existingCharts: PublicChart[] | undefined, chartTokens: string[]): PublicChart[] | undefined {
+  if (!Array.isArray(existingCharts)) {
+    return undefined;
+  }
+
+  return chartTokens.map((token, index) => {
+    const existing = existingCharts[index];
+    return {
+      ...existing,
+      token,
+      mode: chartModeFromToken(token),
+      level: chartLevelForEditor(token),
+    };
+  });
+}
+
+export async function getCatalogEditorPayload(slug: string): Promise<CatalogEditorPayload | null> {
+  const song = await getSongBySlug(slug);
+  return song ? catalogEditorPayloadFromSong(song) : null;
+}
+
+export async function updateCatalogSong(slug: string, input: Partial<CatalogEditorPayload>): Promise<PublicSong> {
+  if (!hasMongoConfig()) {
+    throw new Error("Catalog database is not configured.");
+  }
+
+  const payload = normalizeCatalogEditorPayload(input);
+  const document = await getCatalogDocumentBySlug(slug);
+  if (!document) {
+    throw new Error("Song not found.");
+  }
+
+  const collection = await collectionFor(MAIN_CATALOG_VERSION);
+  const chartsFull = updatedChartsFull(document.chartsFull, payload.chartTokens);
+  const $set: Partial<CatalogDocument> = {
+    songName: payload.title,
+    artist: payload.artist,
+    folder: payload.folder,
+    series: payload.series,
+    tags: payload.tags,
+    chartTokens: payload.chartTokens,
+  };
+
+  if (chartsFull) {
+    $set.chartsFull = chartsFull;
+  }
+
+  await collection.updateOne({ _id: document._id }, { $set });
+
+  const updated = await collection.findOne({ _id: document._id }, { projection: projection() });
+  if (!updated) {
+    throw new Error("Song not found after update.");
+  }
+
+  return publicSongFromDocument(updated, MAIN_CATALOG_VERSION);
+}
+
+export async function getSitemapSongs(limit = 5000): Promise<PublicSong[]> {
+  if (!hasMongoConfig()) {
+    return fallbackSongs(MAIN_CATALOG_VERSION, 0, Math.min(limit, 250));
+  }
+
+  try {
+    return findMongoSongs(MAIN_CATALOG_VERSION, {}, 0, limit, "series", "asc");
+  } catch {
+    return [];
+  }
 }

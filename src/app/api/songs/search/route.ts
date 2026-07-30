@@ -2,7 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { checkRateLimit } from "@/lib/rate-limit";
 import { searchSongs } from "@/lib/catalog";
-import type { PiuCatalogVersion } from "@/lib/types";
+import { getCurrentUser, getFavoriteSongSlugSet } from "@/lib/auth";
+import type { LevelFilterMode, SongSortOption, SortDirection } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,8 +14,24 @@ function clientKey(request: NextRequest): string {
   return `${forwardedFor ?? "local"}:${userAgent}`;
 }
 
-function parseVersion(value: string | null): PiuCatalogVersion | undefined {
-  return value === "phoenix" || value === "phoenix2" ? value : undefined;
+function parseList(searchParams: URLSearchParams, key: string): string[] {
+  return searchParams
+    .getAll(key)
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function parseLevelMode(value: string | null): LevelFilterMode {
+  return value === "or" ? "or" : "and";
+}
+
+function parseSortOption(value: string | null): SongSortOption {
+  return value === "title" || value === "artist" || value === "folder" ? value : "series";
+}
+
+function parseSortDirection(value: string | null): SortDirection {
+  return value === "asc" ? "asc" : "desc";
 }
 
 export async function GET(request: NextRequest) {
@@ -23,19 +40,27 @@ export async function GET(request: NextRequest) {
   }
 
   const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
-  if (query.length < 2) {
-    return NextResponse.json({ error: "Search requires at least 2 characters." }, { status: 400 });
-  }
-
   const limit = Number.parseInt(request.nextUrl.searchParams.get("limit") ?? "24", 10);
   const result = await searchSongs({
     query,
-    version: parseVersion(request.nextUrl.searchParams.get("version")),
     cursor: request.nextUrl.searchParams.get("cursor"),
     limit: Number.isFinite(limit) ? limit : 24,
+    folders: parseList(request.nextUrl.searchParams, "folder"),
+    series: parseList(request.nextUrl.searchParams, "series"),
+    levels: parseList(request.nextUrl.searchParams, "level"),
+    charts: parseList(request.nextUrl.searchParams, "chart"),
+    levelMode: parseLevelMode(request.nextUrl.searchParams.get("levelMode")),
+    sortBy: parseSortOption(request.nextUrl.searchParams.get("sortBy")),
+    sortDirection: parseSortDirection(request.nextUrl.searchParams.get("sortDirection")),
   });
+  const user = await getCurrentUser();
+  const favoriteSlugs = await getFavoriteSongSlugSet(user, result.songs.map((song) => song.slug));
+  const resultWithFavorites = {
+    ...result,
+    songs: result.songs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
+  };
 
-  return NextResponse.json(result, {
+  return NextResponse.json(resultWithFavorites, {
     headers: {
       "Cache-Control": "private, no-store",
     },

@@ -1,0 +1,65 @@
+import { LogIn, LogOut, UserRound } from "lucide-react";
+
+import { AdminViewBadge } from "@/components/admin-view-badge";
+import { AccountIntegrations } from "@/components/account-integrations";
+import { UsernamePrompt } from "@/components/username-prompt";
+import { getCurrentUser } from "@/lib/auth";
+import { hasDiscordOAuthConfig } from "@/lib/discord-oauth";
+import { hasGoogleOAuthConfig } from "@/lib/google-oauth";
+
+export async function AccountBar() {
+  const user = await getCurrentUser();
+  const googleReady = hasGoogleOAuthConfig();
+  const discordReady = hasDiscordOAuthConfig();
+
+  return (
+    <div className="flex max-w-[calc(100vw-2.5rem)] items-center gap-2">
+      {user ? (
+        <>
+          {user.username ? (
+            <div className="flex min-w-0 items-center gap-2 border border-[#cdd5c5] bg-white/70 px-3 py-2 shadow-[0_10px_28px_rgba(29,35,24,0.07)] backdrop-blur">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#171916] text-white">
+                {user.imageUrl ? <span aria-hidden="true" className="h-full w-full bg-cover bg-center" style={{ backgroundImage: `url(${user.imageUrl})` }} /> : <UserRound aria-hidden="true" size={17} />}
+              </span>
+              <span className="min-w-0 truncate text-sm font-black text-[#171916]">{user.piuProfile?.displayName ?? user.username}</span>
+            </div>
+          ) : (
+            <UsernamePrompt variant="modal" />
+          )}
+          {user.roles.includes("admin") ? (
+            <AdminViewBadge />
+          ) : null}
+          <AccountIntegrations user={user} discordReady={discordReady} />
+          <form action="/api/auth/logout" method="post">
+            <button className="inline-flex h-12 w-12 items-center justify-center border border-[#cdd5c5] bg-white/70 text-[#56604e] shadow-[0_10px_28px_rgba(29,35,24,0.07)] backdrop-blur transition hover:border-[#28c950] hover:bg-white hover:text-[#28c950]" title="Sign out" type="submit">
+              <LogOut aria-hidden="true" size={17} />
+            </button>
+          </form>
+        </>
+      ) : (
+        <>
+          <AuthLink href={googleReady ? "/api/auth/google/login" : "#"} ready={googleReady} title="Sign in with Google" />
+          <AuthLink accent="discord" href={discordReady ? "/api/auth/discord/login" : "#"} ready={discordReady} title="Sign in with Discord" />
+        </>
+      )}
+    </div>
+  );
+}
+
+function AuthLink({ accent = "default", href, ready, title }: { accent?: "default" | "discord"; href: string; ready: boolean; title: string }) {
+  return (
+    <a
+      className={`group inline-flex items-center gap-3 border px-4 py-2.5 text-sm font-black shadow-[0_14px_34px_rgba(29,35,24,0.08)] backdrop-blur transition ${ready ? "border-[#cdd5c5] bg-white/78 text-[#171916] hover:border-[#171916] hover:bg-white hover:shadow-[0_18px_44px_rgba(29,35,24,0.12)]" : "border-[#d6ddcf] bg-white/55 text-[#66705f]"}`}
+      href={href}
+      aria-disabled={!ready}
+    >
+      <span className={`grid h-8 w-8 place-items-center text-white transition ${accent === "discord" ? "bg-[#5865f2] group-hover:bg-[#4651c9]" : "bg-[#171916] group-hover:bg-[#28c950]"}`}>
+        <LogIn aria-hidden="true" size={16} />
+      </span>
+      <span className="flex flex-col leading-none">
+        <span className="text-[10px] font-black uppercase text-[#66705f]">Account</span>
+        <span className="mt-1">{title}</span>
+      </span>
+    </a>
+  );
+}
