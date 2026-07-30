@@ -43,6 +43,7 @@ export interface PublicUser {
   provider: AuthProvider;
   roles: UserRole[];
   mutedUntil: string | null;
+  preferences: UserPreferences;
   discord: {
     userId: string;
     username: string;
@@ -57,6 +58,10 @@ export interface PublicUser {
     linkedAt: string | null;
     lastProfileFetchedAt: string | null;
   } | null;
+}
+
+export interface UserPreferences {
+  songDetailCompactView: boolean;
 }
 
 interface AuthProviderIdentity {
@@ -79,6 +84,7 @@ interface UserDocument {
   mutedUntil?: Date | null;
   mutedReason?: string | null;
   mutedBy?: ObjectId | null;
+  preferences?: Partial<UserPreferences>;
   piuLink?: {
     piuUsername?: string;
     displayName?: string;
@@ -239,6 +245,10 @@ interface BotPlayerProfileDocument {
   lastProfileFetchedAt: Date;
 }
 
+const DEFAULT_USER_PREFERENCES: UserPreferences = {
+  songDetailCompactView: false,
+};
+
 function tokenHash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -381,6 +391,7 @@ function publicUser(document: WithId<UserDocument>): PublicUser {
     provider: document.primaryProvider,
     roles,
     mutedUntil: document.mutedUntil && document.mutedUntil > new Date() ? document.mutedUntil.toISOString() : null,
+    preferences: publicUserPreferences(document.preferences),
     discord: discordIdentity
       ? {
           userId: discordIdentity.providerAccountId,
@@ -433,6 +444,7 @@ export async function upsertGoogleUser(profile: {
       primaryProvider: "google",
       providers: [providerIdentity],
       roles: ["user"],
+      preferences: DEFAULT_USER_PREFERENCES,
       createdAt: now,
       updatedAt: now,
       lastLoginAt: now,
@@ -547,6 +559,7 @@ export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: 
       primaryProvider: "discord",
       providers: [providerIdentity],
       roles: ["user"],
+      preferences: DEFAULT_USER_PREFERENCES,
       piuLink: {
         discordUserId: profile.discordId,
         discordUsername: profile.username,
@@ -1192,6 +1205,31 @@ export async function setUsername(user: PublicUser, usernameInput: string): Prom
   return publicUser(result);
 }
 
+export async function updateUserPreferences(user: PublicUser, preferences: Partial<UserPreferences>): Promise<PublicUser> {
+  const updates: {
+    "preferences.songDetailCompactView"?: boolean;
+    updatedAt: Date;
+  } = {
+    updatedAt: new Date(),
+  };
+
+  if (typeof preferences.songDetailCompactView === "boolean") {
+    updates["preferences.songDetailCompactView"] = preferences.songDetailCompactView;
+  }
+
+  const { users } = await collections();
+  const result = await users.findOneAndUpdate(
+    { _id: objectIdFromUser(user) },
+    { $set: updates },
+    { returnDocument: "after" },
+  );
+
+  if (!result) {
+    throw new Error("User not found.");
+  }
+  return publicUser(result);
+}
+
 export interface AdminUserSearchResult {
   id: string;
   name: string;
@@ -1292,6 +1330,12 @@ function publicRoles(document: WithId<UserDocument>): UserRole[] {
     roles.add("moderator");
   }
   return Array.from(roles);
+}
+
+function publicUserPreferences(preferences: Partial<UserPreferences> | undefined): UserPreferences {
+  return {
+    songDetailCompactView: preferences?.songDetailCompactView === true,
+  };
 }
 
 function adminEmailSet(): Set<string> {
