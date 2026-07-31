@@ -47,7 +47,7 @@ export function SongPopupModel({ song }: { song: PublicSong | null }) {
 
           <div className="grid gap-6 lg:grid-cols-[190px_minmax(0,1fr)]">
             <div>
-              <div className="relative aspect-square overflow-hidden rounded-lg border border-[#d6ddcf] bg-[#dfe6d8] shadow-[0_20px_45px_rgba(18,24,16,0.12)]">
+              <div className="relative aspect-square overflow-hidden rounded-lg border border-[#d6ddcf] bg-[#dfe6d8] shadow-[0_20px_45px_rgba(18,24,16,0.12)] hidden lg:block">
                 {imageUrl ? (
                   <span aria-hidden="true" className="block size-full bg-cover bg-center" style={{ backgroundImage: `url(${imageUrl})` }} />
                 ) : (
