@@ -716,10 +716,17 @@ function compareSongText(left: string, right: string): number {
   return left.localeCompare(right, undefined, { sensitivity: "base", numeric: true });
 }
 
-function sortFallbackSongs(songs: PublicSong[], sortBy: SongSortOption, sortDirection: SortDirection): PublicSong[] {
+function sortFallbackSongs(songs: PublicSong[], sortBy: SongSortOption, sortDirection: SortDirection, favoriteSlugs?: Set<string>): PublicSong[] {
   const direction = sortDirection === "asc" ? 1 : -1;
 
   return [...songs].sort((left, right) => {
+    if (favoriteSlugs && favoriteSlugs.size > 0) {
+      const favoriteComparison = Number(favoriteSlugs.has(right.slug)) - Number(favoriteSlugs.has(left.slug));
+      if (favoriteComparison !== 0) {
+        return favoriteComparison;
+      }
+    }
+
     let comparison: number;
     if (sortBy === "title") {
       comparison = compareSongText(left.title, right.title) || compareSongText(left.artist, right.artist);
@@ -921,18 +928,22 @@ export async function searchSongs(params: {
   levelMode?: LevelFilterMode;
   sortBy?: SongSortOption;
   sortDirection?: SortDirection;
+  favoriteSlugs?: Set<string>;
 }): Promise<SongSearchResult> {
   const limit = Math.min(Math.max(params.limit ?? PAGE_SIZE, 1), MAX_PAGE_SIZE);
   const offset = decodeCursor(params.cursor ?? null);
   const version = MAIN_CATALOG_VERSION;
   const sortBy = normalizeSortOption(params.sortBy);
   const sortDirection = normalizeSortDirection(params.sortDirection);
+  const favoriteSlugs = params.favoriteSlugs;
+  const favoritesFirst = Boolean(favoriteSlugs && favoriteSlugs.size > 0);
 
   if (!hasMongoConfig()) {
     const all = sortFallbackSongs(
       (await fallbackSongs(version, 0, 250)).filter((song) => fallbackMatchesFilters(song, params)),
       sortBy,
       sortDirection,
+      favoriteSlugs,
     );
     const page = all.slice(offset, offset + limit);
     return {
@@ -950,11 +961,10 @@ export async function searchSongs(params: {
 
   const filter = buildSearchFilter(params);
   const collection = await collectionFor(version);
-  const [songs, total, filterOptions] = await Promise.all([
-    findMongoSongs(version, filter, offset, limit + 1, sortBy, sortDirection),
-    collection.countDocuments(filter),
-    getCatalogFilterOptions(version, filter, params.charts),
-  ]);
+  const [total, filterOptions] = await Promise.all([collection.countDocuments(filter), getCatalogFilterOptions(version, filter, params.charts)]);
+  const songs = favoritesFirst
+    ? sortFallbackSongs(total > 0 ? await findMongoSongs(version, filter, 0, total, sortBy, sortDirection) : [], sortBy, sortDirection, favoriteSlugs).slice(offset, offset + limit + 1)
+    : await findMongoSongs(version, filter, offset, limit + 1, sortBy, sortDirection);
 
   return {
     songs: songs.slice(0, limit),

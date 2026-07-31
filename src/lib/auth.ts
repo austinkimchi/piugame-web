@@ -862,6 +862,20 @@ export async function getFavoriteSongSlugSet(user: PublicUser | null, songSlugs:
   return new Set(documents.map((document) => document.songSlug));
 }
 
+export async function getAllFavoriteSongSlugs(user: PublicUser | null): Promise<Set<string>> {
+  if (!user || !hasMongoConfig()) {
+    return new Set();
+  }
+
+  const { savedSongs } = await collections();
+  const documents = await savedSongs
+    .find({ userId: objectIdFromUser(user) })
+    .project<{ songSlug: string }>({ songSlug: 1, _id: 0 })
+    .toArray();
+
+  return new Set(documents.map((document) => document.songSlug));
+}
+
 export async function setSongSaved(user: PublicUser, song: { slug: string; title: string; artist: string; version: string }, saved: boolean): Promise<void> {
   const { savedSongs } = await collections();
   const userId = objectIdFromUser(user);

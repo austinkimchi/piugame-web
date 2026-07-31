@@ -80,6 +80,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
   const levelModeRef = useRef<LevelFilterMode>("and");
   const sortByRef = useRef<SongSortOption>("series");
   const sortDirectionRef = useRef<SortDirection>("desc");
+  const favoritesFirstRef = useRef(false);
   const previewVoiceIdRef = useRef(0);
   const previewVoicesRef = useRef<PreviewVoice[]>([]);
   const previewAudioGraphRef = useRef<PreviewAudioGraph | null>(null);
@@ -109,6 +110,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
   const [levelMode, setLevelMode] = useState<LevelFilterMode>("and");
   const [sortBy, setSortBy] = useState<SongSortOption>("series");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [favoritesFirst, setFavoritesFirst] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [openSong, setOpenSong] = useState<PublicSong | null>(null);
   const [openSongChartToken, setOpenSongChartToken] = useState<string | null>(null);
@@ -145,11 +147,14 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     [canFavorite],
   );
 
-  const endpoint = useCallback((searchQuery: string, cursor: string | null, filters: Record<FilterKey, string[]>, mode: LevelFilterMode, sort: SongSortOption, direction: SortDirection) => {
+  const endpoint = useCallback((searchQuery: string, cursor: string | null, filters: Record<FilterKey, string[]>, mode: LevelFilterMode, sort: SongSortOption, direction: SortDirection, preferFavorites: boolean) => {
     const params = new URLSearchParams();
     params.set("q", searchQuery.trim());
     params.set("sortBy", sort);
     params.set("sortDirection", direction);
+    if (preferFavorites) {
+      params.set("favoritesFirst", "true");
+    }
     if (cursor) {
       params.set("cursor", cursor);
     }
@@ -173,12 +178,13 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
       mode = levelModeRef.current,
       sort = sortByRef.current,
       direction = sortDirectionRef.current,
+      preferFavorites = favoritesFirstRef.current,
     ) => {
       setLoadingMode(cursor ? "append" : "replace");
       setStatus("");
 
       try {
-        const response = await fetch(endpoint(searchQuery, cursor, filters, mode, sort, direction), { cache: "no-store" });
+        const response = await fetch(endpoint(searchQuery, cursor, filters, mode, sort, direction, preferFavorites), { cache: "no-store" });
         const body = (await response.json()) as SearchResponse;
         if (!response.ok) {
           setStatus(body.error ?? "Search failed.");
@@ -515,6 +521,10 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
   }, [sortDirection]);
 
   useEffect(() => {
+    favoritesFirstRef.current = favoritesFirst;
+  }, [favoritesFirst]);
+
+  useEffect(() => {
     const timeout = window.setTimeout(() => {
       void runSearch(query);
     }, 260);
@@ -642,6 +652,17 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     const nextDirection: SortDirection = sortDirection === "asc" ? "desc" : "asc";
     setSortDirection(nextDirection);
     void runSearch(query, null, selectedFilters, levelMode, sortBy, nextDirection);
+  }
+
+  function toggleFavoritesFirst() {
+    if (!canFavorite) {
+      window.location.href = `/api/auth/google/login?next=${encodeURIComponent(`/${SEARCH_HASH}`)}`;
+      return;
+    }
+
+    const nextFavoritesFirst = !favoritesFirst;
+    setFavoritesFirst(nextFavoritesFirst);
+    void runSearch(query, null, selectedFilters, levelMode, sortBy, sortDirection, nextFavoritesFirst);
   }
 
   function clearFilters() {
@@ -856,7 +877,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
                   placeholder="Search title, artist, folder, series, tag, or chart"
                 />
               </motion.label>
-              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[14rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem]">
+              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[16.75rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem]">
                 <label className="relative h-full">
                   <span className="sr-only">Sort by</span>
                   <select
@@ -876,6 +897,19 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
                     size={17}
                   />
                 </label>
+                <motion.button
+                  aria-label={favoritesFirst ? "Show favorites first" : "Keep favorites in regular order"}
+                  aria-pressed={favoritesFirst}
+                  className={`flex h-full min-h-11 items-center justify-center border-l border-[#d9ded2] transition hover:bg-[#eef1e8] ${
+                    favoritesFirst ? "bg-[#fff4cf] text-[#c78215]" : "text-[#171916]"
+                  }`}
+                  title={canFavorite ? "Show favorites first" : "Sign in to sort favorites first"}
+                  type="button"
+                  whileTap={{ scale: 0.9 }}
+                  onClick={toggleFavoritesFirst}
+                >
+                  <Star aria-hidden="true" fill={favoritesFirst ? "currentColor" : "none"} size={18} />
+                </motion.button>
                 <motion.button
                   aria-label={sortDirection === "asc" ? "Sort ascending" : "Sort descending"}
                   aria-pressed={sortDirection === "desc"}

@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { checkRateLimit } from "@/lib/rate-limit";
 import { searchSongs } from "@/lib/catalog";
-import { getCurrentUser, getFavoriteSongSlugSet } from "@/lib/auth";
+import { getAllFavoriteSongSlugs, getCurrentUser, getFavoriteSongSlugSet } from "@/lib/auth";
 import type { LevelFilterMode, SongSortOption, SortDirection } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -34,6 +34,10 @@ function parseSortDirection(value: string | null): SortDirection {
   return value === "asc" ? "asc" : "desc";
 }
 
+function parseBoolean(value: string | null): boolean {
+  return value === "true" || value === "1";
+}
+
 export async function GET(request: NextRequest) {
   if (!checkRateLimit(clientKey(request))) {
     return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
@@ -41,6 +45,9 @@ export async function GET(request: NextRequest) {
 
   const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
   const limit = Number.parseInt(request.nextUrl.searchParams.get("limit") ?? "24", 10);
+  const user = await getCurrentUser();
+  const favoritesFirst = parseBoolean(request.nextUrl.searchParams.get("favoritesFirst"));
+  const favoriteSlugsForSort = favoritesFirst ? await getAllFavoriteSongSlugs(user) : undefined;
   const result = await searchSongs({
     query,
     cursor: request.nextUrl.searchParams.get("cursor"),
@@ -52,9 +59,9 @@ export async function GET(request: NextRequest) {
     levelMode: parseLevelMode(request.nextUrl.searchParams.get("levelMode")),
     sortBy: parseSortOption(request.nextUrl.searchParams.get("sortBy")),
     sortDirection: parseSortDirection(request.nextUrl.searchParams.get("sortDirection")),
+    favoriteSlugs: favoriteSlugsForSort,
   });
-  const user = await getCurrentUser();
-  const favoriteSlugs = await getFavoriteSongSlugSet(user, result.songs.map((song) => song.slug));
+  const favoriteSlugs = favoriteSlugsForSort ?? (await getFavoriteSongSlugSet(user, result.songs.map((song) => song.slug)));
   const resultWithFavorites = {
     ...result,
     songs: result.songs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
