@@ -43,8 +43,8 @@ const SORT_OPTIONS: Array<{ value: SongSortOption; label: string }> = [
 const SEARCH_HASH = "#search";
 const NOTEBOOK_RESIZE_HANDLE_SIZE = 40;
 const NOTEBOOK_SIZE_STORAGE_KEY = "mypiu-song-notebook-size:v2";
-const PREVIEW_FADE_IN_MS = 100;
-const PREVIEW_FADE_OUT_MS = 700;
+const PREVIEW_FADE_IN_MS = 50;
+const PREVIEW_FADE_OUT_MS = 500;
 const EMPTY_COMMUNITY_STATE: SongCommunityState = {
   saved: false,
   note: "",
