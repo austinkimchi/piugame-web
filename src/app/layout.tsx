@@ -4,7 +4,7 @@ import "./globals.css";
 
 import { SiteFooter } from "@/components/site-footer";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
-import { absoluteSiteUrl, getSiteUrl, siteDescription, siteName } from "@/lib/site";
+import { absoluteSiteUrl, getSiteUrl, siteDescription, siteName, sitePreviewImage } from "@/lib/site";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -54,10 +54,11 @@ export const metadata: Metadata = {
     siteName,
     images: [
       {
-        url: absoluteSiteUrl("/opengraph-image"),
-        width: 1200,
-        height: 630,
-        alt: `${siteName} song catalog preview`,
+        url: absoluteSiteUrl(sitePreviewImage.path),
+        width: sitePreviewImage.width,
+        height: sitePreviewImage.height,
+        alt: sitePreviewImage.alt,
+        type: sitePreviewImage.type,
       },
     ],
     locale: "en_US",
@@ -67,7 +68,10 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: `${siteName} | Pump It Up Song Catalog`,
     description: siteDescription,
-    images: [absoluteSiteUrl("/opengraph-image")],
+    images: {
+      url: absoluteSiteUrl(sitePreviewImage.path),
+      alt: sitePreviewImage.alt,
+    },
   },
   robots: {
     index: true,

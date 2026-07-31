@@ -6,7 +6,7 @@ import { SongDetailView } from "@/components/song-detail-view";
 import { getCurrentUser, getSongCommunityState, isAdmin } from "@/lib/auth";
 import { getSongBySlug } from "@/lib/catalog";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { absoluteSiteUrl, siteName } from "@/lib/site";
+import { absoluteSiteUrl, siteName, sitePreviewImage } from "@/lib/site";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +33,8 @@ export async function generateMetadata({ params }: SongPageProps): Promise<Metad
   const title = `${song.title} by ${song.artist}`;
   const charts = song.chartSummary.length > 0 ? ` Charts: ${song.chartSummary.slice(0, 12).join(", ")}.` : "";
   const description = `${song.title} by ${song.artist} in the ${siteName} Pump It Up catalog.${charts}`;
-  const image = song.imageUrl ? absoluteSiteUrl(song.imageUrl) : absoluteSiteUrl("/opengraph-image");
+  const image = song.imageUrl ? absoluteSiteUrl(song.imageUrl) : absoluteSiteUrl(sitePreviewImage.path);
+  const imageAlt = song.imageUrl ? `${song.title} jacket art` : sitePreviewImage.alt;
 
   return {
     title,
@@ -49,7 +50,14 @@ export async function generateMetadata({ params }: SongPageProps): Promise<Metad
       images: [
         {
           url: image,
-          alt: `${song.title} jacket art`,
+          ...(song.imageUrl
+            ? {}
+            : {
+                width: sitePreviewImage.width,
+                height: sitePreviewImage.height,
+                type: sitePreviewImage.type,
+              }),
+          alt: imageAlt,
         },
       ],
       type: "music.song",
@@ -58,7 +66,10 @@ export async function generateMetadata({ params }: SongPageProps): Promise<Metad
       card: "summary_large_image",
       title,
       description,
-      images: [image],
+      images: {
+        url: image,
+        alt: imageAlt,
+      },
     },
   };
 }
