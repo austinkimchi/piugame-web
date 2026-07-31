@@ -147,6 +147,25 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     [canFavorite],
   );
 
+  const saveSearchControlPreferences = useCallback(
+    (preferences: Partial<{ sortBy: SongSortOption; sortDirection: SortDirection; favoritesFirst: boolean }>) => {
+      if (!canFavorite) {
+        return;
+      }
+
+      void fetch("/api/account/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(preferences.sortBy ? { songExplorerSortBy: preferences.sortBy } : {}),
+          ...(preferences.sortDirection ? { songExplorerSortDirection: preferences.sortDirection } : {}),
+          ...(typeof preferences.favoritesFirst === "boolean" ? { songExplorerFavoritesFirst: preferences.favoritesFirst } : {}),
+        }),
+      });
+    },
+    [canFavorite],
+  );
+
   const endpoint = useCallback((searchQuery: string, cursor: string | null, filters: Record<FilterKey, string[]>, mode: LevelFilterMode, sort: SongSortOption, direction: SortDirection, preferFavorites: boolean) => {
     const params = new URLSearchParams();
     params.set("q", searchQuery.trim());
@@ -645,12 +664,14 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
 
   function changeSortBy(value: SongSortOption) {
     setSortBy(value);
+    saveSearchControlPreferences({ sortBy: value });
     void runSearch(query, null, selectedFilters, levelMode, value, sortDirection);
   }
 
   function toggleSortDirection() {
     const nextDirection: SortDirection = sortDirection === "asc" ? "desc" : "asc";
     setSortDirection(nextDirection);
+    saveSearchControlPreferences({ sortDirection: nextDirection });
     void runSearch(query, null, selectedFilters, levelMode, sortBy, nextDirection);
   }
 
@@ -662,6 +683,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
 
     const nextFavoritesFirst = !favoritesFirst;
     setFavoritesFirst(nextFavoritesFirst);
+    saveSearchControlPreferences({ favoritesFirst: nextFavoritesFirst });
     void runSearch(query, null, selectedFilters, levelMode, sortBy, sortDirection, nextFavoritesFirst);
   }
 

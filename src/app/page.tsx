@@ -27,7 +27,10 @@ export default async function Home() {
         featureSong={featuredSong}
         filterOptions={filterOptions}
         initialPreviewMuted={user?.preferences.songPreviewMuted ?? true}
-        initialPreviewVolume={user?.preferences.songPreviewVolume ?? 0.75}
+        initialPreviewVolume={user?.preferences.songPreviewVolume ?? 0.5}
+        initialSortBy={user?.preferences.songExplorerSortBy ?? "series"}
+        initialSortDirection={user?.preferences.songExplorerSortDirection ?? "desc"}
+        initialFavoritesFirst={user?.preferences.songExplorerFavoritesFirst ?? false}
         initialSongs={songsWithFavorites}
         userIsAdmin={isAdmin(user)}
       />

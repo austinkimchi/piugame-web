@@ -9,6 +9,7 @@ import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { encryptCredential } from "@/lib/credential-crypto";
 import { piuDisplayName } from "@/lib/piu-account";
 import type { DiscordProfile } from "@/lib/discord-oauth";
+import type { SongSortOption, SortDirection } from "@/lib/types";
 import type { PlayerData } from "@austinkimchi/piugame-sdk";
 
 export const SESSION_COOKIE_NAME = "piu_session";
@@ -64,6 +65,9 @@ export interface UserPreferences {
   songDetailCompactView: boolean;
   songPreviewMuted: boolean;
   songPreviewVolume: number;
+  songExplorerSortBy: SongSortOption;
+  songExplorerSortDirection: SortDirection;
+  songExplorerFavoritesFirst: boolean;
 }
 
 interface AuthProviderIdentity {
@@ -250,7 +254,10 @@ interface BotPlayerProfileDocument {
 const DEFAULT_USER_PREFERENCES: UserPreferences = {
   songDetailCompactView: false,
   songPreviewMuted: true,
-  songPreviewVolume: 0.75,
+  songPreviewVolume: 0.5,
+  songExplorerSortBy: "series",
+  songExplorerSortDirection: "desc",
+  songExplorerFavoritesFirst: false,
 };
 
 function tokenHash(token: string): string {
@@ -1228,6 +1235,9 @@ export async function updateUserPreferences(user: PublicUser, preferences: Parti
     "preferences.songDetailCompactView"?: boolean;
     "preferences.songPreviewMuted"?: boolean;
     "preferences.songPreviewVolume"?: number;
+    "preferences.songExplorerSortBy"?: SongSortOption;
+    "preferences.songExplorerSortDirection"?: SortDirection;
+    "preferences.songExplorerFavoritesFirst"?: boolean;
     updatedAt: Date;
   } = {
     updatedAt: new Date(),
@@ -1241,6 +1251,15 @@ export async function updateUserPreferences(user: PublicUser, preferences: Parti
   }
   if (typeof preferences.songPreviewVolume === "number") {
     updates["preferences.songPreviewVolume"] = Math.min(Math.max(preferences.songPreviewVolume, 0), 1);
+  }
+  if (isSongExplorerSortBy(preferences.songExplorerSortBy)) {
+    updates["preferences.songExplorerSortBy"] = preferences.songExplorerSortBy;
+  }
+  if (isSongExplorerSortDirection(preferences.songExplorerSortDirection)) {
+    updates["preferences.songExplorerSortDirection"] = preferences.songExplorerSortDirection;
+  }
+  if (typeof preferences.songExplorerFavoritesFirst === "boolean") {
+    updates["preferences.songExplorerFavoritesFirst"] = preferences.songExplorerFavoritesFirst;
   }
 
   const { users } = await collections();
@@ -1365,7 +1384,20 @@ function publicUserPreferences(preferences: Partial<UserPreferences> | undefined
     songDetailCompactView: preferences?.songDetailCompactView === true,
     songPreviewMuted: preferences?.songPreviewMuted !== false,
     songPreviewVolume: Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : DEFAULT_USER_PREFERENCES.songPreviewVolume,
+    songExplorerSortBy: isSongExplorerSortBy(preferences?.songExplorerSortBy) ? preferences.songExplorerSortBy : DEFAULT_USER_PREFERENCES.songExplorerSortBy,
+    songExplorerSortDirection: isSongExplorerSortDirection(preferences?.songExplorerSortDirection)
+      ? preferences.songExplorerSortDirection
+      : DEFAULT_USER_PREFERENCES.songExplorerSortDirection,
+    songExplorerFavoritesFirst: preferences?.songExplorerFavoritesFirst === true,
   };
+}
+
+function isSongExplorerSortBy(value: unknown): value is SongSortOption {
+  return value === "series" || value === "title" || value === "artist" || value === "folder";
+}
+
+function isSongExplorerSortDirection(value: unknown): value is SortDirection {
+  return value === "asc" || value === "desc";
 }
 
 function adminEmailSet(): Set<string> {

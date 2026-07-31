@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUser, updateUserPreferences } from "@/lib/auth";
+import type { SongSortOption, SortDirection } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,11 +16,17 @@ export async function POST(request: Request) {
     songDetailCompactView?: boolean;
     songPreviewMuted?: boolean;
     songPreviewVolume?: number;
+    songExplorerSortBy?: SongSortOption;
+    songExplorerSortDirection?: SortDirection;
+    songExplorerFavoritesFirst?: boolean;
   } | null;
   const preferences = {
     ...(typeof body?.songDetailCompactView === "boolean" ? { songDetailCompactView: body.songDetailCompactView } : {}),
     ...(typeof body?.songPreviewMuted === "boolean" ? { songPreviewMuted: body.songPreviewMuted } : {}),
     ...(typeof body?.songPreviewVolume === "number" && Number.isFinite(body.songPreviewVolume) ? { songPreviewVolume: body.songPreviewVolume } : {}),
+    ...(isSongExplorerSortBy(body?.songExplorerSortBy) ? { songExplorerSortBy: body.songExplorerSortBy } : {}),
+    ...(isSongExplorerSortDirection(body?.songExplorerSortDirection) ? { songExplorerSortDirection: body.songExplorerSortDirection } : {}),
+    ...(typeof body?.songExplorerFavoritesFirst === "boolean" ? { songExplorerFavoritesFirst: body.songExplorerFavoritesFirst } : {}),
   };
 
   if (Object.keys(preferences).length === 0) {
@@ -37,4 +44,12 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save preference." }, { status: 400 });
   }
+}
+
+function isSongExplorerSortBy(value: unknown): value is SongSortOption {
+  return value === "series" || value === "title" || value === "artist" || value === "folder";
+}
+
+function isSongExplorerSortDirection(value: unknown): value is SortDirection {
+  return value === "asc" || value === "desc";
 }
