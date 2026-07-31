@@ -1020,6 +1020,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
         song={openSong}
         selectedChartToken={openSongChartToken}
         communityState={openSong && openSongCommunity?.slug === openSong.slug ? openSongCommunity.state : null}
+        previewVolume={previewVolume}
         userIsAdmin={userIsAdmin}
         onClose={() => {
           setOpenSong(null);
@@ -1137,6 +1138,7 @@ function SongDetailNotebook({
   song,
   selectedChartToken,
   communityState,
+  previewVolume,
   userIsAdmin,
   onClose,
   onCopy,
@@ -1148,6 +1150,7 @@ function SongDetailNotebook({
   song: PublicSong | null;
   selectedChartToken: string | null;
   communityState: SongCommunityState | null;
+  previewVolume: number;
   userIsAdmin: boolean;
   onClose: () => void;
   onCopy: (song: PublicSong, chartToken?: string | null) => void;
@@ -1291,6 +1294,7 @@ function SongDetailNotebook({
                 mode="notebook"
                 song={song}
                 initialSelectedChartToken={selectedChartToken}
+                previewVolume={previewVolume}
                 community={{ user: null, initialState: communityState ?? EMPTY_COMMUNITY_STATE }}
                 communityReadOnly
                 onBack={onClose}

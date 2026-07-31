@@ -8,11 +8,12 @@ interface SongPreviewPlayButtonProps {
   previewUrl: string | null;
   title: string;
   className?: string;
+  volume?: number;
 }
 
 const FADE_IN_MS = 100;
 
-export function SongPreviewPlayButton({ previewUrl, title, className = "" }: SongPreviewPlayButtonProps) {
+export function SongPreviewPlayButton({ previewUrl, title, className = "", volume = 1 }: SongPreviewPlayButtonProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const fadeFrameRef = useRef<number | null>(null);
@@ -21,9 +22,10 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "" }: Son
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const targetVolume = clampVolume(volume);
 
   function setVolume(volume: number) {
-    const nextVolume = Math.min(Math.max(volume, 0), 1);
+    const nextVolume = clampVolume(volume);
     volumeRef.current = nextVolume;
     if (audioRef.current) {
       audioRef.current.volume = nextVolume;
@@ -94,7 +96,7 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "" }: Son
     try {
       await audio.play();
       setPlaying(true);
-      fadeTo(1, FADE_IN_MS);
+      fadeTo(targetVolume, FADE_IN_MS);
     } catch {
       stopPreview();
     }
@@ -165,6 +167,12 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "" }: Son
   }, [previewUrl]);
 
   useEffect(() => {
+    if (playing) {
+      setVolume(targetVolume);
+    }
+  }, [playing, targetVolume]);
+
+  useEffect(() => {
     return () => {
       cancelFade();
       audioRef.current?.pause();
@@ -232,4 +240,8 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "" }: Son
       </AnimatePresence>
     </div>
   );
+}
+
+function clampVolume(volume: number): number {
+  return Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : 1;
 }

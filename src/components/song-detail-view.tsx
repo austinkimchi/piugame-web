@@ -20,6 +20,7 @@ interface SongDetailViewProps {
   };
   communityReadOnly?: boolean;
   initialSelectedChartToken?: string | null;
+  previewVolume?: number;
   userIsAdmin?: boolean;
   mode?: "page" | "notebook";
   onBack?: () => void;
@@ -32,7 +33,7 @@ const sectionMotion = {
   transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1] },
 } as const;
 
-export function SongDetailView({ song, community, communityReadOnly = false, initialSelectedChartToken = null, userIsAdmin = false, mode = "page", onBack }: SongDetailViewProps) {
+export function SongDetailView({ song, community, communityReadOnly = false, initialSelectedChartToken = null, previewVolume, userIsAdmin = false, mode = "page", onBack }: SongDetailViewProps) {
   const [selectedChartToken, setSelectedChartToken] = useState<string | null>(
     initialSelectedChartToken && song.chartSummary.includes(initialSelectedChartToken) ? initialSelectedChartToken : song.chartSummary[0] ?? null,
   );
@@ -52,6 +53,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
   );
   const imageRadius = useTransform(scrollY, [0, 420], ["0px", "10px"]);
   const canFavorite = Boolean(community?.user);
+  const songPreviewVolume = previewVolume ?? community?.user?.preferences.songPreviewVolume ?? 1;
   const seriesLabel = (song.series ?? "Unknown series").toUpperCase();
   const folderLabel = formatFolderLabel(song);
   const bpmLabel = formatBpmLabel(song.bpm);
@@ -74,7 +76,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
       ) : (
         <div className="flex h-full items-center justify-center font-bold text-[#66705f]">No jacket</div>
       )}
-      <SongPreviewPlayButton previewUrl={song.previewUrl} title={song.title} />
+      <SongPreviewPlayButton previewUrl={song.previewUrl} title={song.title} volume={songPreviewVolume} />
     </motion.div>
   );
   const historySection = (
