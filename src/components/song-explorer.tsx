@@ -85,7 +85,8 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
   const previewAudioGraphRef = useRef<PreviewAudioGraph | null>(null);
   const activePreviewUrlRef = useRef<string | null>(null);
   const didMountPreviewPreferencesRef = useRef(false);
-  const [previewMuted, setPreviewMuted] = useState(initialPreviewMuted);
+  const lastSavedPreviewPreferencesRef = useRef<{ muted: boolean; volume: number } | null>(null);
+  const [preferredPreviewMuted, setPreferredPreviewMuted] = useState(initialPreviewMuted);
   const [previewVolume, setPreviewVolume] = useState(() => clampPreviewVolume(initialPreviewVolume));
   const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -121,7 +122,28 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     () => initialSongs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
     [favoriteSlugs, initialSongs],
   );
+  const previewMuted = preferredPreviewMuted;
   const previewEnabled = !previewMuted;
+
+  const savePreviewPreferences = useCallback(
+    (muted: boolean, volume: number, keepalive = false) => {
+      if (!canFavorite) {
+        return;
+      }
+
+      lastSavedPreviewPreferencesRef.current = { muted, volume };
+      void fetch("/api/account/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive,
+        body: JSON.stringify({
+          songPreviewMuted: muted,
+          songPreviewVolume: volume,
+        }),
+      });
+    },
+    [canFavorite],
+  );
 
   const endpoint = useCallback((searchQuery: string, cursor: string | null, filters: Record<FilterKey, string[]>, mode: LevelFilterMode, sort: SongSortOption, direction: SortDirection) => {
     const params = new URLSearchParams();
@@ -430,24 +452,29 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
   );
 
   const togglePreviewMuted = useCallback(() => {
-    const nextMuted = !previewMuted;
-    setPreviewMuted(nextMuted);
-    if (nextMuted) {
+    if (previewMuted) {
+      setPreferredPreviewMuted(false);
+      savePreviewPreferences(false, previewVolume, true);
+    } else {
+      setPreferredPreviewMuted(true);
+      savePreviewPreferences(true, previewVolume, true);
       stopSongPreview(null, false);
     }
 
-  }, [previewMuted, stopSongPreview]);
+  }, [previewMuted, previewVolume, savePreviewPreferences, stopSongPreview]);
 
   const changePreviewVolume = useCallback((volume: number) => {
     const nextVolume = clampPreviewVolume(volume);
     setPreviewVolume(nextVolume);
     if (nextVolume > 0 && previewMuted) {
-      setPreviewMuted(false);
-    } else if (nextVolume === 0 && !previewMuted) {
-      setPreviewMuted(true);
+      setPreferredPreviewMuted(false);
+      savePreviewPreferences(false, nextVolume, true);
+    } else if (nextVolume === 0 && !preferredPreviewMuted) {
+      setPreferredPreviewMuted(true);
+      savePreviewPreferences(true, nextVolume, true);
       stopSongPreview(null, false);
     }
-  }, [previewMuted, stopSongPreview]);
+  }, [preferredPreviewMuted, previewMuted, savePreviewPreferences, stopSongPreview]);
 
   useEffect(() => {
     function scrollToSearchTop(behavior: ScrollBehavior = "auto") {
@@ -527,18 +554,16 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     }
 
     const timeout = window.setTimeout(() => {
-      void fetch("/api/account/preferences", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          songPreviewMuted: previewMuted,
-          songPreviewVolume: previewVolume,
-        }),
-      });
+      const lastSaved = lastSavedPreviewPreferencesRef.current;
+      if (lastSaved?.muted === preferredPreviewMuted && lastSaved.volume === previewVolume) {
+        return;
+      }
+
+      savePreviewPreferences(preferredPreviewMuted, previewVolume);
     }, 420);
 
     return () => window.clearTimeout(timeout);
-  }, [canFavorite, previewMuted, previewVolume]);
+  }, [canFavorite, preferredPreviewMuted, previewVolume, savePreviewPreferences]);
 
   useEffect(() => {
     if (!openSong) {
