@@ -24,6 +24,7 @@ interface SongDetailViewProps {
   userIsAdmin?: boolean;
   mode?: "page" | "notebook";
   onBack?: () => void;
+  onCatalogSaved?: (song: PublicSong) => void;
 }
 
 const sectionMotion = {
@@ -33,7 +34,8 @@ const sectionMotion = {
   transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1] },
 } as const;
 
-export function SongDetailView({ song, community, communityReadOnly = false, initialSelectedChartToken = null, previewVolume, userIsAdmin = false, mode = "page", onBack }: SongDetailViewProps) {
+export function SongDetailView({ song, community, communityReadOnly = false, initialSelectedChartToken = null, previewVolume, userIsAdmin = false, mode = "page", onBack, onCatalogSaved }: SongDetailViewProps) {
+  const [currentSong, setCurrentSong] = useState(song);
   const [selectedChartToken, setSelectedChartToken] = useState<string | null>(
     initialSelectedChartToken && song.chartSummary.includes(initialSelectedChartToken) ? initialSelectedChartToken : song.chartSummary[0] ?? null,
   );
@@ -53,10 +55,18 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
   );
   const imageRadius = useTransform(scrollY, [0, 420], ["0px", "10px"]);
   const canFavorite = Boolean(community?.user);
-  const songPreviewVolume = previewVolume ?? community?.user?.preferences.songPreviewVolume ?? 1;
-  const seriesLabel = (song.series ?? "Unknown series").toUpperCase();
-  const folderLabel = formatFolderLabel(song);
-  const bpmLabel = formatBpmLabel(song.bpm);
+  const songPreviewVolume = previewVolume ?? community?.user?.preferences.songPreviewVolume ?? 0.5;
+  const seriesLabel = (currentSong.series ?? "Unknown series").toUpperCase();
+  const folderLabel = formatFolderLabel(currentSong);
+  const bpmLabel = formatBpmLabel(currentSong.bpm);
+
+  function handleCatalogSaved(updatedSong: PublicSong) {
+    setCurrentSong(updatedSong);
+    if (!selectedChartToken || !updatedSong.chartSummary.includes(selectedChartToken)) {
+      setSelectedChartToken(updatedSong.chartSummary[0] ?? null);
+    }
+    onCatalogSaved?.(updatedSong);
+  }
   const jacketImage = (
     <motion.div
       layout
@@ -71,12 +81,12 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
       }
       transition={{ type: "spring", stiffness: 260, damping: 30 }}
     >
-      {song.imageUrl ? (
-        <Image alt={`${song.title} jacket`} className="object-cover" fill priority sizes={isCompact ? "128px" : "360px"} src={song.imageUrl} />
+      {currentSong.imageUrl ? (
+        <Image alt={`${currentSong.title} jacket`} className="object-cover" fill priority sizes={isCompact ? "128px" : "360px"} src={currentSong.imageUrl} />
       ) : (
         <div className="flex h-full items-center justify-center font-bold text-[#66705f]">No jacket</div>
       )}
-      <SongPreviewPlayButton previewUrl={song.previewUrl} title={song.title} volume={songPreviewVolume} />
+      <SongPreviewPlayButton previewUrl={currentSong.previewUrl} title={currentSong.title} volume={songPreviewVolume} />
     </motion.div>
   );
   const historySection = (
@@ -98,7 +108,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
 
     setFavoriteSaving(true);
     try {
-      const response = await fetch(`/api/songs/${encodeURIComponent(song.slug)}/community`, {
+      const response = await fetch(`/api/songs/${encodeURIComponent(currentSong.slug)}/community`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "save", saved: !favoriteSaved }),
@@ -169,7 +179,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <CatalogAdminEditor label="song details" song={song} userIsAdmin={userIsAdmin} />
+            <CatalogAdminEditor label="song details" song={currentSong} userIsAdmin={userIsAdmin} onSaved={handleCatalogSaved} />
             {canToggleCompact ? (
               <button
                 aria-label={compactView ? "Show full screen view" : "Show small screen view"}
@@ -198,7 +208,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
                 <Link
                   aria-label="Sign in to favorite"
                   className="inline-flex h-10 w-10 items-center justify-center border border-[#cdd5c5] bg-white text-[#596153] transition hover:border-[#28c950] hover:text-[#28c950]"
-                  href={`/api/auth/google/login?next=/songs/${song.slug}`}
+                  href={`/api/auth/google/login?next=/songs/${currentSong.slug}`}
                   title="Sign in to favorite"
                 >
                   <Star aria-hidden="true" size={19} />
@@ -217,7 +227,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
           <motion.div className="min-w-0" layout transition={{ type: "spring", stiffness: 190, damping: 28, mass: 0.9 }}>
             <motion.div className="flex items-start gap-3" layout transition={{ type: "spring", stiffness: 190, damping: 28, mass: 0.9 }}>
               <motion.h1 className="text-5xl font-black leading-none tracking-normal text-[#11130f] sm:text-7xl" layout>
-                {song.title}
+                {currentSong.title}
               </motion.h1>
             </motion.div>
             <motion.p
@@ -227,7 +237,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.08, duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
             >
-              {song.artist}
+              {currentSong.artist}
             </motion.p>
           </motion.div>
         </motion.div>
@@ -238,8 +248,8 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
             Charts
           </div>
           <div className="flex flex-wrap gap-2">
-            {song.chartSummary.length > 0 ? (
-              song.chartSummary.map((chart) => (
+            {currentSong.chartSummary.length > 0 ? (
+              currentSong.chartSummary.map((chart) => (
                 <motion.button
                   key={chart}
                   className={`border px-3 py-1.5 text-sm font-black transition ${selectedChartToken === chart ? "border-[#171916] bg-[#171916] text-white shadow-[0_10px_24px_rgba(29,35,24,0.14)]" : "border-[#d8dfd1] bg-white text-[#3d4638] hover:border-[#28c950] hover:text-[#28c950]"}`}
@@ -259,12 +269,12 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
 
         {community ? (
           <SongCommunityPanel
-            key={`${song.slug}:${community.initialState.posts.length}:${community.initialState.communityTags.length}:${community.initialState.tagVotes.length}:${community.initialState.note.length}`}
+            key={`${currentSong.slug}:${community.initialState.posts.length}:${community.initialState.communityTags.length}:${community.initialState.tagVotes.length}:${community.initialState.note.length}`}
             afterCommunity={historySection}
             initialState={community.initialState}
             readOnly={communityReadOnly}
             selectedChartToken={selectedChartToken}
-            song={song}
+            song={currentSong}
             user={community.user}
           />
         ) : (
@@ -274,8 +284,8 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
               Tags
             </div>
             <div className="flex flex-wrap gap-2">
-              {song.tags.length > 0 ? (
-                song.tags.map((tag) => (
+              {currentSong.tags.length > 0 ? (
+                currentSong.tags.map((tag) => (
                   <span key={tag} className="border border-[#d8dfd1] bg-white px-3 py-1.5 text-sm font-bold text-[#3d4638]">
                     {tag}
                   </span>

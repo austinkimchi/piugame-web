@@ -26,6 +26,9 @@ interface SongExplorerProps {
   canFavorite: boolean;
   initialPreviewMuted: boolean;
   initialPreviewVolume: number;
+  initialSortBy: SongSortOption;
+  initialSortDirection: SortDirection;
+  initialFavoritesFirst: boolean;
   userIsAdmin: boolean;
 }
 
@@ -67,7 +70,18 @@ interface PreviewVoice {
   volume: number;
 }
 
-export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavorite, initialPreviewMuted, initialPreviewVolume, userIsAdmin }: SongExplorerProps) {
+export function SongExplorer({
+  initialSongs,
+  featureSong,
+  filterOptions,
+  canFavorite,
+  initialPreviewMuted,
+  initialPreviewVolume,
+  initialSortBy,
+  initialSortDirection,
+  initialFavoritesFirst,
+  userIsAdmin,
+}: SongExplorerProps) {
   const landingSectionRef = useRef<HTMLElement | null>(null);
   const searchSectionRef = useRef<HTMLElement | null>(null);
   const filterPanelRef = useRef<HTMLElement | null>(null);
@@ -78,9 +92,9 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     charts: [],
   });
   const levelModeRef = useRef<LevelFilterMode>("and");
-  const sortByRef = useRef<SongSortOption>("series");
-  const sortDirectionRef = useRef<SortDirection>("desc");
-  const favoritesFirstRef = useRef(false);
+  const sortByRef = useRef<SongSortOption>(initialSortBy);
+  const sortDirectionRef = useRef<SortDirection>(initialSortDirection);
+  const favoritesFirstRef = useRef(initialFavoritesFirst);
   const previewVoiceIdRef = useRef(0);
   const previewVoicesRef = useRef<PreviewVoice[]>([]);
   const previewAudioGraphRef = useRef<PreviewAudioGraph | null>(null);
@@ -108,9 +122,9 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
   const [resultBatch, setResultBatch] = useState(0);
   const [compatibleFilterOptions, setCompatibleFilterOptions] = useState(filterOptions);
   const [levelMode, setLevelMode] = useState<LevelFilterMode>("and");
-  const [sortBy, setSortBy] = useState<SongSortOption>("series");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [favoritesFirst, setFavoritesFirst] = useState(false);
+  const [sortBy, setSortBy] = useState<SongSortOption>(initialSortBy);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(initialSortDirection);
+  const [favoritesFirst, setFavoritesFirst] = useState(initialFavoritesFirst);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [openSong, setOpenSong] = useState<PublicSong | null>(null);
   const [openSongChartToken, setOpenSongChartToken] = useState<string | null>(null);
@@ -273,6 +287,21 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     setOpenSong(song);
     setOpenSongChartToken(chartToken ?? null);
   }, []);
+
+  const handleCatalogSongSaved = useCallback(
+    (updatedSong: PublicSong) => {
+      const previousSlug = openSong?.slug;
+      setOpenSong(updatedSong);
+      setSongs((current) =>
+        current.map((song) =>
+          song.slug === previousSlug || song.slug === updatedSong.slug
+            ? { ...updatedSong, isFavorite: favoriteSlugs.has(updatedSong.slug) || Boolean(song.isFavorite) }
+            : song,
+        ),
+      );
+    },
+    [favoriteSlugs, openSong?.slug],
+  );
 
   const removePreviewVoice = useCallback((voice: PreviewVoice) => {
     if (voice.fadeFrame !== null) {
@@ -1083,6 +1112,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
           setOpenSongChartToken(null);
         }}
         onCopy={copySongLink}
+        onCatalogSaved={handleCatalogSongSaved}
         onToggleFavorite={toggleFavorite}
       />
     </MotionConfig>
@@ -1107,7 +1137,7 @@ function landingSongVisibilityClass(index: number): string {
 }
 
 function clampPreviewVolume(volume: number): number {
-  return Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : 0.75;
+  return Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : 0.5;
 }
 
 function PreviewToggleButton({
@@ -1198,6 +1228,7 @@ function SongDetailNotebook({
   userIsAdmin,
   onClose,
   onCopy,
+  onCatalogSaved,
   onToggleFavorite,
 }: {
   canFavorite: boolean;
@@ -1210,6 +1241,7 @@ function SongDetailNotebook({
   userIsAdmin: boolean;
   onClose: () => void;
   onCopy: (song: PublicSong, chartToken?: string | null) => void;
+  onCatalogSaved: (song: PublicSong) => void;
   onToggleFavorite: (song: PublicSong) => void;
 }) {
   const notebookRef = useRef<HTMLDivElement | null>(null);
@@ -1308,7 +1340,7 @@ function SongDetailNotebook({
               onPointerDown={maybeStartResize}
           >
             <div className="absolute right-7 top-8 z-20 flex shrink-0 items-center gap-2">
-              <CatalogAdminEditor label="song details" song={song} userIsAdmin={userIsAdmin} />
+              <CatalogAdminEditor label="song details" song={song} userIsAdmin={userIsAdmin} onSaved={onCatalogSaved} />
               <a
                 aria-label="Open full song page"
                 className="notebook-action inline-flex size-10 items-center justify-center border border-[#cfd7c8] bg-white/90 text-[#343b30] shadow-[0_8px_22px_rgba(30,34,26,0.10)] backdrop-blur transition hover:bg-[#eef1e8]"
@@ -1353,6 +1385,7 @@ function SongDetailNotebook({
                 previewVolume={previewVolume}
                 community={{ user: null, initialState: communityState ?? EMPTY_COMMUNITY_STATE }}
                 communityReadOnly
+                onCatalogSaved={onCatalogSaved}
                 onBack={onClose}
               />
             </div>

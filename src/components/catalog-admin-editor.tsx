@@ -11,12 +11,13 @@ interface CatalogAdminEditorProps {
   userIsAdmin: boolean;
   label: string;
   focus?: "song" | "charts";
+  onSaved?: (song: PublicSong) => void;
 }
 
 type SaveStatus = "idle" | "saving" | "error";
 const AUDIO_ACCEPT = "audio/mpeg,audio/mp3,audio/ogg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,.mp3,.ogg,.wav,.m4a";
 
-export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song" }: CatalogAdminEditorProps) {
+export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song", onSaved }: CatalogAdminEditorProps) {
   const { viewingAsRegular } = useAdminViewMode();
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<SaveStatus>("idle");
@@ -118,7 +119,11 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song" }:
     }
 
     setStatus("idle");
-    window.location.href = `/songs/${responseBody.song.slug}`;
+    setDraft(payloadFromSong(responseBody.song));
+    setAudioFile(null);
+    setMessage("");
+    onSaved?.(responseBody.song);
+    setOpen(false);
   }
 
   return (
