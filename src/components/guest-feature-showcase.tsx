@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, BookmarkCheck, MessageSquareText, Search, Tags } from "lucide-react";
+import { ArrowRight, MessageSquareText, Search, Star, Tags } from "lucide-react";
 import dynamic from "next/dynamic";
 import { motion } from "motion/react";
 
@@ -25,19 +25,19 @@ const features = [
     body: "Search by title, artist, folder, series, tag, or exact chart level.",
   },
   {
-    icon: BookmarkCheck,
-    title: "Save your rotation",
-    body: "Favorite songs you are clearing, grinding, or saving for the next session.",
+    icon: Star,
+    title: "Favorite Songs",
+    body: "Keep your clears, grind targets, and next-session picks close at hand.",
   },
   {
     icon: Tags,
-    title: "Trust player context",
-    body: "Community tags surface the patterns people actually feel under their feet.",
+    title: "Share your moment",
+    body: "Post the clears, breakthroughs, and close calls that make each chart yours.",
   },
   {
     icon: MessageSquareText,
-    title: "Leave notes where they matter",
-    body: "Attach goals, screenshots, and reminders directly to the song detail view.",
+    title: "Track each chart",
+    body: "Add goals, screenshots, and reminders directly to the song detail view.",
   },
 ];
 
@@ -50,14 +50,14 @@ export function GuestFeatureShowcase({
 }) {
   return (
     <motion.section
-      className="feature-showcase relative overflow-visible border-y border-[#d9ded2] bg-[#f3f6ef]"
+      className="feature-showcase relative overflow-hidden border-y border-[#d9ded2] bg-[#f3f6ef] lg:overflow-visible"
       initial={{ opacity: 0, y: 18 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-80px" }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 py-10 sm:px-8 lg:grid-cols-[minmax(330px,0.84fr)_minmax(0,1.16fr)] lg:items-center lg:px-10 lg:py-14">
-        <div>
+      <div className="relative z-10 mx-auto grid max-w-7xl gap-6 px-5 py-8 sm:px-8 lg:grid-cols-[minmax(330px,0.84fr)_minmax(0,1.16fr)] lg:items-center lg:gap-8 lg:px-10 lg:py-14">
+        <div className="relative z-10">
           <h2 className="max-w-2xl text-4xl font-black leading-none tracking-normal text-[#11130f] sm:text-5xl">
             Turn every<br/>song into your<br/>personal notebook.
           </h2>
@@ -65,25 +65,25 @@ export function GuestFeatureShowcase({
             MyPIU offers a home for Pump It Up players that want to  share their plays and keep track of their favorite songs. 
           </p>
 
-          <div className="mt-7 grid gap-3">
+          <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-1 sm:gap-3 lg:mt-7">
             {features.map((feature, index) => {
               const Icon = feature.icon;
 
               return (
                 <motion.article
                   key={feature.title}
-                  className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border border-[#d5ddce] bg-white/84 p-3 shadow-[0_10px_34px_rgba(25,32,22,0.06)] backdrop-blur"
+                  className="grid min-h-[4.25rem] grid-cols-[2.25rem_minmax(0,1fr)] gap-2 border border-[#d5ddce] bg-white/84 p-2 shadow-[0_10px_34px_rgba(25,32,22,0.06)] backdrop-blur sm:min-h-0 sm:grid-cols-[2.75rem_minmax(0,1fr)] sm:gap-3 sm:p-3"
                   initial={{ opacity: 0, x: -16 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: index * 0.05, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 >
-                  <span className="flex size-11 items-center justify-center border border-[#bfd2c1] bg-[#eaffef] text-[#1f7a43]">
+                  <span className="flex size-9 items-center justify-center border border-[#bfd2c1] bg-[#eaffef] text-[#1f7a43] sm:size-11">
                     <Icon aria-hidden="true" size={19} />
                   </span>
                   <span className="min-w-0">
-                    <strong className="block text-sm font-black uppercase text-[#171916]">{feature.title}</strong>
-                    <span className="mt-1 block text-sm font-medium leading-6 text-[#64705d]">{feature.body}</span>
+                    <strong className="block text-xs font-black uppercase leading-5 text-[#171916] sm:text-sm">{feature.title}</strong>
+                    <span className="mt-1 hidden text-sm font-medium leading-6 text-[#64705d] sm:block">{feature.body}</span>
                   </span>
                 </motion.article>
               );
@@ -112,7 +112,7 @@ export function GuestFeatureShowcase({
           </div>
         </div>
 
-        <div className="relative mt-10 min-h-[560px] overflow-visible sm:mt-0 sm:min-h-[610px] lg:min-h-[640px]">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 top-24 z-0 opacity-20 sm:top-16 lg:pointer-events-auto lg:relative lg:inset-auto lg:z-auto lg:mt-10 lg:min-h-[640px] lg:opacity-100">
           <SongPopupModel song={featureSong} />
         </div>
       </div>

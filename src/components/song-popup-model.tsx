@@ -4,6 +4,7 @@ import { ArrowLeft, Bookmark, Clock3, ExternalLink, Folder, Link2, Music2, Star,
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
 
+import { SongPreviewPlayButton } from "@/components/song-preview-play-button";
 import type { PublicSong } from "@/lib/types";
 
 const chartTokens = ["S13", "S17", "S22", "S25", "D18", "D24", "D27"];
@@ -13,6 +14,7 @@ export function SongPopupModel({ song }: { song: PublicSong | null }) {
   const artist = song?.artist ?? "xi";
   const bpm = song?.bpm ?? "222.22 BPM";
   const imageUrl = song?.imageUrl;
+  const previewUrl = song?.previewUrl ?? null;
 
   return (
     <div className="relative h-[560px] overflow-visible bg-transparent sm:h-[610px] lg:h-[640px]">
@@ -51,6 +53,7 @@ export function SongPopupModel({ song }: { song: PublicSong | null }) {
                 ) : (
                   <span aria-hidden="true" className="block size-full bg-[linear-gradient(135deg,#d8f4e3,#dcecff_45%,#fff0be)]" />
                 )}
+                <SongPreviewPlayButton previewUrl={previewUrl} title={title} />
               </div>
             </div>
 

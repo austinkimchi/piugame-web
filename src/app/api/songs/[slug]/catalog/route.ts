@@ -7,6 +7,34 @@ import type { CatalogEditorPayload } from "@/lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function formValue(formData: FormData, key: keyof CatalogEditorPayload): FormDataEntryValue | null {
+  return formData.get(key);
+}
+
+function parseFormList(formData: FormData, key: keyof CatalogEditorPayload): string[] {
+  const value = formValue(formData, key);
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+  return Array.isArray(parsed) ? parsed.map(String) : [];
+}
+
+function parseFormPayload(formData: FormData): Partial<CatalogEditorPayload> {
+  const folderPosition = formValue(formData, "folderPosition");
+
+  return {
+    title: String(formValue(formData, "title") ?? ""),
+    artist: String(formValue(formData, "artist") ?? ""),
+    folder: String(formValue(formData, "folder") ?? ""),
+    folderPosition: typeof folderPosition === "string" && folderPosition !== "" ? Number(folderPosition) : null,
+    series: String(formValue(formData, "series") ?? ""),
+    tags: parseFormList(formData, "tags"),
+    chartTokens: parseFormList(formData, "chartTokens"),
+  };
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const user = await getCurrentUser();
   if (!user) {
@@ -17,13 +45,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   const { slug } = await params;
-  const body = (await request.json().catch(() => null)) as Partial<CatalogEditorPayload> | null;
-  if (!body) {
-    return NextResponse.json({ error: "Missing catalog edits." }, { status: 400 });
-  }
+  const contentType = request.headers.get("content-type") ?? "";
+  let body: Partial<CatalogEditorPayload> | null = null;
+  let audioFile: File | null = null;
 
   try {
-    const song = await updateCatalogSong(slug, body);
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData().catch(() => null);
+      if (formData) {
+        body = parseFormPayload(formData);
+        const audio = formData.get("audio");
+        audioFile = audio instanceof File && audio.size > 0 ? audio : null;
+      }
+    } else {
+      body = (await request.json().catch(() => null)) as Partial<CatalogEditorPayload> | null;
+    }
+
+    if (!body) {
+      return NextResponse.json({ error: "Missing catalog edits." }, { status: 400 });
+    }
+
+    const song = await updateCatalogSong(slug, body, audioFile);
     return NextResponse.json(
       { song },
       {

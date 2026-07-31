@@ -4,6 +4,7 @@ import { ChevronDown, ExternalLink, Filter, Link2, ListSortAscending, ListSortDe
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { CatalogAdminEditor } from "@/components/catalog-admin-editor";
 import { GuestFeatureShowcase } from "@/components/guest-feature-showcase";
 import { SongCard } from "@/components/song-card";
 import { SongDetailView } from "@/components/song-detail-view";
@@ -23,6 +24,9 @@ interface SongExplorerProps {
   featureSong: PublicSong | null;
   filterOptions: CatalogFilterOptions;
   canFavorite: boolean;
+  initialPreviewMuted: boolean;
+  initialPreviewVolume: number;
+  userIsAdmin: boolean;
 }
 
 type FilterKey = "folders" | "series" | "levels" | "charts";
@@ -36,6 +40,8 @@ const SORT_OPTIONS: Array<{ value: SongSortOption; label: string }> = [
 const SEARCH_HASH = "#search";
 const NOTEBOOK_RESIZE_HANDLE_SIZE = 40;
 const NOTEBOOK_SIZE_STORAGE_KEY = "mypiu-song-notebook-size:v2";
+const PREVIEW_FADE_IN_MS = 100;
+const PREVIEW_FADE_OUT_MS = 700;
 const EMPTY_COMMUNITY_STATE: SongCommunityState = {
   saved: false,
   note: "",
@@ -45,7 +51,23 @@ const EMPTY_COMMUNITY_STATE: SongCommunityState = {
   posts: [],
 };
 
-export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavorite }: SongExplorerProps) {
+interface PreviewAudioGraph {
+  context: AudioContext;
+  destination: AudioNode;
+}
+
+interface PreviewVoice {
+  id: number;
+  url: string;
+  audio: HTMLAudioElement;
+  source: MediaElementAudioSourceNode | null;
+  compressor: DynamicsCompressorNode | null;
+  gain: GainNode | null;
+  fadeFrame: number | null;
+  volume: number;
+}
+
+export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavorite, initialPreviewMuted, initialPreviewVolume, userIsAdmin }: SongExplorerProps) {
   const landingSectionRef = useRef<HTMLElement | null>(null);
   const searchSectionRef = useRef<HTMLElement | null>(null);
   const filterPanelRef = useRef<HTMLElement | null>(null);
@@ -58,7 +80,14 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
   const levelModeRef = useRef<LevelFilterMode>("and");
   const sortByRef = useRef<SongSortOption>("series");
   const sortDirectionRef = useRef<SortDirection>("desc");
-  const [previewEnabled, setPreviewEnabled] = useState(false);
+  const previewVoiceIdRef = useRef(0);
+  const previewVoicesRef = useRef<PreviewVoice[]>([]);
+  const previewAudioGraphRef = useRef<PreviewAudioGraph | null>(null);
+  const activePreviewUrlRef = useRef<string | null>(null);
+  const didMountPreviewPreferencesRef = useRef(false);
+  const [previewMuted, setPreviewMuted] = useState(initialPreviewMuted);
+  const [previewVolume, setPreviewVolume] = useState(() => clampPreviewVolume(initialPreviewVolume));
+  const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selectedFilters, setSelectedFilters] = useState<Record<FilterKey, string[]>>({
     folders: [],
@@ -79,6 +108,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
   const [levelMode, setLevelMode] = useState<LevelFilterMode>("and");
   const [sortBy, setSortBy] = useState<SongSortOption>("series");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [openSong, setOpenSong] = useState<PublicSong | null>(null);
   const [openSongChartToken, setOpenSongChartToken] = useState<string | null>(null);
   const [openSongCommunity, setOpenSongCommunity] = useState<{ slug: string; state: SongCommunityState } | null>(null);
@@ -91,6 +121,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     () => initialSongs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
     [favoriteSlugs, initialSongs],
   );
+  const previewEnabled = !previewMuted;
 
   const endpoint = useCallback((searchQuery: string, cursor: string | null, filters: Record<FilterKey, string[]>, mode: LevelFilterMode, sort: SongSortOption, direction: SortDirection) => {
     const params = new URLSearchParams();
@@ -196,6 +227,228 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     setOpenSongChartToken(chartToken ?? null);
   }, []);
 
+  const removePreviewVoice = useCallback((voice: PreviewVoice) => {
+    if (voice.fadeFrame !== null) {
+      window.cancelAnimationFrame(voice.fadeFrame);
+      voice.fadeFrame = null;
+    }
+
+    voice.audio.pause();
+    voice.audio.removeAttribute("src");
+    voice.audio.load();
+    voice.source?.disconnect();
+    voice.compressor?.disconnect();
+    voice.gain?.disconnect();
+    previewVoicesRef.current = previewVoicesRef.current.filter((item) => item !== voice);
+  }, []);
+
+  const setPreviewVoiceVolume = useCallback((voice: PreviewVoice, volume: number) => {
+    const nextVolume = clampPreviewVolume(volume);
+
+    voice.volume = nextVolume;
+    if (voice.gain) {
+      const context = previewAudioGraphRef.current?.context;
+      if (context) {
+        const now = context.currentTime;
+        voice.gain.gain.cancelScheduledValues(now);
+        voice.gain.gain.setValueAtTime(nextVolume, now);
+      } else {
+        voice.gain.gain.value = nextVolume;
+      }
+    } else {
+      voice.audio.volume = nextVolume;
+    }
+  }, []);
+
+  const cancelVoiceFade = useCallback((voice: PreviewVoice) => {
+    if (voice.fadeFrame !== null) {
+      window.cancelAnimationFrame(voice.fadeFrame);
+      voice.fadeFrame = null;
+    }
+  }, []);
+
+  const fadePreviewVoice = useCallback(
+    (voice: PreviewVoice, targetVolume: number, durationMs: number, onComplete?: () => void) => {
+      cancelVoiceFade(voice);
+
+      const startVolume = voice.volume;
+      const target = clampPreviewVolume(targetVolume);
+      if (durationMs <= 0 || Math.abs(startVolume - target) < 0.001) {
+        setPreviewVoiceVolume(voice, target);
+        onComplete?.();
+        return;
+      }
+
+      const startTime = window.performance.now();
+      const tick = (now: number) => {
+        const progress = Math.min((now - startTime) / durationMs, 1);
+        const eased = 1 - (1 - progress) ** 2;
+        setPreviewVoiceVolume(voice, startVolume + (target - startVolume) * eased);
+
+        if (progress < 1) {
+          voice.fadeFrame = window.requestAnimationFrame(tick);
+          return;
+        }
+
+        voice.fadeFrame = null;
+        onComplete?.();
+      };
+
+      voice.fadeFrame = window.requestAnimationFrame(tick);
+    },
+    [cancelVoiceFade, setPreviewVoiceVolume],
+  );
+
+  const ensurePreviewAudioGraph = useCallback(() => {
+    if (previewAudioGraphRef.current) {
+      return previewAudioGraphRef.current;
+    }
+
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    const AudioContextConstructor = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) {
+      return null;
+    }
+
+    try {
+      const context = new AudioContextConstructor();
+      previewAudioGraphRef.current = { context, destination: context.destination };
+      return previewAudioGraphRef.current;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const connectPreviewVoice = useCallback((voice: PreviewVoice, graph: PreviewAudioGraph | null) => {
+    if (!graph || voice.gain) {
+      return;
+    }
+
+    try {
+      const source = graph.context.createMediaElementSource(voice.audio);
+      const compressor = graph.context.createDynamicsCompressor();
+      const gain = graph.context.createGain();
+
+      compressor.threshold.value = -18;
+      compressor.knee.value = 18;
+      compressor.ratio.value = 3;
+      compressor.attack.value = 0.006;
+      compressor.release.value = 0.18;
+      gain.gain.value = voice.volume;
+
+      source.connect(compressor);
+      compressor.connect(gain);
+      gain.connect(graph.destination);
+      voice.audio.volume = 1;
+      voice.source = source;
+      voice.compressor = compressor;
+      voice.gain = gain;
+    } catch {
+      voice.audio.volume = voice.volume;
+    }
+  }, []);
+
+  const stopSongPreview = useCallback((previewUrl?: string | null, fade = true) => {
+    if (previewUrl && activePreviewUrlRef.current !== previewUrl) {
+      return;
+    }
+
+    activePreviewUrlRef.current = null;
+    setActivePreviewUrl(null);
+
+    const voices = previewUrl
+      ? previewVoicesRef.current.filter((voice) => voice.url === previewUrl)
+      : [...previewVoicesRef.current];
+
+    for (const voice of voices) {
+      if (fade && !voice.audio.paused) {
+        fadePreviewVoice(voice, 0, PREVIEW_FADE_OUT_MS, () => removePreviewVoice(voice));
+      } else {
+        removePreviewVoice(voice);
+      }
+    }
+  }, [fadePreviewVoice, removePreviewVoice]);
+
+  const playSongPreview = useCallback(
+    async (song: PublicSong) => {
+      if (previewMuted || !song.previewUrl) {
+        return;
+      }
+
+      const graph = ensurePreviewAudioGraph();
+      if (graph?.context.state === "suspended") {
+        await graph.context.resume().catch(() => undefined);
+      }
+
+      for (const voice of previewVoicesRef.current) {
+        if (voice.url !== song.previewUrl && voice.volume > 0) {
+          fadePreviewVoice(voice, 0, PREVIEW_FADE_OUT_MS, () => removePreviewVoice(voice));
+        }
+      }
+
+      const existingVoice = previewVoicesRef.current.find((voice) => voice.url === song.previewUrl);
+      const voice =
+        existingVoice ??
+        {
+          id: previewVoiceIdRef.current + 1,
+          url: song.previewUrl,
+          audio: new Audio(song.previewUrl),
+          source: null,
+          compressor: null,
+          gain: null,
+          fadeFrame: null,
+          volume: 0,
+        };
+
+      if (!existingVoice) {
+        previewVoiceIdRef.current = voice.id;
+        voice.audio.loop = true;
+        voice.audio.preload = "auto";
+        voice.audio.volume = 0;
+        connectPreviewVoice(voice, graph);
+        previewVoicesRef.current = [...previewVoicesRef.current, voice];
+      }
+      cancelVoiceFade(voice);
+      activePreviewUrlRef.current = song.previewUrl;
+      setActivePreviewUrl(song.previewUrl);
+
+      try {
+        await voice.audio.play();
+        fadePreviewVoice(voice, previewVolume, PREVIEW_FADE_IN_MS);
+      } catch {
+        removePreviewVoice(voice);
+        if (activePreviewUrlRef.current === song.previewUrl) {
+          activePreviewUrlRef.current = null;
+          setActivePreviewUrl(null);
+        }
+      }
+    },
+    [cancelVoiceFade, connectPreviewVoice, ensurePreviewAudioGraph, fadePreviewVoice, previewMuted, previewVolume, removePreviewVoice],
+  );
+
+  const togglePreviewMuted = useCallback(() => {
+    const nextMuted = !previewMuted;
+    setPreviewMuted(nextMuted);
+    if (nextMuted) {
+      stopSongPreview(null, false);
+    }
+
+  }, [previewMuted, stopSongPreview]);
+
+  const changePreviewVolume = useCallback((volume: number) => {
+    const nextVolume = clampPreviewVolume(volume);
+    setPreviewVolume(nextVolume);
+    if (nextVolume > 0 && previewMuted) {
+      setPreviewMuted(false);
+    } else if (nextVolume === 0 && !previewMuted) {
+      setPreviewMuted(true);
+      stopSongPreview(null, false);
+    }
+  }, [previewMuted, stopSongPreview]);
+
   useEffect(() => {
     function scrollToSearchTop(behavior: ScrollBehavior = "auto") {
       const searchSection = searchSectionRef.current;
@@ -241,6 +494,51 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
 
     return () => window.clearTimeout(timeout);
   }, [query, runSearch]);
+
+  useEffect(() => {
+    return () => {
+      for (const voice of previewVoicesRef.current) {
+        removePreviewVoice(voice);
+      }
+      void previewAudioGraphRef.current?.context.close();
+      previewAudioGraphRef.current = null;
+    };
+  }, [removePreviewVoice]);
+
+  useEffect(() => {
+    if (!activePreviewUrlRef.current || previewMuted) {
+      return;
+    }
+
+    const voice = previewVoicesRef.current.find((item) => item.url === activePreviewUrlRef.current);
+    if (voice) {
+      setPreviewVoiceVolume(voice, previewVolume);
+    }
+  }, [previewMuted, previewVolume, setPreviewVoiceVolume]);
+
+  useEffect(() => {
+    if (!canFavorite) {
+      return;
+    }
+
+    if (!didMountPreviewPreferencesRef.current) {
+      didMountPreviewPreferencesRef.current = true;
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void fetch("/api/account/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          songPreviewMuted: previewMuted,
+          songPreviewVolume: previewVolume,
+        }),
+      });
+    }, 420);
+
+    return () => window.clearTimeout(timeout);
+  }, [canFavorite, previewMuted, previewVolume]);
 
   useEffect(() => {
     if (!openSong) {
@@ -340,12 +638,64 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
     }
   }
 
+  function renderFilterPanel() {
+    return (
+      <>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-2 text-sm font-black uppercase text-[#596153]">
+            <Filter aria-hidden="true" size={17} />
+            Filters
+          </div>
+          <AnimatePresence initial={false}>
+            {activeFilterCount > 0 ? (
+              <motion.button
+                className="text-xs font-black text-[#1f7a43] hover:text-[#171916]"
+                type="button"
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 8 }}
+                whileTap={{ scale: 0.94 }}
+                onClick={clearFilters}
+              >
+                Clear
+              </motion.button>
+            ) : null}
+          </AnimatePresence>
+        </div>
+
+        <LevelFilterGroup
+          label={levelMode === "and" ? "Levels (&)" : "Levels"}
+          labelTitle="Toggle level matching"
+          chartOptions={compatibleFilterOptions.charts}
+          levelOptions={compatibleFilterOptions.levels}
+          selectedCharts={selectedFilters.charts}
+          selectedLevels={selectedFilters.levels}
+          onLabelClick={toggleLevelMode}
+          onToggleChart={(value) => toggleFilter("charts", value)}
+          onToggleLevel={(value) => toggleFilter("levels", value)}
+        />
+        <FilterGroup
+          label="Folder"
+          options={compatibleFilterOptions.folders}
+          selected={selectedFilters.folders}
+          onToggle={(value) => toggleFilter("folders", value)}
+        />
+        <FilterGroup
+          label="Series"
+          options={compatibleFilterOptions.series}
+          selected={selectedFilters.series}
+          onToggle={(value) => toggleFilter("series", value)}
+        />
+      </>
+    );
+  }
+
   return (
     <MotionConfig reducedMotion="user">
       {canFavorite ? (
         <motion.section
           ref={landingSectionRef}
-          className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10"
+          className="mx-auto hidden max-w-7xl px-5 py-8 sm:block sm:px-8 lg:px-10"
           initial={{ opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
@@ -357,8 +707,10 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
               <p className="mt-1 text-sm font-medium text-[#66705f]">PHOENIX 2 released 07/2026</p>
             </div>
             <PreviewToggleButton
-              enabled={previewEnabled}
-              onToggle={() => setPreviewEnabled((value) => !value)}
+              muted={previewMuted}
+              volume={previewVolume}
+              onVolumeChange={changePreviewVolume}
+              onToggle={togglePreviewMuted}
             />
           </div>
 
@@ -367,7 +719,10 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
               <div key={`new-${song.slug}`} className={landingSongVisibilityClass(index)}>
                 <SongCard
                   onOpen={openSongDetail}
+                  isPreviewActive={Boolean(song.previewUrl && activePreviewUrl === song.previewUrl)}
                   previewEnabled={previewEnabled}
+                  onPreviewStart={playSongPreview}
+                  onPreviewStop={() => stopSongPreview(song.previewUrl)}
                   sequence={index}
                   song={song}
                 />
@@ -409,58 +764,50 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
         <div className="mx-auto grid max-w-7xl gap-5 px-5 py-8 sm:px-8 lg:grid-cols-[260px_minmax(0,1fr)] lg:px-10">
           <motion.aside
             ref={filterPanelRef}
-            className="self-start border border-[#d6ddcf] bg-white p-4"
+            className="hidden self-start border border-[#d6ddcf] bg-white p-4 lg:block"
             initial={{ opacity: 0, x: -18 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
           >
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="inline-flex items-center gap-2 text-sm font-black uppercase text-[#596153]">
-                <Filter aria-hidden="true" size={17} />
-                Filters
-              </div>
-              <AnimatePresence initial={false}>
-                {activeFilterCount > 0 ? (
-                  <motion.button
-                    className="text-xs font-black text-[#1f7a43] hover:text-[#171916]"
-                    type="button"
-                    initial={{ opacity: 0, x: 8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 8 }}
-                    whileTap={{ scale: 0.94 }}
-                    onClick={clearFilters}
-                  >
-                    Clear
-                  </motion.button>
-                ) : null}
-              </AnimatePresence>
-            </div>
-
-            <LevelFilterGroup
-              label={levelMode === "and" ? "Levels (&)" : "Levels"}
-              labelTitle="Toggle level matching"
-              chartOptions={compatibleFilterOptions.charts}
-              levelOptions={compatibleFilterOptions.levels}
-              selectedCharts={selectedFilters.charts}
-              selectedLevels={selectedFilters.levels}
-              onLabelClick={toggleLevelMode}
-              onToggleChart={(value) => toggleFilter("charts", value)}
-              onToggleLevel={(value) => toggleFilter("levels", value)}
-            />
-            <FilterGroup
-              label="Folder"
-              options={compatibleFilterOptions.folders}
-              selected={selectedFilters.folders}
-              onToggle={(value) => toggleFilter("folders", value)}
-            />
-            <FilterGroup
-              label="Series"
-              options={compatibleFilterOptions.series}
-              selected={selectedFilters.series}
-              onToggle={(value) => toggleFilter("series", value)}
-            />
+            {renderFilterPanel()}
           </motion.aside>
+
+          <AnimatePresence>
+            {mobileFiltersOpen ? (
+              <motion.div
+                className="fixed inset-0 z-40 bg-[#171916]/42 backdrop-blur-sm lg:hidden"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) {
+                    setMobileFiltersOpen(false);
+                  }
+                }}
+              >
+                <motion.aside
+                  className="absolute bottom-0 left-0 right-0 max-h-[82vh] overflow-y-auto border-t border-[#d6ddcf] bg-white p-4 shadow-[0_-20px_60px_rgba(17,19,15,0.18)]"
+                  initial={{ y: "100%" }}
+                  animate={{ y: 0 }}
+                  exit={{ y: "100%" }}
+                  transition={{ type: "spring", stiffness: 320, damping: 32 }}
+                >
+                  <div className="mb-4 flex justify-end">
+                    <button
+                      aria-label="Close filters"
+                      className="inline-flex size-10 items-center justify-center border border-[#cfd7c8] bg-white text-[#343b30]"
+                      type="button"
+                      onClick={() => setMobileFiltersOpen(false)}
+                    >
+                      <X aria-hidden="true" size={18} />
+                    </button>
+                  </div>
+                  {renderFilterPanel()}
+                </motion.aside>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
           <div>
             <motion.div
@@ -484,7 +831,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
                   placeholder="Search title, artist, folder, series, tag, or chart"
                 />
               </motion.label>
-              <div className="grid min-h-11 min-w-[14rem] grid-cols-[minmax(11rem,1fr)_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153]">
+              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[14rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem]">
                 <label className="relative h-full">
                   <span className="sr-only">Sort by</span>
                   <select
@@ -525,6 +872,20 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
                     </motion.span>
                   </AnimatePresence>
                 </motion.button>
+                <motion.button
+                  aria-label={`Open filters${activeFilterCount > 0 ? `, ${activeFilterCount} active` : ""}`}
+                  aria-pressed={mobileFiltersOpen}
+                  className="relative flex h-full min-h-11 items-center justify-center border-l border-[#d9ded2] text-[#171916] transition hover:bg-[#eef1e8] lg:hidden"
+                  title="Filters"
+                  type="button"
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setMobileFiltersOpen(true)}
+                >
+                  <Filter aria-hidden="true" size={18} />
+                  {activeFilterCount > 0 ? (
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 bg-[#28c950]" />
+                  ) : null}
+                </motion.button>
               </div>
             </motion.div>
 
@@ -553,8 +914,10 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
                 </AnimatePresence>
               </div>
               <PreviewToggleButton
-                enabled={previewEnabled}
-                onToggle={() => setPreviewEnabled((value) => !value)}
+                muted={previewMuted}
+                volume={previewVolume}
+                onVolumeChange={changePreviewVolume}
+                onToggle={togglePreviewMuted}
               />
             </div>
 
@@ -572,7 +935,10 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
                     <SongCard
                     key={`catalog-${resultBatch}-${song.version}-${song.slug}`}
                     onOpen={openSongDetail}
+                    isPreviewActive={Boolean(song.previewUrl && activePreviewUrl === song.previewUrl)}
                     previewEnabled={previewEnabled}
+                    onPreviewStart={playSongPreview}
+                    onPreviewStop={() => stopSongPreview(song.previewUrl)}
                     sequence={index}
                     song={song}
                   />
@@ -629,6 +995,7 @@ export function SongExplorer({ initialSongs, featureSong, filterOptions, canFavo
         song={openSong}
         selectedChartToken={openSongChartToken}
         communityState={openSong && openSongCommunity?.slug === openSong.slug ? openSongCommunity.state : null}
+        userIsAdmin={userIsAdmin}
         onClose={() => {
           setOpenSong(null);
           setOpenSongChartToken(null);
@@ -657,35 +1024,84 @@ function landingSongVisibilityClass(index: number): string {
   return "hidden";
 }
 
+function clampPreviewVolume(volume: number): number {
+  return Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : 0.75;
+}
+
 function PreviewToggleButton({
-  enabled,
+  muted,
+  volume,
+  onVolumeChange,
   onToggle,
 }: {
-  enabled: boolean;
+  muted: boolean;
+  volume: number;
+  onVolumeChange: (volume: number) => void;
   onToggle: () => void;
 }) {
+  const [volumeOpen, setVolumeOpen] = useState(false);
+  const volumePercent = Math.round(volume * 100);
+
   return (
-    <motion.button
-      aria-label={enabled ? "Disable hover previews" : "Enable hover previews"}
-      aria-pressed={enabled}
-      className="inline-flex size-11 shrink-0 items-center justify-center border border-[#cfd7c8] bg-white font-semibold text-[#343b30] transition hover:bg-[#eef1e8]"
-      type="button"
-      whileHover={{ y: -2, scale: 1.05 }}
-      whileTap={{ scale: 0.92 }}
-      onClick={onToggle}
+    <motion.div
+      className="relative z-30 inline-flex shrink-0 items-center"
+      onMouseEnter={() => setVolumeOpen(true)}
+      onMouseLeave={() => setVolumeOpen(false)}
+      onFocus={() => setVolumeOpen(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setVolumeOpen(false);
+        }
+      }}
     >
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.span
-          key={enabled ? "volume-on" : "volume-off"}
-          initial={{ opacity: 0, rotate: -45, scale: 0.78 }}
-          animate={{ opacity: 1, rotate: 0, scale: 1 }}
-          exit={{ opacity: 0, rotate: 45, scale: 0.78 }}
-          transition={{ duration: 0.18 }}
-        >
-          {enabled ? <Volume2 aria-hidden="true" size={18} /> : <VolumeX aria-hidden="true" size={18} />}
-        </motion.span>
+      <AnimatePresence>
+        {volumeOpen ? (
+          <motion.label
+            className="absolute right-[calc(100%+0.5rem)] top-1/2 flex h-11 w-36 -translate-y-1/2 items-center gap-2 border border-[#cfd7c8] bg-white px-3 shadow-[0_12px_28px_rgba(30,34,26,0.12)]"
+            initial={{ opacity: 0, x: 16, scaleX: 0.86 }}
+            animate={{ opacity: 1, x: 0, scaleX: 1 }}
+            exit={{ opacity: 0, x: 12, scaleX: 0.9 }}
+            style={{ originX: 1 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <span className="sr-only">Preview volume</span>
+            <input
+              aria-label="Preview volume"
+              className="preview-volume-slider min-w-0 flex-1"
+              max={100}
+              min={0}
+              type="range"
+              value={volumePercent}
+              onChange={(event) => onVolumeChange(Number(event.target.value) / 100)}
+            />
+            <span className="w-8 text-right text-[11px] font-black tabular-nums text-[#596153]">{volumePercent}</span>
+          </motion.label>
+        ) : null}
       </AnimatePresence>
-    </motion.button>
+
+      <motion.button
+        aria-label={muted ? "Enable hover previews" : "Disable hover previews"}
+        aria-pressed={!muted}
+        className="inline-flex size-11 shrink-0 items-center justify-center border border-[#cfd7c8] bg-white font-semibold text-[#343b30] transition hover:bg-[#eef1e8]"
+        title={muted ? "Enable hover previews" : "Disable hover previews"}
+        type="button"
+        whileHover={{ y: -2, scale: 1.05 }}
+        whileTap={{ scale: 0.92 }}
+        onClick={onToggle}
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={muted ? "volume-off" : "volume-on"}
+            initial={{ opacity: 0, rotate: -45, scale: 0.78 }}
+            animate={{ opacity: 1, rotate: 0, scale: 1 }}
+            exit={{ opacity: 0, rotate: 45, scale: 0.78 }}
+            transition={{ duration: 0.18 }}
+          >
+            {muted ? <VolumeX aria-hidden="true" size={18} /> : <Volume2 aria-hidden="true" size={18} />}
+          </motion.span>
+        </AnimatePresence>
+      </motion.button>
+    </motion.div>
   );
 }
 
@@ -696,6 +1112,7 @@ function SongDetailNotebook({
   song,
   selectedChartToken,
   communityState,
+  userIsAdmin,
   onClose,
   onCopy,
   onToggleFavorite,
@@ -706,6 +1123,7 @@ function SongDetailNotebook({
   song: PublicSong | null;
   selectedChartToken: string | null;
   communityState: SongCommunityState | null;
+  userIsAdmin: boolean;
   onClose: () => void;
   onCopy: (song: PublicSong, chartToken?: string | null) => void;
   onToggleFavorite: (song: PublicSong) => void;
@@ -806,6 +1224,7 @@ function SongDetailNotebook({
               onPointerDown={maybeStartResize}
           >
             <div className="absolute right-7 top-8 z-20 flex shrink-0 items-center gap-2">
+              <CatalogAdminEditor label="song details" song={song} userIsAdmin={userIsAdmin} />
               <a
                 aria-label="Open full song page"
                 className="notebook-action inline-flex size-10 items-center justify-center border border-[#cfd7c8] bg-white/90 text-[#343b30] shadow-[0_8px_22px_rgba(30,34,26,0.10)] backdrop-blur transition hover:bg-[#eef1e8]"

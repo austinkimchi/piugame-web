@@ -137,6 +137,72 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.preview-volume-slider {
+  accent-color: #28c950;
+  cursor: pointer;
+}
+
+.preview-volume-slider::-webkit-slider-runnable-track {
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: #d9ded2;
+}
+
+.preview-volume-slider::-webkit-slider-thumb {
+  margin-top: -0.35rem;
+}
+
+.preview-volume-slider::-moz-range-track {
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: #d9ded2;
+}
+
+.preview-volume-slider::-moz-range-thumb {
+  border-color: #ffffff;
+}
+
+.preview-seek-slider {
+  accent-color: #35d867;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.preview-seek-slider::-webkit-slider-runnable-track {
+  height: 0.42rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 14px rgba(17, 19, 15, 0.34);
+}
+
+.preview-seek-slider::-webkit-slider-thumb {
+  appearance: none;
+  height: 1rem;
+  width: 1rem;
+  margin-top: -0.29rem;
+  border: 2px solid rgba(255, 255, 255, 0.98);
+  border-radius: 9999px;
+  background: #24bd55;
+  box-shadow: 0 3px 12px rgba(17, 19, 15, 0.36);
+}
+
+.preview-seek-slider::-moz-range-track {
+  height: 0.42rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 14px rgba(17, 19, 15, 0.34);
+}
+
+.preview-seek-slider::-moz-range-thumb {
+  height: 1rem;
+  width: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.98);
+  border-radius: 9999px;
+  background: #24bd55;
+  box-shadow: 0 3px 12px rgba(17, 19, 15, 0.36);
+}
+
 .notebook-modal {
   max-height: 92vh;
   max-width: 94vw;
@@ -308,6 +374,41 @@ button:disabled {
 }
 
 @media (max-width: 720px), (pointer: coarse) {
+  .feature-showcase .relative.h-\[560px\] {
+    height: 100%;
+  }
+
+  .feature-showcase .relative.h-\[560px\] > div {
+    top: 52%;
+    transform: translate(-50%, -50%) scale(0.78);
+  }
+
+  .notebook-modal .song-detail-shell {
+    display: block;
+    padding-top: 4.75rem;
+  }
+
+  .notebook-modal .song-detail-shell > div:first-child {
+    width: min(48vw, 11rem) !important;
+    max-width: 11rem;
+  }
+
+  .notebook-modal .song-detail-jacket {
+    max-width: 11rem;
+  }
+
+  .notebook-modal .song-detail-shell > div:last-child {
+    padding-top: 1.5rem;
+  }
+
+  .notebook-modal .song-detail-shell h1 {
+    font-size: clamp(2rem, 11vw, 3.1rem);
+  }
+
+  .notebook-modal .song-detail-shell p {
+    font-size: 1rem;
+  }
+
   .notebook-modal {
     min-height: auto;
     min-width: auto;

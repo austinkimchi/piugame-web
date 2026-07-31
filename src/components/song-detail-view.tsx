@@ -8,6 +8,7 @@ import { useState, type CSSProperties } from "react";
 
 import { CatalogAdminEditor } from "@/components/catalog-admin-editor";
 import { SongCommunityPanel } from "@/components/song-community-panel";
+import { SongPreviewPlayButton } from "@/components/song-preview-play-button";
 import type { PublicUser, SongCommunityState } from "@/lib/auth";
 import type { PublicSong } from "@/lib/types";
 
@@ -57,7 +58,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
   const jacketImage = (
     <motion.div
       layout
-      className={`relative aspect-square w-full overflow-hidden border border-[#d6ddcf] bg-white ${isCompact ? "shadow-[0_12px_32px_rgba(29,35,24,0.14)]" : isNotebook ? "" : "mx-auto max-w-[360px] origin-top-left"}`}
+      className={`song-detail-jacket relative aspect-square w-full overflow-hidden border border-[#d6ddcf] bg-white ${isCompact ? "shadow-[0_12px_32px_rgba(29,35,24,0.14)]" : isNotebook ? "" : "mx-auto max-w-[360px] origin-top-left"}`}
       style={
         isCompact
           ? { borderRadius: 8 }
@@ -73,6 +74,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
       ) : (
         <div className="flex h-full items-center justify-center font-bold text-[#66705f]">No jacket</div>
       )}
+      <SongPreviewPlayButton previewUrl={song.previewUrl} title={song.title} />
     </motion.div>
   );
   const historySection = (
@@ -163,9 +165,9 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
                 {bpmLabel}
               </span>
             ) : null}
-            <CatalogAdminEditor focus="song" label="song details" song={song} userIsAdmin={userIsAdmin} />
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <CatalogAdminEditor label="song details" song={song} userIsAdmin={userIsAdmin} />
             {canToggleCompact ? (
               <button
                 aria-label={compactView ? "Show full screen view" : "Show small screen view"}
@@ -215,9 +217,6 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
               <motion.h1 className="text-5xl font-black leading-none tracking-normal text-[#11130f] sm:text-7xl" layout>
                 {song.title}
               </motion.h1>
-              <div className="mt-2 sm:mt-4">
-                <CatalogAdminEditor focus="song" label="song details" song={song} userIsAdmin={userIsAdmin} />
-              </div>
             </motion.div>
             <motion.p
               className="mt-4 text-2xl font-bold text-[#4f5849]"
@@ -235,7 +234,6 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
           <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase text-[#596153]">
             <Music2 aria-hidden="true" size={17} />
             Charts
-            <CatalogAdminEditor focus="charts" label="charts" song={song} userIsAdmin={userIsAdmin} />
           </div>
           <div className="flex flex-wrap gap-2">
             {song.chartSummary.length > 0 ? (

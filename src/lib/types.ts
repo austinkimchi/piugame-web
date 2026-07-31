@@ -17,6 +17,7 @@ export interface PublicSong {
   imageUrl: string | null;
   previewUrl: string | null;
   previewAvailable: boolean;
+  audioPath: string | null;
   bpm: string | null;
   chartSummary: string[];
   folder: string | null;

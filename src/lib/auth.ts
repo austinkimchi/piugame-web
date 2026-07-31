@@ -62,6 +62,8 @@ export interface PublicUser {
 
 export interface UserPreferences {
   songDetailCompactView: boolean;
+  songPreviewMuted: boolean;
+  songPreviewVolume: number;
 }
 
 interface AuthProviderIdentity {
@@ -247,6 +249,8 @@ interface BotPlayerProfileDocument {
 
 const DEFAULT_USER_PREFERENCES: UserPreferences = {
   songDetailCompactView: false,
+  songPreviewMuted: true,
+  songPreviewVolume: 0.75,
 };
 
 function tokenHash(token: string): string {
@@ -1208,6 +1212,8 @@ export async function setUsername(user: PublicUser, usernameInput: string): Prom
 export async function updateUserPreferences(user: PublicUser, preferences: Partial<UserPreferences>): Promise<PublicUser> {
   const updates: {
     "preferences.songDetailCompactView"?: boolean;
+    "preferences.songPreviewMuted"?: boolean;
+    "preferences.songPreviewVolume"?: number;
     updatedAt: Date;
   } = {
     updatedAt: new Date(),
@@ -1215,6 +1221,12 @@ export async function updateUserPreferences(user: PublicUser, preferences: Parti
 
   if (typeof preferences.songDetailCompactView === "boolean") {
     updates["preferences.songDetailCompactView"] = preferences.songDetailCompactView;
+  }
+  if (typeof preferences.songPreviewMuted === "boolean") {
+    updates["preferences.songPreviewMuted"] = preferences.songPreviewMuted;
+  }
+  if (typeof preferences.songPreviewVolume === "number") {
+    updates["preferences.songPreviewVolume"] = Math.min(Math.max(preferences.songPreviewVolume, 0), 1);
   }
 
   const { users } = await collections();
@@ -1333,8 +1345,12 @@ function publicRoles(document: WithId<UserDocument>): UserRole[] {
 }
 
 function publicUserPreferences(preferences: Partial<UserPreferences> | undefined): UserPreferences {
+  const volume = Number(preferences?.songPreviewVolume);
+
   return {
     songDetailCompactView: preferences?.songDetailCompactView === true,
+    songPreviewMuted: preferences?.songPreviewMuted !== false,
+    songPreviewVolume: Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : DEFAULT_USER_PREFERENCES.songPreviewVolume,
   };
 }
 

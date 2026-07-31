@@ -11,15 +11,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
 
-  const body = (await request.json().catch(() => null)) as { songDetailCompactView?: boolean } | null;
-  if (typeof body?.songDetailCompactView !== "boolean") {
+  const body = (await request.json().catch(() => null)) as {
+    songDetailCompactView?: boolean;
+    songPreviewMuted?: boolean;
+    songPreviewVolume?: number;
+  } | null;
+  const preferences = {
+    ...(typeof body?.songDetailCompactView === "boolean" ? { songDetailCompactView: body.songDetailCompactView } : {}),
+    ...(typeof body?.songPreviewMuted === "boolean" ? { songPreviewMuted: body.songPreviewMuted } : {}),
+    ...(typeof body?.songPreviewVolume === "number" && Number.isFinite(body.songPreviewVolume) ? { songPreviewVolume: body.songPreviewVolume } : {}),
+  };
+
+  if (Object.keys(preferences).length === 0) {
     return NextResponse.json({ error: "Missing preference." }, { status: 400 });
   }
 
   try {
-    const updatedUser = await updateUserPreferences(user, {
-      songDetailCompactView: body.songDetailCompactView,
-    });
+    const updatedUser = await updateUserPreferences(user, preferences);
     return NextResponse.json(
       { preferences: updatedUser.preferences },
       {

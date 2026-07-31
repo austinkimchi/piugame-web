@@ -1,6 +1,6 @@
 import "server-only";
 
-import { readdir } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Collection, Document, Filter, WithId } from "mongodb";
 import { cache } from "react";
@@ -28,6 +28,16 @@ const COLLECTIONS: Record<PiuCatalogVersion, string> = {
 };
 const MAIN_CATALOG_VERSION: PiuCatalogVersion = "phoenix2";
 const SERIES_ORDER = ["1st", "nx", "fiesta", "prime", "prime2", "xx", "phoenix", "phoenix2"];
+const AUDIO_UPLOAD_MAX_BYTES = 16 * 1024 * 1024;
+const AUDIO_UPLOAD_CONTENT_TYPES = new Map([
+  ["audio/mpeg", ".mp3"],
+  ["audio/mp3", ".mp3"],
+  ["audio/ogg", ".ogg"],
+  ["audio/wav", ".wav"],
+  ["audio/x-wav", ".wav"],
+  ["audio/mp4", ".m4a"],
+  ["audio/x-m4a", ".m4a"],
+]);
 
 interface CatalogStats {
   folderCounts: Map<string, number>;
@@ -49,6 +59,15 @@ interface CatalogDocument extends Document {
   images?: string[];
   previewUrl?: string | null;
   audioPreviewUrl?: string | null;
+  audioPath?: string | null;
+  audioPreview?: {
+    url?: string | null;
+    localPath?: string | null;
+    source?: string | null;
+    confidence?: number | null;
+    reviewRequired?: boolean | null;
+    matchedAt?: string | Date | null;
+  } | null;
   bpm?: string | number | null;
   bpmRaw?: string | number | null;
   chartsFull?: PublicChart[];
@@ -193,6 +212,19 @@ function chartRegexFor(chart: string): RegExp | null {
   return null;
 }
 
+function chartPrefixFor(chart: string): string | null {
+  if (chart === "singles") {
+    return "S";
+  }
+  if (chart === "doubles") {
+    return "D";
+  }
+  if (chart === "co-op") {
+    return "CX";
+  }
+  return null;
+}
+
 function compatibleLevelsFromTokens(tokens: string[], charts?: string[]): string[] {
   const selectedCharts = cleanList(charts);
   if (selectedCharts.length === 1 && selectedCharts.includes("co-op")) {
@@ -219,9 +251,35 @@ function filterOptionsFromValues(values: {
 }
 
 function levelRegexesFor(level: string, charts: string[]): RegExp[] {
+  const selectedCharts = cleanList(charts);
+  if (selectedCharts.length > 0) {
+    return selectedCharts.flatMap((chart) => levelRegexesForChart(level, chart));
+  }
+
+  return levelRegexesForChart(level, null);
+}
+
+function levelRegexesForChart(level: string, chart: string | null): RegExp[] {
   const regexes: RegExp[] = [];
 
-  if (charts.includes("co-op") && /^[2-5]$/.test(level)) {
+  if (chart === "co-op") {
+    if (/^[2-5]$/.test(level)) {
+      regexes.push(new RegExp(`^CX${escapeRegex(level)}$`, "i"));
+    }
+    return regexes;
+  }
+
+  const prefix = chartPrefixFor(chart ?? "");
+  if (prefix) {
+    if (level === "+") {
+      regexes.push(new RegExp(`^${prefix}(?!(?:[1-9]|1\\d|2[0-7])$).+$`, "i"));
+    } else {
+      regexes.push(new RegExp(`^${prefix}${escapeRegex(level)}$`, "i"));
+    }
+    return regexes;
+  }
+
+  if (/^[2-5]$/.test(level)) {
     regexes.push(new RegExp(`^CX${escapeRegex(level)}$`, "i"));
   }
 
@@ -232,6 +290,54 @@ function levelRegexesFor(level: string, charts: string[]): RegExp[] {
   }
 
   return regexes;
+}
+
+function levelChartClausesForAnd(levels: string[], charts: string[]): Filter<CatalogDocument>[] {
+  if (charts.length === 0) {
+    return levels.map((level) => ({ chartTokens: { $in: levelRegexesFor(level, []) } }));
+  }
+
+  return charts.flatMap((chart) =>
+    levels.map((level) => ({ chartTokens: { $in: levelRegexesForChart(level, chart) } })),
+  );
+}
+
+function tokenMatchesLevelAndChart(token: string, level: string, charts: string[]): boolean {
+  if (charts.length > 0) {
+    return charts.some((chart) => tokenMatchesLevelForChart(token, level, chart));
+  }
+
+  return tokenMatchesLevelForChart(token, level, null);
+}
+
+function tokenMatchesLevelForChart(token: string, level: string, chart: string | null): boolean {
+  if (chart === "co-op") {
+    return level === coOpPlayerCountFromToken(token);
+  }
+
+  if (chart && chart !== chartTypeFromToken(token)) {
+    return false;
+  }
+
+  return level === levelFromChartToken(token);
+}
+
+function songMatchesLevelFilters(song: PublicSong, levels: string[], charts: string[], levelMode: LevelFilterMode | undefined): boolean {
+  if (levels.length === 0) {
+    return true;
+  }
+
+  if (levelMode === "and") {
+    if (charts.length > 0) {
+      return charts.every((chart) =>
+        levels.every((level) => song.chartSummary.some((token) => tokenMatchesLevelForChart(token, level, chart))),
+      );
+    }
+
+    return levels.every((level) => song.chartSummary.some((token) => tokenMatchesLevelAndChart(token, level, charts)));
+  }
+
+  return levels.some((level) => song.chartSummary.some((token) => tokenMatchesLevelAndChart(token, level, charts)));
 }
 
 function sortLevels(levels: string[]): string[] {
@@ -310,12 +416,80 @@ function bpmFromDocument(document: CatalogDocument): string | null {
   return cleanText(document.bpm ?? document.bpmRaw) || null;
 }
 
+function audioFileUrlForPath(localPath: string): string | null {
+  const cleanPath = cleanText(localPath).replaceAll("\\", "/");
+  if (!cleanPath) {
+    return null;
+  }
+
+  const params = new URLSearchParams({ path: cleanPath });
+  return `/api/audio-file?${params.toString()}`;
+}
+
+function audioUploadExtension(file: File): string {
+  const extension = path.extname(file.name).toLowerCase();
+  if (Array.from(AUDIO_UPLOAD_CONTENT_TYPES.values()).includes(extension)) {
+    return extension;
+  }
+
+  const contentTypeExtension = AUDIO_UPLOAD_CONTENT_TYPES.get(file.type.toLowerCase());
+  if (contentTypeExtension) {
+    return contentTypeExtension;
+  }
+
+  throw new Error("Audio upload must be an MP3, OGG, WAV, or M4A file.");
+}
+
+function audioFilenameForSong(title: string, artist: string, extension: string): string {
+  return `${slugify(title) || "untitled"}-${slugify(artist) || "unknown"}${extension}`;
+}
+
+async function saveCatalogAudioUpload(version: PiuCatalogVersion, title: string, artist: string, file: File): Promise<{ audioPath: string; publicUrl: string }> {
+  if (file.size < 1) {
+    throw new Error("Audio upload is empty.");
+  }
+  if (file.size > AUDIO_UPLOAD_MAX_BYTES) {
+    throw new Error("Audio upload must be 16 MB or smaller.");
+  }
+
+  const extension = audioUploadExtension(file);
+  const filename = audioFilenameForSong(title, artist, extension);
+  const uploadDir = path.join(process.cwd(), "public", "assets", "piu", version, "audio_previews", "manual");
+  await mkdir(uploadDir, { recursive: true });
+  await writeFile(path.join(uploadDir, filename), Buffer.from(await file.arrayBuffer()));
+
+  const audioPath = `manual/${filename}`;
+  return {
+    audioPath,
+    publicUrl: `/api/audio-file?${new URLSearchParams({ path: audioPath }).toString()}`,
+  };
+}
+
+function previewUrlFromDocument(document: CatalogDocument): string | null {
+  const localUrl = audioFileUrlForPath(document.audioPath ?? document.audioPreview?.localPath ?? "");
+  if (localUrl) {
+    return localUrl;
+  }
+
+  const url = cleanText(document.audioPreview?.url ?? document.previewUrl ?? document.audioPreviewUrl);
+  if (!url) {
+    return null;
+  }
+
+  if (url.startsWith("/") || url.startsWith("https://") || url.startsWith("http://")) {
+    return url;
+  }
+
+  return null;
+}
+
 function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersion: PiuCatalogVersion, stats?: CatalogStats): PublicSong {
   const title = cleanText(document.songName ?? document.songKey ?? "Untitled Song");
   const artist = cleanText(document.artist ?? "Unknown Artist");
   const version = versionFromDocument(document, fallbackVersion);
   const image = Array.isArray(document.images) ? cleanText(document.images[0]) : "";
-  const previewUrl = cleanText(document.previewUrl ?? document.audioPreviewUrl) || null;
+  const previewUrl = previewUrlFromDocument(document);
+  const audioPath = cleanText(document.audioPath ?? document.audioPreview?.localPath) || null;
   const folder = cleanText(document.folder) || null;
   const series = cleanText(document.series) || null;
 
@@ -327,6 +501,7 @@ function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersi
     imageUrl: imageUrlFor(version, image || null),
     previewUrl,
     previewAvailable: Boolean(previewUrl),
+    audioPath,
     bpm: bpmFromDocument(document),
     chartSummary: chartSummary(document),
     folder,
@@ -360,6 +535,8 @@ function projection() {
     images: { $slice: 1 },
     previewUrl: 1,
     audioPreviewUrl: 1,
+    audioPath: 1,
+    audioPreview: 1,
     bpm: 1,
     bpmRaw: 1,
     chartTokens: 1,
@@ -492,6 +669,8 @@ function aggregateProjection() {
     images: { $slice: ["$images", 1] },
     previewUrl: 1,
     audioPreviewUrl: 1,
+    audioPath: 1,
+    audioPreview: 1,
     bpm: 1,
     bpmRaw: 1,
     chartTokens: 1,
@@ -600,6 +779,7 @@ async function fallbackSongs(version: PiuCatalogVersion, offset = 0, limit = PAG
       imageUrl: imageUrlFor(version, filename),
       previewUrl: null,
       previewAvailable: false,
+      audioPath: null,
       bpm: null,
       chartSummary: [],
       folder: null,
@@ -664,14 +844,13 @@ function buildSearchFilter(params: {
   }
 
   const levels = cleanList(params.levels);
+  const charts = cleanList(params.charts);
   if (levels.length > 0) {
-    const charts = cleanList(params.charts);
-    const levelClauses = levels.map((level) => ({ chartTokens: { $in: levelRegexesFor(level, charts) } }));
+    const levelClauses = levelChartClausesForAnd(levels, charts);
     clauses.push(params.levelMode === "and" ? { $and: levelClauses } : { chartTokens: { $in: levels.flatMap((level) => levelRegexesFor(level, charts)) } });
   }
 
-  const charts = cleanList(params.charts);
-  if (charts.length > 0) {
+  if (charts.length > 0 && levels.length === 0) {
     const chartRegexes = charts.map(chartRegexFor).filter((regex): regex is RegExp => Boolean(regex));
 
     if (chartRegexes.length > 0) {
@@ -714,27 +893,13 @@ function fallbackMatchesFilters(
     return false;
   }
 
-  if (
-    levels.length > 0 &&
-    !levels[filters.levelMode === "and" ? "every" : "some"]((level) =>
-      song.chartSummary.some((token) => {
-        if (charts.includes("co-op") && level === coOpPlayerCountFromToken(token)) {
-          return true;
-        }
-
-        if (level === levelFromChartToken(token)) {
-          return true;
-        }
-
-        return false;
-      }),
-    )
-  ) {
+  if (!songMatchesLevelFilters(song, levels, charts, filters.levelMode)) {
     return false;
   }
 
   if (
     charts.length > 0 &&
+    levels.length === 0 &&
     !charts[filters.levelMode === "and" ? "every" : "some"]((chart) =>
       song.chartSummary.some((token) => chart === chartTypeFromToken(token)),
     )
@@ -926,7 +1091,7 @@ export async function getCatalogEditorPayload(slug: string): Promise<CatalogEdit
   return song ? catalogEditorPayloadFromSong(song) : null;
 }
 
-export async function updateCatalogSong(slug: string, input: Partial<CatalogEditorPayload>): Promise<PublicSong> {
+export async function updateCatalogSong(slug: string, input: Partial<CatalogEditorPayload>, audioFile?: File | null): Promise<PublicSong> {
   if (!hasMongoConfig()) {
     throw new Error("Catalog database is not configured.");
   }
@@ -951,6 +1116,20 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
 
   if (chartsFull) {
     $set.chartsFull = chartsFull;
+  }
+
+  if (audioFile) {
+    const upload = await saveCatalogAudioUpload(versionFromDocument(document, MAIN_CATALOG_VERSION), payload.title, payload.artist, audioFile);
+    $set.audioPath = upload.audioPath;
+    $set.audioPreview = {
+      ...(document.audioPreview ?? {}),
+      url: upload.publicUrl,
+      localPath: upload.audioPath,
+      source: "admin-upload",
+      confidence: 1,
+      reviewRequired: false,
+      matchedAt: new Date(),
+    };
   }
 
   await collection.updateOne({ _id: document._id }, { $set });

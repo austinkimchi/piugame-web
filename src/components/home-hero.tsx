@@ -28,12 +28,12 @@ export function HomeHero({ accountSlot }: { accountSlot?: ReactNode }) {
     <MotionConfig reducedMotion="user">
       <section className="hero-stage relative overflow-hidden border-b border-[#d9ded2] bg-[#fbfcf7]">
       <motion.div
-        className="relative z-10 mx-auto flex min-h-[42vh] max-w-7xl flex-col justify-end px-5 pb-8 pt-16 sm:px-8 lg:px-10"
+        className="relative z-10 mx-auto flex min-h-[42vh] max-w-7xl flex-col justify-end px-5 pb-8 pt-5 sm:px-8 sm:pt-16 lg:px-10"
         initial="hidden"
         animate="visible"
         variants={heroContainer}
       >
-        {accountSlot ? <div className="absolute right-5 top-5 sm:right-8 lg:right-10">{accountSlot}</div> : null}
+        {accountSlot ? <div className="mb-7 flex justify-end sm:absolute sm:right-8 sm:top-5 sm:mb-0 lg:right-10">{accountSlot}</div> : null}
         <motion.div variants={heroItem} className="mb-7 flex flex-wrap items-center gap-3 text-sm font-medium text-[#596153]">
           <motion.span
             className="hero-chip inline-flex items-center gap-2 border border-[#cdd5c5] bg-white px-3 py-1.5"
@@ -69,7 +69,7 @@ export function HomeHero({ accountSlot }: { accountSlot?: ReactNode }) {
           >
             <div className="flex items-center gap-3 text-sm font-semibold uppercase tracking-normal text-[#596153]">
               <Search aria-hidden="true" size={17} />
-              Community catalog
+              Latest Catalog
             </div>
             <p className="mt-3 text-sm leading-6 text-[#56604e]">
               Your personal notebook for the songs you are learning, clearing, and coming back to.

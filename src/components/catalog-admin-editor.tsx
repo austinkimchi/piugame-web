@@ -1,7 +1,7 @@
 "use client";
 
-import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Music, Pencil, Plus, Save, Trash2, Upload, X } from "lucide-react";
+import { type ChangeEvent, type DragEvent, useMemo, useState } from "react";
 
 import { useAdminViewMode } from "@/lib/admin-view-mode";
 import type { CatalogEditorPayload, PublicSong } from "@/lib/types";
@@ -14,6 +14,7 @@ interface CatalogAdminEditorProps {
 }
 
 type SaveStatus = "idle" | "saving" | "error";
+const AUDIO_ACCEPT = "audio/mpeg,audio/mp3,audio/ogg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,.mp3,.ogg,.wav,.m4a";
 
 export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song" }: CatalogAdminEditorProps) {
   const { viewingAsRegular } = useAdminViewMode();
@@ -21,6 +22,8 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song" }:
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [message, setMessage] = useState("");
   const [draft, setDraft] = useState<CatalogEditorPayload>(() => payloadFromSong(song));
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [draggingAudio, setDraggingAudio] = useState(false);
   const canEdit = userIsAdmin && !viewingAsRegular;
   const title = useMemo(() => `Edit ${label}`, [label]);
 
@@ -50,43 +53,93 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song" }:
     setDraft((current) => ({ ...current, chartTokens: [...current.chartTokens, ""] }));
   }
 
+  function selectAudioFile(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("audio/") && !/\.(mp3|ogg|wav|m4a)$/i.test(file.name)) {
+      setStatus("error");
+      setMessage("Choose an MP3, OGG, WAV, or M4A file.");
+      return;
+    }
+
+    setAudioFile(file);
+    setStatus("idle");
+    setMessage("");
+  }
+
+  function handleAudioInput(event: ChangeEvent<HTMLInputElement>) {
+    selectAudioFile(event.target.files?.[0] ?? null);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    if (event.dataTransfer.types.includes("Files")) {
+      setDraggingAudio(true);
+    }
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDraggingAudio(false);
+    selectAudioFile(Array.from(event.dataTransfer.files).find((file) => file.type.startsWith("audio/") || /\.(mp3|ogg|wav|m4a)$/i.test(file.name)) ?? null);
+  }
+
   async function save() {
     setStatus("saving");
     setMessage("");
+    const tags = draft.tags.map((tag) => tag.trim()).filter(Boolean);
+    const chartTokens = draft.chartTokens.map((token) => token.trim()).filter(Boolean);
+    const requestBody = audioFile ? new FormData() : JSON.stringify({ ...draft, tags, chartTokens });
+    const headers: HeadersInit = audioFile ? {} : { "Content-Type": "application/json" };
+
+    if (audioFile && requestBody instanceof FormData) {
+      requestBody.set("title", draft.title);
+      requestBody.set("artist", draft.artist);
+      requestBody.set("folder", draft.folder);
+      requestBody.set("folderPosition", draft.folderPosition === null ? "" : String(draft.folderPosition));
+      requestBody.set("series", draft.series);
+      requestBody.set("tags", JSON.stringify(tags));
+      requestBody.set("chartTokens", JSON.stringify(chartTokens));
+      requestBody.set("audio", audioFile);
+    }
+
     const response = await fetch(`/api/songs/${encodeURIComponent(song.slug)}/catalog`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...draft,
-        tags: draft.tags.map((tag) => tag.trim()).filter(Boolean),
-        chartTokens: draft.chartTokens.map((token) => token.trim()).filter(Boolean),
-      }),
+      headers,
+      body: requestBody,
     });
-    const body = (await response.json().catch(() => null)) as { error?: string; song?: PublicSong } | null;
-    if (!response.ok || !body?.song) {
+    const responseBody = (await response.json().catch(() => null)) as { error?: string; song?: PublicSong } | null;
+    if (!response.ok || !responseBody?.song) {
       setStatus("error");
-      setMessage(body?.error ?? "Could not update catalog.");
+      setMessage(responseBody?.error ?? "Could not update catalog.");
       return;
     }
 
     setStatus("idle");
-    window.location.href = `/songs/${body.song.slug}`;
+    window.location.href = `/songs/${responseBody.song.slug}`;
   }
 
   return (
     <>
       <button
-        className="inline-flex h-8 w-8 items-center justify-center border border-[#cdd5c5] bg-white text-[#596153] shadow-[0_8px_18px_rgba(29,35,24,0.07)] transition hover:border-[#28c950] hover:text-[#28c950]"
+        className="notebook-action inline-flex size-10 items-center justify-center border border-[#d6ddcf] bg-white text-[#596153] shadow-[0_10px_28px_rgba(18,24,16,0.1)] transition hover:border-[#28c950] hover:text-[#28c950]"
         type="button"
         onClick={() => setOpen(true)}
         aria-label={title}
         title={title}
       >
-        <Pencil aria-hidden="true" size={15} />
+        <Pencil aria-hidden="true" size={18} />
       </button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#171916]/40 px-4 py-6 backdrop-blur-sm" role="presentation">
-          <div className="max-h-[92vh] w-full max-w-2xl overflow-auto border border-[#cdd5c5] bg-[#fbfcf7] p-4 shadow-[0_28px_90px_rgba(17,19,15,0.24)]">
+          <div
+            className={`max-h-[92vh] w-full max-w-2xl overflow-auto border bg-[#fbfcf7] p-4 shadow-[0_28px_90px_rgba(17,19,15,0.24)] transition ${draggingAudio ? "border-[#28c950] ring-4 ring-[#28c950]/20" : "border-[#cdd5c5]"}`}
+            onDragLeave={() => setDraggingAudio(false)}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+          >
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-black text-[#11130f]">{title}</h2>
@@ -123,19 +176,29 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song" }:
                       <input className="min-h-11 border border-[#d8dfd1] bg-white px-3 text-sm font-bold text-[#171916] outline-none focus:border-[#28c950]" value={draft.folder} onChange={(event) => updateDraft("folder", event.target.value)} />
                     </label>
                   </div>
-                  <label className="grid gap-1 text-xs font-black uppercase text-[#596153] sm:max-w-[calc(50%-0.375rem)]">
-                    Folder position
-                    <input
-                      className="min-h-11 border border-[#d8dfd1] bg-white px-3 text-sm font-bold text-[#171916] outline-none focus:border-[#28c950]"
-                      type="number"
-                      min="1"
-                      step="1"
-                      inputMode="numeric"
-                      value={draft.folderPosition ?? ""}
-                      onChange={(event) => updateDraft("folderPosition", event.target.value === "" ? null : Number(event.target.value))}
-                      placeholder="1"
-                    />
-                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="grid gap-1 text-xs font-black uppercase text-[#596153]">
+                      Folder position
+                      <input
+                        className="min-h-11 border border-[#d8dfd1] bg-white px-3 text-sm font-bold text-[#171916] outline-none focus:border-[#28c950]"
+                        type="number"
+                        min="1"
+                        step="1"
+                        inputMode="numeric"
+                        value={draft.folderPosition ?? ""}
+                        onChange={(event) => updateDraft("folderPosition", event.target.value === "" ? null : Number(event.target.value))}
+                        placeholder="1"
+                      />
+                    </label>
+                    <label className="grid min-w-0 gap-1 text-xs font-black uppercase text-[#596153]">
+                      Upload audio
+                      <span className="flex min-h-11 min-w-0 cursor-pointer items-center gap-2 overflow-hidden border border-dashed border-[#cdd5c5] bg-white px-3 text-sm font-bold normal-case text-[#56604e] transition hover:border-[#28c950] hover:text-[#1f5f39]">
+                        {audioFile ? <Music aria-hidden="true" className="shrink-0" size={16} /> : <Upload aria-hidden="true" className="shrink-0" size={16} />}
+                        <span className="min-w-0 flex-1 truncate">{audioFile?.name ?? song.audioPath ?? "Drop or choose preview audio"}</span>
+                      </span>
+                      <input className="sr-only" accept={AUDIO_ACCEPT} type="file" onChange={handleAudioInput} />
+                    </label>
+                  </div>
                   <label className="grid gap-1 text-xs font-black uppercase text-[#596153]">
                     Tags
                     <input

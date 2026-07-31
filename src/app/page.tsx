@@ -1,7 +1,7 @@
 import { AccountBar } from "@/components/account-bar";
 import { HomeHero } from "@/components/home-hero";
 import { SongExplorer } from "@/components/song-explorer";
-import { getCurrentUser, getFavoriteSongSlugSet } from "@/lib/auth";
+import { getCurrentUser, getFavoriteSongSlugSet, isAdmin } from "@/lib/auth";
 import { getCatalogFilterOptions, getLandingSongs, getSongBySlug } from "@/lib/catalog";
 
 export const runtime = "nodejs";
@@ -22,7 +22,15 @@ export default async function Home() {
   return (
     <main className="min-h-screen bg-[#f7f8f2] text-[#171916]">
       <HomeHero accountSlot={<AccountBar />} />
-      <SongExplorer canFavorite={Boolean(user)} featureSong={featuredSong} filterOptions={filterOptions} initialSongs={songsWithFavorites} />
+      <SongExplorer
+        canFavorite={Boolean(user)}
+        featureSong={featuredSong}
+        filterOptions={filterOptions}
+        initialPreviewMuted={user?.preferences.songPreviewMuted ?? true}
+        initialPreviewVolume={user?.preferences.songPreviewVolume ?? 0.75}
+        initialSongs={songsWithFavorites}
+        userIsAdmin={isAdmin(user)}
+      />
     </main>
   );
 }
