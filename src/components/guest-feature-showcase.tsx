@@ -27,17 +27,17 @@ const features = [
   {
     icon: Star,
     title: "Favorite Songs",
-    body: "Keep your clears, grind targets, and next-session picks close at hand.",
+    body: "Keep track of your favorite songs, charts, or next picks.",
   },
   {
     icon: Tags,
     title: "Share your moment",
-    body: "Post the clears, breakthroughs, and close calls that make each chart yours.",
+    body: "Attach a caption to your action, and share your experience.",
   },
   {
     icon: MessageSquareText,
     title: "Track each chart",
-    body: "Add goals, screenshots, and reminders directly to the song detail view.",
+    body: "Add goals, media, and tags directly to the song detail view.",
   },
 ];
 

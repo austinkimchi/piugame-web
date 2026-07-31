@@ -17,7 +17,7 @@ export function SongPopupModel({ song }: { song: PublicSong | null }) {
   const previewUrl = song?.previewUrl ?? null;
 
   return (
-    <div className="relative h-[560px] overflow-visible bg-transparent sm:h-[610px] lg:h-[640px]">
+    <div className="relative h-[560px] overflow-visible bg-transparent sm:h-[610px] lg:h-[590px]">
       <motion.div
         className="absolute left-1/2 top-[47%] w-[min(760px,calc(100vw-2.25rem))] origin-center -translate-x-1/2 -translate-y-1/2"
         initial={{ opacity: 0, y: 28, rotateX: 14, rotateZ: 3.6, scale: 0.62 }}
