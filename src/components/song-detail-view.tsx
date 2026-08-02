@@ -34,6 +34,11 @@ const sectionMotion = {
   transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1] },
 } as const;
 
+function songChartHref(slug: string, chart: string): string {
+  const params = new URLSearchParams({ chart });
+  return `/songs/${slug}?${params.toString()}`;
+}
+
 export function SongDetailView({ song, community, communityReadOnly = false, initialSelectedChartToken = null, previewVolume, userIsAdmin = false, mode = "page", onBack, onCatalogSaved }: SongDetailViewProps) {
   const [currentSong, setCurrentSong] = useState(song);
   const [selectedChartToken, setSelectedChartToken] = useState<string | null>(
@@ -250,16 +255,19 @@ export function SongDetailView({ song, community, communityReadOnly = false, ini
           <div className="flex flex-wrap gap-2">
             {currentSong.chartSummary.length > 0 ? (
               currentSong.chartSummary.map((chart) => (
-                <motion.button
+                <motion.div
                   key={chart}
-                  className={`border px-3 py-1.5 text-sm font-black transition ${selectedChartToken === chart ? "border-[#171916] bg-[#171916] text-white shadow-[0_10px_24px_rgba(29,35,24,0.14)]" : "border-[#d8dfd1] bg-white text-[#3d4638] hover:border-[#28c950] hover:text-[#28c950]"}`}
-                  onClick={() => setSelectedChartToken(chart)}
-                  type="button"
                   whileHover={{ y: -2, scale: 1.04 }}
                   transition={{ type: "spring", stiffness: 360, damping: 26 }}
                 >
-                  {chart}
-                </motion.button>
+                  <Link
+                    className={`block border px-3 py-1.5 text-sm font-black transition ${selectedChartToken === chart ? "border-[#171916] bg-[#171916] text-white shadow-[0_10px_24px_rgba(29,35,24,0.14)]" : "border-[#d8dfd1] bg-white text-[#3d4638] hover:border-[#28c950] hover:text-[#28c950]"}`}
+                    href={songChartHref(currentSong.slug, chart)}
+                    onClick={() => setSelectedChartToken(chart)}
+                  >
+                    {chart}
+                  </Link>
+                </motion.div>
               ))
             ) : (
               <p className="text-sm font-medium text-[#66705f]">Chart metadata is ready to appear here once available.</p>
