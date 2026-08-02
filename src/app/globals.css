@@ -111,24 +111,6 @@ button:disabled {
   transform: scale(1.065);
 }
 
-.song-card-glint {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 18%, rgba(255, 255, 255, 0.52) 44%, transparent 62%);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-80%);
-  transition:
-    opacity 220ms ease,
-    transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.group:hover .song-card-glint,
-.group:focus-visible .song-card-glint {
-  opacity: 0.34;
-  transform: translateX(80%);
-}
-
 .song-new-badge {
   box-shadow: 0 10px 24px rgba(227, 65, 47, 0.24);
 }
@@ -140,6 +122,14 @@ button:disabled {
 .preview-volume-slider {
   accent-color: #28c950;
   cursor: pointer;
+}
+
+.preview-volume-slider-vertical {
+  height: 7rem;
+  width: 1.25rem;
+  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
 }
 
 .preview-volume-slider::-webkit-slider-runnable-track {

@@ -928,7 +928,7 @@ export function SongExplorer({
                   placeholder="Search title, artist, folder, series, tag, or chart"
                 />
               </motion.label>
-              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[16.75rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem]">
+              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[19.5rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem_2.75rem]">
                 <label className="relative h-full">
                   <span className="sr-only">Sort by</span>
                   <select
@@ -996,6 +996,12 @@ export function SongExplorer({
                     <span className="absolute right-1.5 top-1.5 h-2 w-2 bg-[#28c950]" />
                   ) : null}
                 </motion.button>
+                <PreviewToggleButton
+                  muted={previewMuted}
+                  volume={previewVolume}
+                  onVolumeChange={changePreviewVolume}
+                  onToggle={togglePreviewMuted}
+                />
               </div>
             </motion.div>
 
@@ -1169,24 +1175,23 @@ function PreviewToggleButton({
       <AnimatePresence>
         {volumeOpen ? (
           <motion.label
-            className="absolute right-[calc(100%+0.5rem)] top-1/2 flex h-11 w-36 -translate-y-1/2 items-center gap-2 border border-[#cfd7c8] bg-white px-3 shadow-[0_12px_28px_rgba(30,34,26,0.12)]"
-            initial={{ opacity: 0, x: 16, scaleX: 0.86 }}
-            animate={{ opacity: 1, x: 0, scaleX: 1 }}
-            exit={{ opacity: 0, x: 12, scaleX: 0.9 }}
-            style={{ originX: 1 }}
+            className="absolute bottom-[calc(100%+0.5rem)] left-1/2 flex h-36 w-11 -translate-x-1/2 items-center justify-center border border-[#cfd7c8] bg-white py-3 shadow-[0_12px_28px_rgba(30,34,26,0.12)]"
+            initial={{ opacity: 0, y: 14, scaleY: 0.86 }}
+            animate={{ opacity: 1, y: 0, scaleY: 1 }}
+            exit={{ opacity: 0, y: 10, scaleY: 0.9 }}
+            style={{ originY: 1 }}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
           >
             <span className="sr-only">Preview volume</span>
             <input
               aria-label="Preview volume"
-              className="preview-volume-slider min-w-0 flex-1"
+              className="preview-volume-slider preview-volume-slider-vertical"
               max={100}
               min={0}
               type="range"
               value={volumePercent}
               onChange={(event) => onVolumeChange(Number(event.target.value) / 100)}
             />
-            <span className="w-8 text-right text-[11px] font-black tabular-nums text-[#596153]">{volumePercent}</span>
           </motion.label>
         ) : null}
       </AnimatePresence>
@@ -1194,7 +1199,7 @@ function PreviewToggleButton({
       <motion.button
         aria-label={muted ? "Enable hover previews" : "Disable hover previews"}
         aria-pressed={!muted}
-        className="inline-flex size-11 shrink-0 items-center justify-center border border-[#cfd7c8] bg-white font-semibold text-[#343b30] transition hover:bg-[#eef1e8]"
+        className="inline-flex size-11 shrink-0 items-center justify-center border-l border-[#d9ded2] bg-white font-semibold text-[#343b30] transition hover:bg-[#eef1e8]"
         title={muted ? "Enable hover previews" : "Disable hover previews"}
         type="button"
         whileHover={{ y: -2, scale: 1.05 }}
