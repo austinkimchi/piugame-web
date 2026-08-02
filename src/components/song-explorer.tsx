@@ -45,6 +45,7 @@ const NOTEBOOK_RESIZE_HANDLE_SIZE = 40;
 const NOTEBOOK_SIZE_STORAGE_KEY = "mypiu-song-notebook-size:v2";
 const PREVIEW_FADE_IN_MS = 50;
 const PREVIEW_FADE_OUT_MS = 700;
+const DEV_ADMIN_SETTINGS_ENABLED = process.env.NODE_ENV === "development";
 const EMPTY_COMMUNITY_STATE: SongCommunityState = {
   saved: false,
   note: "",
@@ -103,6 +104,7 @@ export function SongExplorer({
   const lastSavedPreviewPreferencesRef = useRef<{ muted: boolean; volume: number } | null>(null);
   const [preferredPreviewMuted, setPreferredPreviewMuted] = useState(initialPreviewMuted);
   const [previewVolume, setPreviewVolume] = useState(() => clampPreviewVolume(initialPreviewVolume));
+  const [manualUploadsVisible, setManualUploadsVisible] = useState(false);
   const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selectedFilters, setSelectedFilters] = useState<Record<FilterKey, string[]>>({
@@ -140,6 +142,7 @@ export function SongExplorer({
   );
   const previewMuted = preferredPreviewMuted;
   const previewEnabled = !previewMuted;
+  const showManualUploadState = DEV_ADMIN_SETTINGS_ENABLED && userIsAdmin && manualUploadsVisible;
 
   const savePreviewPreferences = useCallback(
     (muted: boolean, volume: number, keepalive = false) => {
@@ -821,6 +824,7 @@ export function SongExplorer({
                   onPreviewStart={playSongPreview}
                   onPreviewStop={() => stopSongPreview(song.previewUrl)}
                   sequence={index}
+                  showManualUploadState={showManualUploadState}
                   song={song}
                 />
               </div>
