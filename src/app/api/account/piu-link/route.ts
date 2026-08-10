@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const profile = await fetchPiuProfile({ piuUsername, password });
+    const profile = await fetchPiuProfile({ piuUsername, password, version: user.preferences.piuGameVersion });
     const linkedUser = await linkPiuAccount(user, { piuUsername, password, profile });
     return NextResponse.json({ user: linkedUser });
   } catch {

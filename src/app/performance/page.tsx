@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Activity, ArrowUpRight, BarChart3, Clock3, Database, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
+import { Activity, ArrowUpRight, BarChart3, Database, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
 
 import { AccountBar } from "@/components/account-bar";
+import { PerformanceDashboardTables } from "@/components/performance-dashboard-tables";
+import { PerformancePageRefresh } from "@/components/performance-page-refresh";
 import { getCurrentUser, getCurrentUserId } from "@/lib/auth";
+import { getSongsByTitles } from "@/lib/catalog";
 import { getPerformanceDashboard, type PerformanceDashboard } from "@/lib/performance";
+import { normalizePiuGameVersion } from "@/lib/piu-version";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,9 +25,23 @@ export const metadata: Metadata = {
 export default async function PerformancePage() {
   const [user, userId] = await Promise.all([getCurrentUser(), getCurrentUserId()]);
   const dashboard = await getPerformanceDashboard(userId);
+  const catalogSongsByTitle = await getSongsByTitles(
+    normalizePiuGameVersion(user?.preferences.piuGameVersion),
+    [...dashboard.topCharts.map((chart) => chart.songName), ...dashboard.recentPlays.map((play) => play.songName)],
+  );
+  const topCharts = dashboard.topCharts.map((chart) => ({
+    ...chart,
+    song: catalogSongsByTitle.get(songLookupKey(chart.songName)) ?? null,
+  }));
+  const recentPlays = dashboard.recentPlays.map((play) => ({
+    ...play,
+    song: catalogSongsByTitle.get(songLookupKey(play.songName)) ?? null,
+  }));
+  const nextRecentPlaysOffset = recentPlays.length < dashboard.totals.trackedPlays ? recentPlays.length : null;
 
   return (
     <main className="min-h-screen bg-[#f7f8f2] text-[#171916]">
+      <PerformancePageRefresh enabled={dashboard.canSync} />
       <section className="border-b border-[#d9ded2] bg-[#fbfcf7]">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-5 py-6 sm:px-8 lg:px-10">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -82,76 +100,16 @@ export default async function PerformancePage() {
       </section>
 
       <section className="mx-auto grid w-full max-w-7xl gap-6 px-5 pb-12 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:px-10">
-        <div className="border border-[#d9ded2] bg-white">
-          <div className="flex items-center justify-between gap-4 border-b border-[#e4e8dd] px-5 py-4">
-            <div>
-              <h2 className="text-lg font-black text-[#171916]">Top tracked charts</h2>
-              <p className="mt-1 text-sm font-medium text-[#66705e]">Best scores from ingested recent plays</p>
-            </div>
-            <BarChart3 aria-hidden="true" className="text-[#28c950]" size={22} />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[42rem] border-collapse text-left">
-              <thead className="bg-[#f2f4ed] text-xs font-black uppercase tracking-[0.14em] text-[#66705e]">
-                <tr>
-                  <th className="px-5 py-3">Chart</th>
-                  <th className="px-5 py-3">Best</th>
-                  <th className="px-5 py-3">Delta</th>
-                  <th className="px-5 py-3">Grade</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#edf0e8]">
-                {dashboard.topCharts.length > 0 ? (
-                  dashboard.topCharts.map((chart) => (
-                    <tr key={chart.chartToken}>
-                      <td className="px-5 py-4">
-                        <p className="max-w-[22rem] truncate text-sm font-black text-[#171916]">{chart.songName}</p>
-                        <p className="mt-1 text-xs font-bold text-[#66705e]">{chart.mode ?? "Mode"} {chart.level ?? ""}</p>
-                      </td>
-                      <td className="px-5 py-4 font-mono text-sm font-black text-[#171916]">{formatNumber(chart.bestScore)}</td>
-                      <td className="px-5 py-4 text-sm font-black text-[#1b8f40]">{formatDelta(chart.delta)}</td>
-                      <td className="px-5 py-4 text-sm font-black text-[#171916]">{chart.bestGrade ?? "Unranked"}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="px-5 py-10 text-sm font-bold text-[#66705e]" colSpan={4}>
-                      No tracked chart scores yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="border border-[#d9ded2] bg-white">
-          <div className="flex items-center justify-between gap-4 border-b border-[#e4e8dd] px-5 py-4">
-            <div>
-              <h2 className="text-lg font-black text-[#171916]">Recent plays</h2>
-              <p className="mt-1 text-sm font-medium text-[#66705e]">{dashboard.profile?.recentArcade ?? "Phoenix 2"}</p>
-            </div>
-            <Clock3 aria-hidden="true" className="text-[#157bda]" size={22} />
-          </div>
-          <div className="divide-y divide-[#edf0e8]">
-            {dashboard.recentPlays.length > 0 ? (
-              dashboard.recentPlays.map((play) => (
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-5 py-4" key={`${play.chartToken}-${play.playedAt ?? play.score ?? "play"}`}>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-[#171916]">{play.songName}</p>
-                    <p className="mt-1 text-xs font-bold text-[#66705e]">{play.mode ?? "Mode"} {play.level ?? ""} / {formatDate(play.playedAt)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono text-sm font-black text-[#171916]">{formatNumber(play.score)}</p>
-                    <p className="mt-1 text-xs font-black text-[#66705e]">{play.grade ?? play.plate ?? "Played"}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="px-5 py-10 text-sm font-bold text-[#66705e]">No recent play snapshots yet.</p>
-            )}
-          </div>
-        </div>
+        <PerformanceDashboardTables
+          key={`${dashboard.profile?.lastSyncedAt ?? "pending"}:${dashboard.totals.trackedPlays}:${dashboard.totals.trackedCharts}`}
+          nextRecentPlaysOffset={nextRecentPlaysOffset}
+          previewVolume={user?.preferences.songPreviewVolume ?? 0.5}
+          lastFetchedAt={dashboard.profile?.lastSyncedAt}
+          recentArcade={dashboard.profile?.recentArcade}
+          recentPlays={recentPlays}
+          totalRecentPlays={dashboard.totals.trackedPlays}
+          topCharts={topCharts}
+        />
       </section>
     </main>
   );
@@ -195,8 +153,12 @@ function statusDetail(user: Awaited<ReturnType<typeof getCurrentUser>>, dashboar
     return dashboard.profile.syncError;
   }
 
+  if (!user.preferences.performanceAutoRefresh) {
+    return "Opening this page refreshes recent plays for your account. Backend auto refresh is off.";
+  }
+
   const nextRefresh = formatDate(dashboard.profile?.nextRefreshAt ?? null);
-  return `Auto refresh is queued for all users during the MVP. Next refresh: ${nextRefresh}.`;
+  return `Backend auto refresh is enabled. Next refresh: ${nextRefresh}.`;
 }
 
 function formatNumber(value: number | null | undefined, suffix?: string): string {
@@ -205,14 +167,6 @@ function formatNumber(value: number | null | undefined, suffix?: string): string
   }
 
   return `${new Intl.NumberFormat("en-US").format(value)}${suffix ? ` ${suffix}` : ""}`;
-}
-
-function formatDelta(value: number | null): string {
-  if (value === null) {
-    return "-";
-  }
-
-  return value > 0 ? `+${formatNumber(value)}` : formatNumber(value);
 }
 
 function formatDate(value: string | null): string {
@@ -225,10 +179,14 @@ function formatDate(value: string | null): string {
     return value;
   }
 
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
   }).format(parsed);
+}
+
+function songLookupKey(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
 }

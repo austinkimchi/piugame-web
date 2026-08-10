@@ -1,0 +1,498 @@
+"use client";
+
+import { BarChart3, Clock3, ExternalLink, ImageIcon, Link2, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import Image from "next/image";
+import { useEffect, useRef, useState, type UIEvent } from "react";
+
+import { SongDetailView } from "@/components/song-detail-view";
+import type { SongCommunityState } from "@/lib/auth";
+import { formatPerformanceGrade, piuTimestampToDate } from "@/lib/performance-format";
+import type { PublicSong } from "@/lib/types";
+
+interface TopChartRow {
+  songName: string;
+  chartToken: string;
+  bestScore: number | null;
+  previousBestScore: number | null;
+  bestGrade: string | null;
+  bestPlate: string | null;
+  mode: string | null;
+  level: string | null;
+  bestPlayedAt: string | null;
+  song: PublicSong | null;
+}
+
+interface RecentPlayRow {
+  songName: string;
+  chartToken: string;
+  score: number | null;
+  grade: string | null;
+  plate: string | null;
+  mode: string | null;
+  level: string | null;
+  playedAt: string | null;
+  song: PublicSong | null;
+}
+
+interface RecentPlaysResponse {
+  recentPlays: RecentPlayRow[];
+  nextOffset: number | null;
+  total: number;
+  error?: string;
+}
+
+const EMPTY_COMMUNITY_STATE: SongCommunityState = {
+  saved: false,
+  note: "",
+  userTags: [],
+  communityTags: [],
+  tagVotes: [],
+  posts: [],
+};
+
+const PANEL_CLASS = "flex h-[44rem] max-h-[calc(100vh-8rem)] min-h-[32rem] min-w-0 flex-col border border-[#d9ded2] bg-white";
+
+export function PerformanceDashboardTables({
+  lastFetchedAt,
+  nextRecentPlaysOffset,
+  recentArcade,
+  recentPlays,
+  totalRecentPlays,
+  topCharts,
+  previewVolume,
+}: {
+  lastFetchedAt: string | null | undefined;
+  nextRecentPlaysOffset: number | null;
+  recentArcade: string | null | undefined;
+  recentPlays: RecentPlayRow[];
+  totalRecentPlays: number;
+  topCharts: TopChartRow[];
+  previewVolume: number;
+}) {
+  const loadingRecentPlaysRef = useRef(false);
+  const [openSong, setOpenSong] = useState<PublicSong | null>(null);
+  const [openChartToken, setOpenChartToken] = useState<string | null>(null);
+  const [openSongCommunity, setOpenSongCommunity] = useState<{ slug: string; state: SongCommunityState } | null>(null);
+  const [copiedSongSlug, setCopiedSongSlug] = useState<string | null>(null);
+  const [visibleRecentPlays, setVisibleRecentPlays] = useState(recentPlays);
+  const [nextOffset, setNextOffset] = useState(nextRecentPlaysOffset);
+  const [recentTotal, setRecentTotal] = useState(totalRecentPlays);
+  const [recentStatus, setRecentStatus] = useState("");
+
+  useEffect(() => {
+    if (!openSong) {
+      return;
+    }
+
+    let cancelled = false;
+    const songSlug = openSong.slug;
+    const chartToken = openChartToken ?? openSong.chartSummary[0] ?? null;
+
+    async function loadCommunity() {
+      const params = chartToken ? `?${new URLSearchParams({ chart: chartToken }).toString()}` : "";
+      const response = await fetch(`/api/songs/${encodeURIComponent(songSlug)}/community${params}`, { cache: "no-store" });
+      if (!response.ok) {
+        return;
+      }
+      const state = (await response.json()) as SongCommunityState;
+      if (!cancelled) {
+        setOpenSongCommunity({ slug: songSlug, state });
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeNotebook();
+      }
+    }
+
+    void loadCommunity();
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      cancelled = true;
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openChartToken, openSong]);
+
+  function openNotebook(song: PublicSong, chartToken: string | null) {
+    setOpenSong(song);
+    setOpenChartToken(chartToken && song.chartSummary.includes(chartToken) ? chartToken : song.chartSummary[0] ?? null);
+    setOpenSongCommunity(null);
+  }
+
+  function closeNotebook() {
+    setOpenSong(null);
+    setOpenChartToken(null);
+    setOpenSongCommunity(null);
+  }
+
+  async function copySongLink(song: PublicSong, chartToken: string | null = null) {
+    await navigator.clipboard?.writeText(`${window.location.origin}${songDetailHref(song, chartToken)}`).catch(() => undefined);
+    setCopiedSongSlug(song.slug);
+    window.setTimeout(() => setCopiedSongSlug((current) => (current === song.slug ? null : current)), 1200);
+  }
+
+  async function loadMoreRecentPlays() {
+    if (loadingRecentPlaysRef.current || nextOffset === null) {
+      return;
+    }
+
+    loadingRecentPlaysRef.current = true;
+    setRecentStatus("Loading");
+    try {
+      const response = await fetch(`/api/performance/recent?${new URLSearchParams({ offset: String(nextOffset), limit: "35" }).toString()}`, { cache: "no-store" });
+      const body = (await response.json().catch(() => null)) as RecentPlaysResponse | null;
+      if (!response.ok || !body) {
+        setRecentStatus(body?.error ?? "Could not load more plays.");
+        return;
+      }
+
+      setVisibleRecentPlays((current) => appendUniqueRecentPlays(current, body.recentPlays));
+      setNextOffset(body.nextOffset);
+      setRecentTotal(body.total);
+      setRecentStatus("");
+    } catch {
+      setRecentStatus("Could not load more plays.");
+    } finally {
+      loadingRecentPlaysRef.current = false;
+    }
+  }
+
+  function maybeLoadMoreRecentPlays(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (remaining < 220) {
+      void loadMoreRecentPlays();
+    }
+  }
+
+  return (
+    <>
+      <div className={PANEL_CLASS}>
+        <div className="flex items-center justify-between gap-4 border-b border-[#e4e8dd] px-5 py-4">
+          <div>
+            <h2 className="text-lg font-black text-[#171916]">Top tracked charts</h2>
+            <p className="mt-1 text-sm font-medium text-[#66705e]">Best scores from ingested recent plays</p>
+          </div>
+          <BarChart3 aria-hidden="true" className="text-[#28c950]" size={22} />
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          <table className="w-full min-w-[36rem] border-collapse text-left">
+            <thead className="sticky top-0 z-10 bg-[#f2f4ed] text-xs font-black uppercase tracking-[0.14em] text-[#66705e]">
+              <tr>
+                <th className="px-5 py-3">Chart</th>
+                <th className="px-5 py-3">Best</th>
+                <th className="px-5 py-3">Grade</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf0e8]">
+              {topCharts.length > 0 ? (
+                topCharts.map((chart) => (
+                  <tr key={chart.chartToken}>
+                    <td className="px-5 py-4">
+                      <SongCell mode={chart.mode} level={chart.level} song={chart.song} title={chart.songName} onOpen={() => chart.song && openNotebook(chart.song, chartTokenFor(chart))} />
+                    </td>
+                    <td className="px-5 py-4 font-mono text-sm font-black text-[#171916]">{formatNumber(chart.bestScore)}</td>
+                    <td className="px-5 py-4 text-sm font-black text-[#171916]">{formatPerformanceGrade(chart.bestGrade ?? chart.bestPlate)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td className="px-5 py-10 text-sm font-bold text-[#66705e]" colSpan={3}>
+                    No tracked chart scores yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className={PANEL_CLASS}>
+        <div className="flex items-center justify-between gap-4 border-b border-[#e4e8dd] px-5 py-4">
+          <div>
+            <h2 className="text-lg font-black text-[#171916]">Recent plays</h2>
+            <p className="mt-1 text-sm font-medium text-[#66705e]">{formatLastFetched(lastFetchedAt, recentArcade)}</p>
+          </div>
+          <Clock3 aria-hidden="true" className="text-[#157bda]" size={22} />
+        </div>
+        <div className="min-h-0 flex-1 divide-y divide-[#edf0e8] overflow-y-auto" onScroll={maybeLoadMoreRecentPlays}>
+          {visibleRecentPlays.length > 0 ? (
+            visibleRecentPlays.map((play) => (
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-5 py-4" key={`${play.chartToken}-${play.playedAt ?? play.score ?? "play"}`}>
+                <SongCell mode={play.mode} level={play.level} playedAt={play.playedAt} song={play.song} title={play.songName} onOpen={() => play.song && openNotebook(play.song, chartTokenFor(play))} />
+                <div className="text-right">
+                  <p className="font-mono text-sm font-black text-[#171916]">{formatNumber(play.score)}</p>
+                  <p className="mt-1 text-xs font-black text-[#66705e]">{formatPerformanceGrade(play.grade ?? play.plate)}</p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="px-5 py-10 text-sm font-bold text-[#66705e]">No recent play snapshots yet.</p>
+          )}
+          {visibleRecentPlays.length > 0 ? (
+            <div className="px-5 py-3 text-center text-xs font-black uppercase tracking-[0.12em] text-[#66705e]">
+              {recentStatus === "Loading"
+                ? "Loading more"
+                : recentStatus
+                  ? recentStatus
+                  : nextOffset === null
+                  ? `${visibleRecentPlays.length} of ${recentTotal} loaded`
+                  : `${visibleRecentPlays.length} of ${recentTotal} loaded`}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <SongNotebook
+        copied={openSong ? copiedSongSlug === openSong.slug : false}
+        communityState={openSong && openSongCommunity?.slug === openSong.slug ? openSongCommunity.state : null}
+        previewVolume={previewVolume}
+        selectedChartToken={openChartToken}
+        song={openSong}
+        onClose={closeNotebook}
+        onCopy={copySongLink}
+      />
+    </>
+  );
+}
+
+function appendUniqueRecentPlays(current: RecentPlayRow[], incoming: RecentPlayRow[]): RecentPlayRow[] {
+  const seen = new Set(current.map(recentPlayKey));
+  const next = [...current];
+  for (const play of incoming) {
+    const key = recentPlayKey(play);
+    if (!seen.has(key)) {
+      next.push(play);
+      seen.add(key);
+    }
+  }
+  return next;
+}
+
+function recentPlayKey(play: RecentPlayRow): string {
+  return [play.chartToken, play.playedAt ?? "", play.score ?? "", play.grade ?? "", play.plate ?? ""].join("|");
+}
+
+function SongCell({
+  level,
+  mode,
+  onOpen,
+  playedAt,
+  song,
+  title,
+}: {
+  level: string | null;
+  mode: string | null;
+  onOpen: () => void;
+  playedAt?: string | null;
+  song: PublicSong | null;
+  title: string;
+}) {
+  const content = (
+    <>
+      <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border border-[#d9ded2] bg-[#eef1e8] text-[#66705e]">
+        {song?.imageUrl ? (
+          <Image alt="" className="object-cover" fill sizes="48px" src={song.imageUrl} />
+        ) : (
+          <ImageIcon aria-hidden="true" size={17} />
+        )}
+      </span>
+      <span className="min-w-0">
+        <span className="block max-w-[22rem] truncate text-sm font-black text-[#171916]">{title}</span>
+        <span className="mt-1 block text-xs font-bold text-[#66705e]">
+          {formatChartToken(mode, level)}
+          {playedAt ? ` / ${formatDate(playedAt)}` : ""}
+        </span>
+      </span>
+    </>
+  );
+
+  if (!song) {
+    return <div className="flex min-w-0 items-center gap-3">{content}</div>;
+  }
+
+  return (
+    <button className="flex min-w-0 items-center gap-3 text-left hover:text-[#28c950]" onClick={onOpen} type="button">
+      {content}
+    </button>
+  );
+}
+
+function SongNotebook({
+  copied,
+  communityState,
+  previewVolume,
+  selectedChartToken,
+  song,
+  onClose,
+  onCopy,
+}: {
+  copied: boolean;
+  communityState: SongCommunityState | null;
+  previewVolume: number;
+  selectedChartToken: string | null;
+  song: PublicSong | null;
+  onClose: () => void;
+  onCopy: (song: PublicSong, chartToken?: string | null) => void;
+}) {
+  return (
+    <AnimatePresence>
+      {song ? (
+        <motion.div
+          animate={{ opacity: 1 }}
+          aria-label={`${song.title} details`}
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#171916]/45 px-3 py-5 backdrop-blur-sm sm:px-6"
+          exit={{ opacity: 0 }}
+          initial={{ opacity: 0 }}
+          role="dialog"
+          transition={{ duration: 0.18 }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              onClose();
+            }
+          }}
+        >
+          <motion.div
+            animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
+            className="notebook-modal relative flex h-[min(92vh,880px)] w-[min(94vw,1180px)] flex-col overflow-hidden rounded-2xl border border-[#d6ddcf] bg-[#fbfcf7] shadow-[0_30px_90px_rgba(12,18,10,0.32)]"
+            exit={{ opacity: 0, y: 18, scale: 0.97 }}
+            initial={{ opacity: 0, y: 24, scale: 0.96, rotate: -0.4 }}
+            transition={{ type: "spring", stiffness: 260, damping: 28 }}
+          >
+            <div className="absolute right-7 top-8 z-20 flex shrink-0 items-center gap-2">
+              <a
+                aria-label="Open full song page"
+                className="notebook-action inline-flex size-10 items-center justify-center border border-[#cfd7c8] bg-white/90 text-[#343b30] shadow-[0_8px_22px_rgba(30,34,26,0.10)] backdrop-blur transition hover:bg-[#eef1e8]"
+                href={songDetailHref(song, selectedChartToken)}
+                title="Open full song page"
+              >
+                <ExternalLink aria-hidden="true" size={17} />
+              </a>
+              <button
+                aria-label={copied ? "Song link copied" : "Copy song link"}
+                className="notebook-action inline-flex size-10 items-center justify-center border border-[#cfd7c8] bg-white/90 text-[#343b30] shadow-[0_8px_22px_rgba(30,34,26,0.10)] backdrop-blur transition hover:bg-[#eef1e8]"
+                title={copied ? "Copied" : "Copy song link"}
+                type="button"
+                onClick={() => onCopy(song, selectedChartToken)}
+              >
+                <Link2 aria-hidden="true" size={17} />
+              </button>
+              <button
+                aria-label="Close song details"
+                className="notebook-action inline-flex size-10 items-center justify-center border border-[#cfd7c8] bg-white/90 text-[#343b30] shadow-[0_8px_22px_rgba(30,34,26,0.10)] backdrop-blur transition hover:bg-[#eef1e8]"
+                type="button"
+                onClick={onClose}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </div>
+            <div className="notebook-scroll h-full overflow-y-auto bg-[#f7f8f2]">
+              <SongDetailView
+                key={`${song.slug}:${selectedChartToken ?? ""}`}
+                community={{ user: null, initialState: communityState ?? EMPTY_COMMUNITY_STATE }}
+                communityReadOnly
+                initialSelectedChartToken={selectedChartToken}
+                mode="notebook"
+                previewVolume={previewVolume}
+                song={song}
+                onBack={onClose}
+              />
+            </div>
+            <div aria-hidden="true" className="notebook-resize-cue" />
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+function chartTokenFor(play: { mode: string | null; level: string | null }): string | null {
+  const mode = chartModeToken(play.mode);
+  const level = chartLevelToken(play.level);
+  return mode && level ? `${mode}${level}` : null;
+}
+
+function formatNumber(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatDate(value: string | null): string {
+  const parsed = piuTimestampToDate(value);
+  if (!parsed) {
+    return value ?? "Pending";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function formatLastFetched(value: string | null | undefined, fallback: string | null | undefined): string {
+  const parsed = piuTimestampToDate(value);
+  if (parsed) {
+    return `Last fetched: ${new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(parsed)}`;
+  }
+
+  return fallback ? `Last fetched: ${fallback}` : "Last fetched: Pending";
+}
+
+function formatChartToken(mode: string | null, level: string | null): string {
+  const token = chartTokenFor({ mode, level });
+  if (!token) {
+    return "Mode";
+  }
+
+  return token;
+}
+
+function chartModeToken(mode: string | null): string | null {
+  const normalized = mode?.replace(/[^a-z]/gi, "").toLowerCase() ?? "";
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "s" || normalized === "single" || normalized === "singles") {
+    return "S";
+  }
+
+  if (normalized === "d" || normalized === "double" || normalized === "doubles") {
+    return "D";
+  }
+
+  if (normalized === "c" || normalized === "coop" || normalized === "cooperative") {
+    return "C";
+  }
+
+  return mode?.toUpperCase() ?? null;
+}
+
+function chartLevelToken(level: string | null): string | null {
+  const normalized = level?.replace(/[^0-9+]/g, "") ?? "";
+  return normalized || null;
+}
+
+function songDetailHref(song: PublicSong, chartToken: string | null = null): string {
+  if (!chartToken) {
+    return `/songs/${song.slug}`;
+  }
+
+  return `/songs/${song.slug}?chart=${encodeURIComponent(chartToken)}`;
+}

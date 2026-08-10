@@ -112,6 +112,10 @@ function statsKey(value: string | null): string {
   return cleanText(value).toLowerCase();
 }
 
+function titleLookupKey(value: string): string {
+  return cleanText(value).toLowerCase();
+}
+
 function normalizedSeries(value: string | null): string {
   return cleanText(value).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -159,12 +163,17 @@ function levelSortValue(value: string): number {
 }
 
 function isCoOpToken(token: string): boolean {
-  return /^C(?:O-?OP|X\d+)?$/i.test(cleanText(token));
+  return /^C(?:O-?OP|[2-5])?$/i.test(cleanText(token));
 }
 
 function coOpPlayerCountFromToken(token: string): string | null {
-  const match = cleanText(token).match(/^CX([2-5])$/i);
+  const match = cleanText(token).match(/^C([2-5])$/i);
   return match ? match[1] : null;
+}
+
+function normalizeChartToken(token: unknown): string {
+  const normalized = cleanText(token).toUpperCase().replace(/\s+/g, "");
+  return normalized.replace(/^CX([2-5])$/, "C$1");
 }
 
 function levelFromChartToken(token: string): string | null {
@@ -220,7 +229,7 @@ function chartPrefixFor(chart: string): string | null {
     return "D";
   }
   if (chart === "co-op") {
-    return "CX";
+    return "C";
   }
   return null;
 }
@@ -264,7 +273,7 @@ function levelRegexesForChart(level: string, chart: string | null): RegExp[] {
 
   if (chart === "co-op") {
     if (/^[2-5]$/.test(level)) {
-      regexes.push(new RegExp(`^CX${escapeRegex(level)}$`, "i"));
+      regexes.push(new RegExp(`^C${escapeRegex(level)}$`, "i"));
     }
     return regexes;
   }
@@ -280,11 +289,11 @@ function levelRegexesForChart(level: string, chart: string | null): RegExp[] {
   }
 
   if (/^[2-5]$/.test(level)) {
-    regexes.push(new RegExp(`^CX${escapeRegex(level)}$`, "i"));
+    regexes.push(new RegExp(`^C${escapeRegex(level)}$`, "i"));
   }
 
   if (level === "+") {
-    regexes.push(new RegExp("^(?!C(?:O-?OP|X\\d+)?$)\\D+(?!(?:[1-9]|1\\d|2[0-7])$).+$", "i"));
+    regexes.push(new RegExp("^(?!C(?:O-?OP|[2-5])?$)\\D+(?!(?:[1-9]|1\\d|2[0-7])$).+$", "i"));
   } else {
     regexes.push(new RegExp(`\\D${escapeRegex(level)}$`, "i"));
   }
@@ -378,12 +387,12 @@ function imageUrlFor(version: PiuCatalogVersion, filename: string | null): strin
 
 function chartSummary(document: CatalogDocument): string[] {
   if (Array.isArray(document.chartTokens) && document.chartTokens.length > 0) {
-    return document.chartTokens.map(cleanText).filter(Boolean);
+    return document.chartTokens.map(normalizeChartToken).filter(Boolean);
   }
 
   if (Array.isArray(document.chartsFull)) {
     return document.chartsFull
-      .map((chart) => cleanText(chart.token || `${chart.mode}${chart.level}`))
+      .map((chart) => normalizeChartToken(chart.token || `${chart.mode}${chart.level}`))
       .filter(Boolean);
   }
 
@@ -999,7 +1008,7 @@ export async function getCatalogFilterOptions(
   return filterOptionsFromValues({
     folders: folders.map(cleanText),
     series: series.map(cleanText),
-    chartTokens: chartTokens.map(cleanText),
+    chartTokens: chartTokens.map(normalizeChartToken),
     charts,
   });
 }
@@ -1025,6 +1034,53 @@ export async function getSongBySlug(slug: string): Promise<PublicSong | null> {
     .find((song) => song.slug === slug);
 
   return match ?? null;
+}
+
+export async function getSongsByTitles(
+  version: PiuCatalogVersion,
+  titles: string[],
+): Promise<Map<string, PublicSong>> {
+  const uniqueTitles = Array.from(new Set(titles.map(cleanText).filter(Boolean)));
+  const result = new Map<string, PublicSong>();
+  if (uniqueTitles.length === 0) {
+    return result;
+  }
+
+  if (!hasMongoConfig()) {
+    const fallback = await fallbackSongs(version, 0, 500);
+    for (const song of fallback) {
+      const key = titleLookupKey(song.title);
+      if (uniqueTitles.some((title) => titleLookupKey(title) === key) && !result.has(key)) {
+        result.set(key, song);
+      }
+    }
+    return result;
+  }
+
+  const collection = await collectionFor(version);
+  const documents = await collection
+    .find(
+      {
+        $or: uniqueTitles.flatMap((title) => {
+          const exactTitle = new RegExp(`^${escapeRegex(title)}$`, "i");
+          return [{ songName: exactTitle }, { songKey: exactTitle }];
+        }),
+      },
+      { projection: projection() },
+    )
+    .limit(Math.max(uniqueTitles.length * 2, uniqueTitles.length))
+    .toArray();
+
+  const wantedKeys = new Set(uniqueTitles.map(titleLookupKey));
+  for (const document of documents) {
+    const song = publicSongFromDocument(document, version);
+    const key = titleLookupKey(song.title);
+    if (wantedKeys.has(key) && !result.has(key)) {
+      result.set(key, song);
+    }
+  }
+
+  return result;
 }
 
 async function getCatalogDocumentBySlug(slug: string): Promise<WithId<CatalogDocument> | null> {
@@ -1056,7 +1112,7 @@ function normalizeCatalogEditorPayload(input: Partial<CatalogEditorPayload>): Ca
   const folderPosition = editableFolderPosition(input.folderPosition);
   const series = cleanText(input.series).slice(0, 120);
   const tags = cleanEditableList(input.tags, 24).map((tag) => tag.slice(0, 60));
-  const chartTokens = cleanEditableList(input.chartTokens, 80).map((token) => token.toUpperCase().replace(/\s+/g, ""));
+  const chartTokens = cleanEditableList(input.chartTokens, 80).map(normalizeChartToken);
   const invalidChartTokens = chartTokens.filter((token) => !/^[A-Z0-9+-]{1,12}$/.test(token));
 
   if (title.length < 1) {

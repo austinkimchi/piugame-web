@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUser, updateUserPreferences } from "@/lib/auth";
+import { isPiuGameVersion } from "@/lib/piu-version";
 import type { SongSortOption, SortDirection } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -13,6 +14,8 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => null)) as {
+    performanceAutoRefresh?: boolean;
+    piuGameVersion?: unknown;
     songDetailCompactView?: boolean;
     songPreviewMuted?: boolean;
     songPreviewVolume?: number;
@@ -21,6 +24,8 @@ export async function POST(request: Request) {
     songExplorerFavoritesFirst?: boolean;
   } | null;
   const preferences = {
+    ...(typeof body?.performanceAutoRefresh === "boolean" ? { performanceAutoRefresh: body.performanceAutoRefresh } : {}),
+    ...(isPiuGameVersion(body?.piuGameVersion) ? { piuGameVersion: body.piuGameVersion } : {}),
     ...(typeof body?.songDetailCompactView === "boolean" ? { songDetailCompactView: body.songDetailCompactView } : {}),
     ...(typeof body?.songPreviewMuted === "boolean" ? { songPreviewMuted: body.songPreviewMuted } : {}),
     ...(typeof body?.songPreviewVolume === "number" && Number.isFinite(body.songPreviewVolume) ? { songPreviewVolume: body.songPreviewVolume } : {}),

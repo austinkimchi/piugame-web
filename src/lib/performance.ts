@@ -7,6 +7,10 @@ import { PiuClient, type PlayerData, type RecentPlay } from "@austinkimchi/piuga
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
+import { piuTimestampToDate } from "@/lib/performance-format";
+import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
+import { normalizePiuGameVersion } from "@/lib/piu-version";
+import type { PiuCatalogVersion } from "@/lib/types";
 
 const COMMUNITY_DB_NAME = process.env.COMMUNITY_DB_NAME ?? "piugame_web";
 const USERS_COLLECTION = process.env.COMMUNITY_USERS_COLLECTION ?? "users";
@@ -15,6 +19,7 @@ const PERFORMANCE_PLAYS_COLLECTION = process.env.PERFORMANCE_PLAYS_COLLECTION ??
 const PERFORMANCE_CHART_STATS_COLLECTION = process.env.PERFORMANCE_CHART_STATS_COLLECTION ?? "performance_chart_stats";
 const PERFORMANCE_REFRESH_MINUTES = Number(process.env.PERFORMANCE_REFRESH_MINUTES ?? "30");
 const PERFORMANCE_SYNC_BATCH_SIZE = Number(process.env.PERFORMANCE_SYNC_BATCH_SIZE ?? "5");
+const PERFORMANCE_RECENT_PLAYS_PAGE_SIZE = 35;
 
 declare global {
   var piuPerformanceIndexesPromise: Promise<void> | undefined;
@@ -23,6 +28,10 @@ declare global {
 type SyncStatus = "idle" | "queued" | "syncing" | "synced" | "failed";
 
 interface MinimalUserDocument {
+  preferences?: {
+    performanceAutoRefresh?: boolean;
+    piuGameVersion?: PiuCatalogVersion;
+  };
   piuLink?: {
     piuUsername?: string;
     displayName?: string;
@@ -156,6 +165,12 @@ export interface PerformanceSyncResult {
   skipped: number;
 }
 
+export interface PerformanceRecentPlaysPage {
+  recentPlays: PerformanceDashboard["recentPlays"];
+  nextOffset: number | null;
+  total: number;
+}
+
 async function collections() {
   if (!hasMongoConfig()) {
     throw new Error("MongoDB is required for performance features.");
@@ -195,6 +210,10 @@ async function ensurePerformanceIndexes(args: {
   ]);
 }
 
+function recentPlaySort() {
+  return { playedAt: -1, ingestedAt: -1, _id: -1 } as const;
+}
+
 export async function getPerformanceDashboard(userIdInput: string | null): Promise<PerformanceDashboard> {
   const empty = emptyDashboard(hasMongoConfig());
   const userId = objectIdFromString(userIdInput);
@@ -207,7 +226,7 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
 
   const [profile, recentPlays, topCharts, trackedPlays, trackedCharts, upscoreCharts, averageScores] = await Promise.all([
     profiles.findOne({ userId }),
-    plays.find({ userId }).sort({ playedAt: -1, ingestedAt: -1 }).limit(12).toArray(),
+    plays.find({ userId }).sort(recentPlaySort()).limit(PERFORMANCE_RECENT_PLAYS_PAGE_SIZE).toArray(),
     chartStats.find({ userId }).sort({ bestScore: -1, updatedAt: -1 }).limit(10).toArray(),
     plays.countDocuments({ userId }),
     chartStats.countDocuments({ userId }),
@@ -235,26 +254,66 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
   };
 }
 
+export async function getPerformanceRecentPlays(
+  userIdInput: string | null,
+  args: { offset?: number; limit?: number } = {},
+): Promise<PerformanceRecentPlaysPage> {
+  const userId = objectIdFromString(userIdInput);
+  if (!userId || !hasMongoConfig()) {
+    return { recentPlays: [], nextOffset: null, total: 0 };
+  }
+
+  const offset = Math.max(0, Math.trunc(args.offset ?? 0));
+  const limit = Math.min(Math.max(1, Math.trunc(args.limit ?? PERFORMANCE_RECENT_PLAYS_PAGE_SIZE)), PERFORMANCE_RECENT_PLAYS_PAGE_SIZE);
+  const { plays } = await collections();
+  const [recentPlays, total] = await Promise.all([
+    plays.find({ userId }).sort(recentPlaySort()).skip(offset).limit(limit).toArray(),
+    plays.countDocuments({ userId }),
+  ]);
+
+  return {
+    recentPlays: recentPlays.map(publicRecentPlay),
+    nextOffset: offset + recentPlays.length < total ? offset + recentPlays.length : null,
+    total,
+  };
+}
+
 export async function syncDuePerformanceUsers(): Promise<PerformanceSyncResult> {
   if (!hasMongoConfig()) {
     return { scanned: 0, synced: 0, failed: 0, skipped: 0 };
   }
 
   const { users, profiles } = await collections();
-  await seedPerformanceSchedulesForLinkedUsers(users, profiles);
-
   const now = new Date();
-  const dueProfiles = await profiles
+  const batchSize = Math.max(1, PERFORMANCE_SYNC_BATCH_SIZE);
+  const autoRefreshUsers = await users
     .find({
-      nextRefreshAt: { $lte: now },
-      $or: [{ syncLeaseUntil: null }, { syncLeaseUntil: { $lte: now } }],
+      "preferences.performanceAutoRefresh": true,
+      "piuLink.piuUsername": { $type: "string" },
+      "piuLink.encryptedPassword": { $exists: true },
     })
-    .sort({ nextRefreshAt: 1 })
-    .limit(Math.max(1, PERFORMANCE_SYNC_BATCH_SIZE))
+    .limit(batchSize * 2)
     .toArray();
 
-  const result: PerformanceSyncResult = { scanned: dueProfiles.length, synced: 0, failed: 0, skipped: 0 };
-  for (const profile of dueProfiles) {
+  const result: PerformanceSyncResult = { scanned: 0, synced: 0, failed: 0, skipped: 0 };
+  for (const user of autoRefreshUsers) {
+    if (result.scanned >= batchSize) {
+      break;
+    }
+
+    await ensureUserPerformanceSchedule(user._id, users, profiles);
+    const profile = await profiles.findOne({
+      userId: user._id,
+      nextRefreshAt: { $lte: now },
+      $or: [{ syncLeaseUntil: null }, { syncLeaseUntil: { $lte: now } }],
+    });
+
+    if (!profile) {
+      result.skipped += 1;
+      continue;
+    }
+
+    result.scanned += 1;
     const claimed = await profiles.findOneAndUpdate(
       { _id: profile._id, $or: [{ syncLeaseUntil: null }, { syncLeaseUntil: { $lte: now } }] },
       { $set: { syncStatus: "syncing", syncLeaseUntil: new Date(Date.now() + 5 * 60 * 1000), updatedAt: now } },
@@ -267,7 +326,6 @@ export async function syncDuePerformanceUsers(): Promise<PerformanceSyncResult> 
     }
 
     try {
-      const user = await users.findOne({ _id: profile.userId });
       await syncSingleUserPerformance(profile.userId, user);
       result.synced += 1;
     } catch (error) {
@@ -277,23 +335,6 @@ export async function syncDuePerformanceUsers(): Promise<PerformanceSyncResult> 
   }
 
   return result;
-}
-
-async function seedPerformanceSchedulesForLinkedUsers(
-  users: Collection<MinimalUserDocument>,
-  profiles: Collection<PerformanceProfileDocument>,
-): Promise<void> {
-  const linkedUsers = await users
-    .find({
-      "piuLink.piuUsername": { $type: "string" },
-      "piuLink.encryptedPassword": { $exists: true },
-    })
-    .limit(Math.max(1, PERFORMANCE_SYNC_BATCH_SIZE * 2))
-    .toArray();
-
-  for (const user of linkedUsers) {
-    await ensureUserPerformanceSchedule(user._id, users, profiles);
-  }
 }
 
 export async function syncCurrentUserPerformance(userIdInput: string | null): Promise<void> {
@@ -366,9 +407,18 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
   }
 
   const password = decryptCredential(encryptedPassword);
-  const client = new PiuClient({ version: "phoenix2" });
+  const client = new PiuClient({ version: normalizePiuGameVersion(user?.preferences?.piuGameVersion) });
   await client.login(piuUsername, password);
-  const [profile, recentPlays] = await Promise.all([client.getPlayerData(piuUsername), client.getRecentPlays(piuUsername)]);
+  const profile = await client.getPlayerData(piuUsername);
+  let recentPlays: RecentPlay[];
+  try {
+    recentPlays = await client.getRecentPlays(piuUsername);
+  } catch (error) {
+    if (!shouldTreatRecentPlaysAsEmpty({ profilePlayCount: profile.playCount, error })) {
+      throw error;
+    }
+    recentPlays = [];
+  }
   await storePerformanceSnapshot(userId, profile, recentPlays);
 }
 
@@ -536,12 +586,7 @@ function chartTokenFromPlay(play: Pick<RecentPlay, "songName" | "mode" | "level"
 }
 
 function parsePlayDate(value: string | null): Date | null {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return piuTimestampToDate(value);
 }
 
 function publicProfile(profile: WithId<PerformanceProfileDocument>): NonNullable<PerformanceDashboard["profile"]> {
@@ -569,6 +614,7 @@ function publicProfile(profile: WithId<PerformanceProfileDocument>): NonNullable
 }
 
 function publicRecentPlay(play: WithId<PerformancePlayEventDocument>): PerformanceDashboard["recentPlays"][number] {
+  const playedAtFromRaw = parsePlayDate(play.playedAtRaw);
   return {
     songName: play.songName,
     chartToken: play.chartToken,
@@ -577,7 +623,7 @@ function publicRecentPlay(play: WithId<PerformancePlayEventDocument>): Performan
     plate: play.plate,
     mode: play.mode,
     level: play.level,
-    playedAt: play.playedAt?.toISOString() ?? play.playedAtRaw,
+    playedAt: playedAtFromRaw?.toISOString() ?? play.playedAt?.toISOString() ?? play.playedAtRaw,
   };
 }
 

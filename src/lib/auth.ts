@@ -8,8 +8,9 @@ import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { encryptCredential } from "@/lib/credential-crypto";
 import { piuDisplayName } from "@/lib/piu-account";
+import { DEFAULT_PIU_GAME_VERSION, isPiuGameVersion, normalizePiuGameVersion } from "@/lib/piu-version";
 import type { DiscordProfile } from "@/lib/discord-oauth";
-import type { SongSortOption, SortDirection } from "@/lib/types";
+import type { PiuCatalogVersion, SongSortOption, SortDirection } from "@/lib/types";
 import type { PlayerData } from "@austinkimchi/piugame-sdk";
 
 export const SESSION_COOKIE_NAME = "piu_session";
@@ -62,6 +63,8 @@ export interface PublicUser {
 }
 
 export interface UserPreferences {
+  performanceAutoRefresh: boolean;
+  piuGameVersion: PiuCatalogVersion;
   songDetailCompactView: boolean;
   songPreviewMuted: boolean;
   songPreviewVolume: number;
@@ -252,6 +255,8 @@ interface BotPlayerProfileDocument {
 }
 
 const DEFAULT_USER_PREFERENCES: UserPreferences = {
+  performanceAutoRefresh: false,
+  piuGameVersion: DEFAULT_PIU_GAME_VERSION,
   songDetailCompactView: false,
   songPreviewMuted: true,
   songPreviewVolume: 0.5,
@@ -1232,6 +1237,8 @@ export async function setUsername(user: PublicUser, usernameInput: string): Prom
 
 export async function updateUserPreferences(user: PublicUser, preferences: Partial<UserPreferences>): Promise<PublicUser> {
   const updates: {
+    "preferences.performanceAutoRefresh"?: boolean;
+    "preferences.piuGameVersion"?: PiuCatalogVersion;
     "preferences.songDetailCompactView"?: boolean;
     "preferences.songPreviewMuted"?: boolean;
     "preferences.songPreviewVolume"?: number;
@@ -1245,6 +1252,12 @@ export async function updateUserPreferences(user: PublicUser, preferences: Parti
 
   if (typeof preferences.songDetailCompactView === "boolean") {
     updates["preferences.songDetailCompactView"] = preferences.songDetailCompactView;
+  }
+  if (typeof preferences.performanceAutoRefresh === "boolean") {
+    updates["preferences.performanceAutoRefresh"] = preferences.performanceAutoRefresh;
+  }
+  if (isPiuGameVersion(preferences.piuGameVersion)) {
+    updates["preferences.piuGameVersion"] = preferences.piuGameVersion;
   }
   if (typeof preferences.songPreviewMuted === "boolean") {
     updates["preferences.songPreviewMuted"] = preferences.songPreviewMuted;
@@ -1381,6 +1394,8 @@ function publicUserPreferences(preferences: Partial<UserPreferences> | undefined
   const volume = Number(preferences?.songPreviewVolume);
 
   return {
+    performanceAutoRefresh: preferences?.performanceAutoRefresh === true,
+    piuGameVersion: normalizePiuGameVersion(preferences?.piuGameVersion),
     songDetailCompactView: preferences?.songDetailCompactView === true,
     songPreviewMuted: preferences?.songPreviewMuted !== false,
     songPreviewVolume: Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : DEFAULT_USER_PREFERENCES.songPreviewVolume,

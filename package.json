@@ -6,6 +6,7 @@
     "dev": "next dev -p 4080",
     "build": "next build",
     "start": "next start -p 4090",
+    "test": "node --experimental-strip-types --test",
     "lint": "eslint",
     "sync:assets": "node scripts/sync-assets.mjs"
   },
