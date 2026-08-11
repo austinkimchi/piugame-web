@@ -21,9 +21,10 @@ interface SongCardProps {
   onOpen?: (song: PublicSong, chartToken?: string) => void;
   onPreviewStart: (song: PublicSong) => void;
   onPreviewStop: () => void;
+  showManualUploadState?: boolean;
 }
 
-export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, onOpen, onPreviewStart, onPreviewStop }: SongCardProps) {
+export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, onOpen, onPreviewStart, onPreviewStop, showManualUploadState }: SongCardProps) {
   const lastCoarseTapTimeRef = useRef(0);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
