@@ -1,41 +1,44 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
-export function PerformancePageRefresh({ enabled }: { enabled: boolean }) {
+import { emitPerformanceRefreshState } from "@/lib/performance-refresh-events";
+
+let pageLoadSyncStarted = false;
+
+export function PerformancePageRefresh({ token }: { token: string | null }) {
   const router = useRouter();
-  const started = useRef(false);
 
   useEffect(() => {
-    if (!enabled || started.current) {
+    if (!token || pageLoadSyncStarted) {
       return;
     }
 
-    started.current = true;
-    const controller = new AbortController();
+    pageLoadSyncStarted = true;
 
     async function refreshPerformance() {
-      const response = await fetch("/api/performance/sync?response=json", {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-        },
-        cache: "no-store",
-        signal: controller.signal,
-      });
+      emitPerformanceRefreshState("syncing");
+      try {
+        const response = await fetch("/api/performance/sync?response=json", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        });
 
-      if (response.ok) {
-        router.refresh();
+        if (response.ok) {
+          router.refresh();
+        }
+      } finally {
+        emitPerformanceRefreshState("idle");
       }
     }
 
     void refreshPerformance().catch(() => undefined);
-
-    return () => {
-      controller.abort();
-    };
-  }, [enabled, router]);
+  }, [router, token]);
 
   return null;
 }

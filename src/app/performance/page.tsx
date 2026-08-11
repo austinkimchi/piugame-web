@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { after } from "next/server";
 import { Activity, ArrowUpRight, BarChart3, Database, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
 
 import { AccountBar } from "@/components/account-bar";
@@ -8,7 +9,8 @@ import { PerformanceDashboardTables } from "@/components/performance-dashboard-t
 import { PerformancePageRefresh } from "@/components/performance-page-refresh";
 import { getCurrentUser, getCurrentUserId } from "@/lib/auth";
 import { getSongsByTitles } from "@/lib/catalog";
-import { getPerformanceDashboard, type PerformanceDashboard } from "@/lib/performance";
+import { getPerformanceDashboard, syncCurrentUserTopPlaysIfDue, type PerformanceDashboard } from "@/lib/performance";
+import { createPerformanceSyncToken } from "@/lib/performance-sync-token";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 
 export const runtime = "nodejs";
@@ -25,6 +27,11 @@ export const metadata: Metadata = {
 export default async function PerformancePage() {
   const [user, userId] = await Promise.all([getCurrentUser(), getCurrentUserId()]);
   const dashboard = await getPerformanceDashboard(userId);
+  if (userId && dashboard.mongoReady) {
+    after(() => {
+      void syncCurrentUserTopPlaysIfDue(userId).catch(() => undefined);
+    });
+  }
   const catalogSongsByTitle = await getSongsByTitles(
     normalizePiuGameVersion(user?.preferences.piuGameVersion),
     [...dashboard.topCharts.map((chart) => chart.songName), ...dashboard.recentPlays.map((play) => play.songName)],
@@ -37,11 +44,13 @@ export default async function PerformancePage() {
     ...play,
     song: catalogSongsByTitle.get(songLookupKey(play.songName)) ?? null,
   }));
+  const nextTopChartsOffset = topCharts.length < dashboard.totals.trackedPumbilityCharts ? topCharts.length : null;
   const nextRecentPlaysOffset = recentPlays.length < dashboard.totals.trackedPlays ? recentPlays.length : null;
+  const pageRefreshToken = user?.piuProfile && userId && dashboard.mongoReady ? createPerformanceSyncToken(userId) : null;
 
   return (
     <main className="min-h-screen bg-[#f7f8f2] text-[#171916]">
-      <PerformancePageRefresh enabled={dashboard.canSync} />
+      <PerformancePageRefresh token={pageRefreshToken} />
       <section className="border-b border-[#d9ded2] bg-[#fbfcf7]">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-5 py-6 sm:px-8 lg:px-10">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -93,7 +102,7 @@ export default async function PerformancePage() {
       </section>
 
       <section className="mx-auto grid w-full max-w-7xl gap-6 px-5 py-8 sm:px-8 lg:grid-cols-4 lg:px-10">
-        <MetricCard icon={<TrendingUp aria-hidden="true" size={19} />} label="Pumbility" value={formatNumber(dashboard.profile?.pumbilityScore)} detail={formatNumber(dashboard.profile?.pp, "PP")} />
+        <MetricCard icon={<TrendingUp aria-hidden="true" size={19} />} label="Pumbility" value={formatNumber(dashboard.profile?.pumbilityScore)} detail={`Rating ${formatNumber(dashboard.profile?.rating)}`} />
         <MetricCard icon={<BarChart3 aria-hidden="true" size={19} />} label="Tracked charts" value={formatNumber(dashboard.totals.trackedCharts)} detail={`${formatNumber(dashboard.totals.trackedPlays)} recent plays stored`} />
         <MetricCard icon={<ShieldCheck aria-hidden="true" size={19} />} label="Upscores" value={formatNumber(dashboard.totals.upscores)} detail="From chart best history" />
         <MetricCard icon={<Database aria-hidden="true" size={19} />} label="Average best" value={formatNumber(dashboard.totals.averageBestScore)} detail="Across tracked charts" />
@@ -102,12 +111,14 @@ export default async function PerformancePage() {
       <section className="mx-auto grid w-full max-w-7xl gap-6 px-5 pb-12 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:px-10">
         <PerformanceDashboardTables
           key={`${dashboard.profile?.lastSyncedAt ?? "pending"}:${dashboard.totals.trackedPlays}:${dashboard.totals.trackedCharts}`}
+          nextTopChartsOffset={nextTopChartsOffset}
           nextRecentPlaysOffset={nextRecentPlaysOffset}
           previewVolume={user?.preferences.songPreviewVolume ?? 0.5}
           lastFetchedAt={dashboard.profile?.lastSyncedAt}
           recentArcade={dashboard.profile?.recentArcade}
           recentPlays={recentPlays}
           totalRecentPlays={dashboard.totals.trackedPlays}
+          totalTopCharts={dashboard.totals.trackedPumbilityCharts}
           topCharts={topCharts}
         />
       </section>

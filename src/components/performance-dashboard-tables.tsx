@@ -1,13 +1,14 @@
 "use client";
 
-import { BarChart3, Clock3, ExternalLink, ImageIcon, Link2, X } from "lucide-react";
+import { ArrowDownWideNarrow, BarChart3, Clock3, ExternalLink, ImageIcon, Link2, RefreshCw, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
-import { useEffect, useRef, useState, type UIEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type UIEvent } from "react";
 
 import { SongDetailView } from "@/components/song-detail-view";
 import type { SongCommunityState } from "@/lib/auth";
 import { formatPerformanceGrade, piuTimestampToDate } from "@/lib/performance-format";
+import { getPerformanceRefreshState, subscribePerformanceRefreshState } from "@/lib/performance-refresh-events";
 import type { PublicSong } from "@/lib/types";
 
 interface TopChartRow {
@@ -19,7 +20,12 @@ interface TopChartRow {
   bestPlate: string | null;
   mode: string | null;
   level: string | null;
-  bestPlayedAt: string | null;
+  bestBucketPage: number | null;
+  bestSyncedAt: string | null;
+  topPlayRank: number | null;
+  topPumbilityScore: number | null;
+  topPlayedAt: string | null;
+  topPlaysSyncedAt: string | null;
   song: PublicSong | null;
 }
 
@@ -32,6 +38,7 @@ interface RecentPlayRow {
   mode: string | null;
   level: string | null;
   playedAt: string | null;
+  stageBreak: boolean;
   song: PublicSong | null;
 }
 
@@ -39,6 +46,16 @@ interface RecentPlaysResponse {
   recentPlays: RecentPlayRow[];
   nextOffset: number | null;
   total: number;
+  error?: string;
+}
+
+type TopChartsSort = "pumbility" | "score";
+
+interface TopChartsResponse {
+  topCharts: TopChartRow[];
+  nextOffset: number | null;
+  total: number;
+  sort: TopChartsSort;
   error?: string;
 }
 
@@ -55,30 +72,41 @@ const PANEL_CLASS = "flex h-[44rem] max-h-[calc(100vh-8rem)] min-h-[32rem] min-w
 
 export function PerformanceDashboardTables({
   lastFetchedAt,
+  nextTopChartsOffset,
   nextRecentPlaysOffset,
   recentArcade,
   recentPlays,
   totalRecentPlays,
+  totalTopCharts,
   topCharts,
   previewVolume,
 }: {
   lastFetchedAt: string | null | undefined;
+  nextTopChartsOffset: number | null;
   nextRecentPlaysOffset: number | null;
   recentArcade: string | null | undefined;
   recentPlays: RecentPlayRow[];
   totalRecentPlays: number;
+  totalTopCharts: number;
   topCharts: TopChartRow[];
   previewVolume: number;
 }) {
+  const loadingTopChartsRef = useRef(false);
   const loadingRecentPlaysRef = useRef(false);
   const [openSong, setOpenSong] = useState<PublicSong | null>(null);
   const [openChartToken, setOpenChartToken] = useState<string | null>(null);
   const [openSongCommunity, setOpenSongCommunity] = useState<{ slug: string; state: SongCommunityState } | null>(null);
   const [copiedSongSlug, setCopiedSongSlug] = useState<string | null>(null);
+  const [topSort, setTopSort] = useState<TopChartsSort>("pumbility");
+  const [visibleTopCharts, setVisibleTopCharts] = useState(topCharts);
+  const [nextTopOffset, setNextTopOffset] = useState(nextTopChartsOffset);
+  const [topTotal, setTopTotal] = useState(totalTopCharts);
+  const [topStatus, setTopStatus] = useState("");
   const [visibleRecentPlays, setVisibleRecentPlays] = useState(recentPlays);
-  const [nextOffset, setNextOffset] = useState(nextRecentPlaysOffset);
+  const [nextRecentOffset, setNextRecentOffset] = useState(nextRecentPlaysOffset);
   const [recentTotal, setRecentTotal] = useState(totalRecentPlays);
   const [recentStatus, setRecentStatus] = useState("");
+  const pageRefreshState = useSyncExternalStore(subscribePerformanceRefreshState, getPerformanceRefreshState, getPerformanceRefreshState);
 
   useEffect(() => {
     if (!openSong) {
@@ -118,6 +146,29 @@ export function PerformanceDashboardTables({
     };
   }, [openChartToken, openSong]);
 
+  async function changeTopSort(sort: TopChartsSort) {
+    if (sort === topSort && visibleTopCharts.length > 0) {
+      return;
+    }
+
+    loadingTopChartsRef.current = true;
+    setTopSort(sort);
+    setTopStatus("Loading");
+    setVisibleTopCharts([]);
+    setNextTopOffset(null);
+    try {
+      const body = await fetchTopCharts({ offset: 0, sort });
+      setVisibleTopCharts(body.topCharts);
+      setNextTopOffset(body.nextOffset);
+      setTopTotal(body.total);
+      setTopStatus("");
+    } catch (error) {
+      setTopStatus(error instanceof Error ? error.message : "Could not load charts.");
+    } finally {
+      loadingTopChartsRef.current = false;
+    }
+  }
+
   function openNotebook(song: PublicSong, chartToken: string | null) {
     setOpenSong(song);
     setOpenChartToken(chartToken && song.chartSummary.includes(chartToken) ? chartToken : song.chartSummary[0] ?? null);
@@ -137,14 +188,14 @@ export function PerformanceDashboardTables({
   }
 
   async function loadMoreRecentPlays() {
-    if (loadingRecentPlaysRef.current || nextOffset === null) {
+    if (loadingRecentPlaysRef.current || nextRecentOffset === null) {
       return;
     }
 
     loadingRecentPlaysRef.current = true;
     setRecentStatus("Loading");
     try {
-      const response = await fetch(`/api/performance/recent?${new URLSearchParams({ offset: String(nextOffset), limit: "35" }).toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/performance/recent?${new URLSearchParams({ offset: String(nextRecentOffset), limit: "35" }).toString()}`, { cache: "no-store" });
       const body = (await response.json().catch(() => null)) as RecentPlaysResponse | null;
       if (!response.ok || !body) {
         setRecentStatus(body?.error ?? "Could not load more plays.");
@@ -152,13 +203,41 @@ export function PerformanceDashboardTables({
       }
 
       setVisibleRecentPlays((current) => appendUniqueRecentPlays(current, body.recentPlays));
-      setNextOffset(body.nextOffset);
+      setNextRecentOffset(body.nextOffset);
       setRecentTotal(body.total);
       setRecentStatus("");
     } catch {
       setRecentStatus("Could not load more plays.");
     } finally {
       loadingRecentPlaysRef.current = false;
+    }
+  }
+
+  async function loadMoreTopCharts() {
+    if (loadingTopChartsRef.current || nextTopOffset === null) {
+      return;
+    }
+
+    loadingTopChartsRef.current = true;
+    setTopStatus("Loading");
+    try {
+      const body = await fetchTopCharts({ offset: nextTopOffset, sort: topSort });
+      setVisibleTopCharts((current) => appendUniqueTopCharts(current, body.topCharts));
+      setNextTopOffset(body.nextOffset);
+      setTopTotal(body.total);
+      setTopStatus("");
+    } catch (error) {
+      setTopStatus(error instanceof Error ? error.message : "Could not load charts.");
+    } finally {
+      loadingTopChartsRef.current = false;
+    }
+  }
+
+  function maybeLoadMoreTopCharts(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (remaining < 220) {
+      void loadMoreTopCharts();
     }
   }
 
@@ -176,46 +255,88 @@ export function PerformanceDashboardTables({
         <div className="flex items-center justify-between gap-4 border-b border-[#e4e8dd] px-5 py-4">
           <div>
             <h2 className="text-lg font-black text-[#171916]">Top tracked charts</h2>
-            <p className="mt-1 text-sm font-medium text-[#66705e]">Best scores from ingested recent plays</p>
+            <p className="mt-1 text-sm font-medium text-[#66705e]">{topSort === "pumbility" ? "Pumbility contributors from PIU" : "Best scores from tracked charts"}</p>
           </div>
-          <BarChart3 aria-hidden="true" className="text-[#28c950]" size={22} />
+          <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 border border-[#cdd5c5] bg-[#eef1e8] p-1">
+              <SortButton active={topSort === "pumbility"} label="Pumbility" onClick={() => void changeTopSort("pumbility")} />
+              <SortButton active={topSort === "score"} label="Score" onClick={() => void changeTopSort("score")} />
+            </div>
+            <BarChart3 aria-hidden="true" className="text-[#28c950]" size={22} />
+          </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full min-w-[36rem] border-collapse text-left">
-            <thead className="sticky top-0 z-10 bg-[#f2f4ed] text-xs font-black uppercase tracking-[0.14em] text-[#66705e]">
+        <div className="min-h-0 flex-1 overflow-y-auto" onScroll={maybeLoadMoreTopCharts}>
+          <table className="w-full table-fixed border-collapse text-left">
+            {topSort === "pumbility" ? (
+              <colgroup>
+                <col className="w-[52%]" />
+                <col className="w-[18%]" />
+                <col className="w-[19%]" />
+                <col className="w-[11%]" />
+              </colgroup>
+            ) : (
+              <colgroup>
+                <col className="w-[64%]" />
+                <col className="w-[24%]" />
+                <col className="w-[12%]" />
+              </colgroup>
+            )}
+            <thead className="sticky top-0 z-10 bg-[#f2f4ed] text-xs font-black uppercase tracking-[0.08em] text-[#66705e]">
               <tr>
-                <th className="px-5 py-3">Chart</th>
-                <th className="px-5 py-3">Best</th>
-                <th className="px-5 py-3">Grade</th>
+                <th className="px-4 py-3">Chart</th>
+                <th className="px-4 py-3">Score</th>
+                {topSort === "pumbility" ? <th className="px-4 py-3">Pumbility</th> : null}
+                <th className="px-4 py-3">Grade</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf0e8]">
-              {topCharts.length > 0 ? (
-                topCharts.map((chart) => (
+              {visibleTopCharts.length > 0 ? (
+                visibleTopCharts.map((chart) => (
                   <tr key={chart.chartToken}>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-4">
                       <SongCell mode={chart.mode} level={chart.level} song={chart.song} title={chart.songName} onOpen={() => chart.song && openNotebook(chart.song, chartTokenFor(chart))} />
                     </td>
-                    <td className="px-5 py-4 font-mono text-sm font-black text-[#171916]">{formatNumber(chart.bestScore)}</td>
-                    <td className="px-5 py-4 text-sm font-black text-[#171916]">{formatPerformanceGrade(chart.bestGrade ?? chart.bestPlate)}</td>
+                    <td className="px-4 py-4 font-mono text-sm font-black text-[#171916]">{formatNumber(chart.bestScore)}</td>
+                    {topSort === "pumbility" ? <td className="px-4 py-4 font-mono text-sm font-black text-[#171916]">{formatNumber(chart.topPumbilityScore)}</td> : null}
+                    <td className="whitespace-nowrap px-4 py-4 text-sm font-black text-[#171916]">{formatPerformanceGrade(chart.bestGrade ?? chart.bestPlate)}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td className="px-5 py-10 text-sm font-bold text-[#66705e]" colSpan={3}>
+                  <td className="px-4 py-10 text-sm font-bold text-[#66705e]" colSpan={topSort === "pumbility" ? 4 : 3}>
                     No tracked chart scores yet.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          {visibleTopCharts.length > 0 ? (
+            <div className="border-t border-[#edf0e8] px-5 py-3 text-center text-xs font-black uppercase tracking-[0.12em] text-[#66705e]">
+              {topStatus === "Loading"
+                ? "Loading more"
+                : topStatus
+                  ? topStatus
+                  : `${visibleTopCharts.length} of ${topTotal} loaded`}
+            </div>
+          ) : null}
         </div>
       </div>
 
       <div className={PANEL_CLASS}>
         <div className="flex items-center justify-between gap-4 border-b border-[#e4e8dd] px-5 py-4">
           <div>
-            <h2 className="text-lg font-black text-[#171916]">Recent plays</h2>
+            <h2 className="flex items-center gap-2 text-lg font-black text-[#171916]">
+              <span>Recent plays</span>
+              {pageRefreshState === "syncing" ? (
+                <span
+                  aria-label="Fetching recent plays"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#cdd5c5] bg-[#f7f8f2] text-[#157bda]"
+                  title="Fetching recent plays"
+                >
+                  <RefreshCw aria-hidden="true" className="animate-spin" size={13} />
+                </span>
+              ) : null}
+            </h2>
             <p className="mt-1 text-sm font-medium text-[#66705e]">{formatLastFetched(lastFetchedAt, recentArcade)}</p>
           </div>
           <Clock3 aria-hidden="true" className="text-[#157bda]" size={22} />
@@ -240,7 +361,7 @@ export function PerformanceDashboardTables({
                 ? "Loading more"
                 : recentStatus
                   ? recentStatus
-                  : nextOffset === null
+                  : nextRecentOffset === null
                   ? `${visibleRecentPlays.length} of ${recentTotal} loaded`
                   : `${visibleRecentPlays.length} of ${recentTotal} loaded`}
             </div>
@@ -259,6 +380,47 @@ export function PerformanceDashboardTables({
       />
     </>
   );
+}
+
+async function fetchTopCharts(args: { offset: number; sort: TopChartsSort }): Promise<TopChartsResponse> {
+  const response = await fetch(
+    `/api/performance/top-charts?${new URLSearchParams({ offset: String(args.offset), limit: "35", sort: args.sort }).toString()}`,
+    { cache: "no-store" },
+  );
+  const body = (await response.json().catch(() => null)) as TopChartsResponse | null;
+  if (!response.ok || !body) {
+    throw new Error(body?.error ?? "Could not load charts.");
+  }
+
+  return body;
+}
+
+function SortButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      aria-pressed={active}
+      className={`inline-flex h-8 items-center justify-center gap-1.5 px-3 text-xs font-black transition ${
+        active ? "bg-white text-[#171916] shadow-[0_1px_4px_rgba(29,35,24,0.10)]" : "text-[#66705e] hover:text-[#171916]"
+      }`}
+      type="button"
+      onClick={onClick}
+    >
+      <ArrowDownWideNarrow aria-hidden="true" size={13} />
+      {label}
+    </button>
+  );
+}
+
+function appendUniqueTopCharts(current: TopChartRow[], incoming: TopChartRow[]): TopChartRow[] {
+  const seen = new Set(current.map((chart) => chart.chartToken));
+  const next = [...current];
+  for (const chart of incoming) {
+    if (!seen.has(chart.chartToken)) {
+      next.push(chart);
+      seen.add(chart.chartToken);
+    }
+  }
+  return next;
 }
 
 function appendUniqueRecentPlays(current: RecentPlayRow[], incoming: RecentPlayRow[]): RecentPlayRow[] {
@@ -297,13 +459,13 @@ function SongCell({
     <>
       <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border border-[#d9ded2] bg-[#eef1e8] text-[#66705e]">
         {song?.imageUrl ? (
-          <Image alt="" className="object-cover" fill sizes="48px" src={song.imageUrl} />
+          <Image alt="" className="object-cover" fill quality={92} sizes="48px" src={song.imageUrl} />
         ) : (
           <ImageIcon aria-hidden="true" size={17} />
         )}
       </span>
       <span className="min-w-0">
-        <span className="block max-w-[22rem] truncate text-sm font-black text-[#171916]">{title}</span>
+        <span className="block whitespace-normal break-words text-sm font-black leading-5 text-[#171916]">{title}</span>
         <span className="mt-1 block text-xs font-bold text-[#66705e]">
           {formatChartToken(mode, level)}
           {playedAt ? ` / ${formatDate(playedAt)}` : ""}
