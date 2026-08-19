@@ -148,7 +148,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
         return;
       }
 
-      const cacheKey = `${currentSong.slug}:${performanceVersion}:${selectedChartToken}`;
+      const cacheKey = `${currentSong.slug}:${currentSong.title}:${performanceVersion}:${selectedChartToken}`;
       const cachedPerformance = performanceCacheRef.current.get(cacheKey);
       if (cachedPerformance !== undefined) {
         setPerformance(cachedPerformance);
