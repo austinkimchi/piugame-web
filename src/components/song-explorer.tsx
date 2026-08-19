@@ -72,7 +72,6 @@ const NOTEBOOK_RESIZE_HANDLE_SIZE = 40;
 const NOTEBOOK_SIZE_STORAGE_KEY = "mypiu-song-notebook-size:v2";
 const PREVIEW_FADE_IN_MS = 50;
 const PREVIEW_FADE_OUT_MS = 700;
-const DEV_ADMIN_SETTINGS_ENABLED = process.env.NODE_ENV === "development";
 const EMPTY_COMMUNITY_STATE: SongCommunityState = {
   saved: false,
   note: "",
@@ -117,7 +116,6 @@ export function SongExplorer({
   removedFromVersion,
   showLanding = true,
 }: SongExplorerProps) {
-  const landingSectionRef = useRef<HTMLElement | null>(null);
   const searchSectionRef = useRef<HTMLElement | null>(null);
   const songsRef = useRef(initialSongs);
   const filterPanelRef = useRef<HTMLElement | null>(null);
@@ -142,7 +140,6 @@ export function SongExplorer({
   const lastSavedPreviewPreferencesRef = useRef<{ muted: boolean; volume: number } | null>(null);
   const [preferredPreviewMuted, setPreferredPreviewMuted] = useState(initialPreviewMuted);
   const [previewVolume, setPreviewVolume] = useState(() => clampPreviewVolume(initialPreviewVolume));
-  const [manualUploadsVisible, setManualUploadsVisible] = useState(false);
   const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const isRecentSearch = query.trim().toLowerCase() === "recent";
@@ -189,7 +186,6 @@ export function SongExplorer({
   );
   const previewMuted = preferredPreviewMuted;
   const previewEnabled = !previewMuted;
-  const showManualUploadState = DEV_ADMIN_SETTINGS_ENABLED && userIsAdmin && manualUploadsVisible;
 
   useEffect(() => {
     songsRef.current = songs;
@@ -961,70 +957,11 @@ export function SongExplorer({
 
   return (
     <MotionConfig reducedMotion="user">
-      {showLanding ? (
-        canFavorite ? (
-        <motion.section
-          ref={landingSectionRef}
-          className="mx-auto hidden max-w-7xl px-5 py-8 sm:block sm:px-8 lg:px-10"
-          initial={{ opacity: 0, y: 18 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div className="mb-5 flex items-end justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-black text-[#11130f]">New Songs</h2>
-              <p className="mt-1 text-sm font-medium text-[#66705f]">PHOENIX 2 released 07/2026</p>
-            </div>
-            <PreviewToggleButton
-              muted={previewMuted}
-              volume={previewVolume}
-              onVolumeChange={changePreviewVolume}
-              onToggle={togglePreviewMuted}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-            {favoritedInitialSongs.map((song, index) => (
-              <div key={`new-${song.slug}`} className={landingSongVisibilityClass(index)}>
-                <SongCard
-                  onOpen={openSongDetail}
-                  isPreviewActive={Boolean(song.previewUrl && activePreviewUrl === song.previewUrl)}
-                  previewEnabled={previewEnabled}
-                  onPreviewStart={playSongPreview}
-                  onPreviewStop={() => stopSongPreview(song.previewUrl)}
-                  sequence={index}
-                  showManualUploadState={showManualUploadState}
-                  song={song}
-                />
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-8 flex justify-center">
-            <motion.button
-              className="inline-flex items-center gap-2 border border-[#171916] bg-[#171916] px-6 py-3 font-bold text-white transition hover:bg-[#343b30]"
-              type="button"
-              whileHover={{ y: -3, scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={scrollToSearch}
-            >
-              View More
-              <motion.span
-                animate={{ y: [0, 4, 0] }}
-                transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-              >
-                <ChevronDown aria-hidden="true" size={18} />
-              </motion.span>
-            </motion.button>
-          </div>
-        </motion.section>
-        ) : (
-          <>
-            <GuestFeatureShowcase featureSong={featureSong ?? favoritedInitialSongs[0] ?? null} onExplore={scrollToSearch} />
-            {guestPerformanceSummary ? <HomePerformanceSummary {...guestPerformanceSummary} /> : null}
-          </>
-        )
+      {showLanding && !canFavorite ? (
+        <>
+          <GuestFeatureShowcase featureSong={featureSong ?? favoritedInitialSongs[0] ?? null} onExplore={scrollToSearch} />
+          {guestPerformanceSummary ? <HomePerformanceSummary {...guestPerformanceSummary} /> : null}
+        </>
       ) : null}
 
       <motion.section
@@ -1328,23 +1265,6 @@ export function SongExplorer({
 
 function clampPreviewVolume(volume: number): number {
   return Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : 0.5;
-}
-
-function landingSongVisibilityClass(index: number): string {
-  if (index < 4) {
-    return "block";
-  }
-  if (index < 6) {
-    return "hidden sm:block";
-  }
-  if (index < 8) {
-    return "hidden md:block";
-  }
-  if (index < 12) {
-    return "hidden xl:block";
-  }
-
-  return "hidden";
 }
 
 function PreviewToggleButton({
