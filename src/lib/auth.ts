@@ -30,6 +30,7 @@ const POSTS_COLLECTION = process.env.COMMUNITY_POSTS_COLLECTION ?? "song_communi
 const SITE_LOGS_COLLECTION = process.env.SITE_LOGS_COLLECTION ?? "site_logs";
 const DISCORD_BOT_DB_NAME = process.env.DISCORD_BOT_DB_NAME ?? "piugame_discord";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+const COMMUNITY_CHART_KEY_MAX_LENGTH = 80;
 
 export type UserRole = "user" | "moderator" | "admin";
 type AuthProvider = "google" | "discord" | "piugame";
@@ -890,7 +891,7 @@ export async function getSongCommunityState(user: PublicUser | null, songSlug: s
   const { savedSongs, tagVotes, notes, posts } = await collections();
   const userId = user ? objectIdFromUser(user) : null;
   const chartToken = cleanText(selectedChartToken).slice(0, 24);
-  const communityKey = cleanText(communityKeyInput ?? chartToken).slice(0, 80);
+  const communityKey = cleanText(communityKeyInput ?? chartToken).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const [saved, note, userVotes, tagScores, communityPosts] = await Promise.all([
     userId ? savedSongs.findOne({ userId, songSlug }) : null,
     userId && communityKey ? notes.findOne({ userId, songSlug, chartToken: communityKey }) : null,
@@ -992,7 +993,7 @@ export async function addSongTag(user: PublicUser, song: { slug: string; title: 
 export async function voteSongTag(user: PublicUser, song: { slug: string; title: string; artist: string }, chartTokenInput: string, tagInput: string, value: 1 | -1): Promise<string | null> {
   requireUsername(user);
   requireNotMuted(user);
-  const chartToken = cleanText(chartTokenInput).slice(0, 24);
+  const chartToken = cleanText(chartTokenInput).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const tag = normalizeTag(tagInput);
   if (!chartToken || !tag) {
     return null;
@@ -1043,7 +1044,7 @@ export async function voteSongTag(user: PublicUser, song: { slug: string; title:
 
 export async function removeSongTag(user: PublicUser, songSlug: string, chartTokenInput: string, tagInput: string): Promise<void> {
   requireUsername(user);
-  const chartToken = cleanText(chartTokenInput).slice(0, 24);
+  const chartToken = cleanText(chartTokenInput).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const tag = normalizeTag(tagInput);
   if (!chartToken || !tag) {
     return;
@@ -1069,7 +1070,7 @@ export async function createCommunityPost(
 ): Promise<void> {
   requireUsername(user);
   requireNotMuted(user);
-  const chartToken = cleanText(chartTokenInput).slice(0, 24);
+  const chartToken = cleanText(chartTokenInput).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const body = cleanMultiline(bodyInput).slice(0, 1600);
   const youtube = parseYouTubeUrl(youtubeUrlInput);
   const caption = cleanText(captionInput).slice(0, 180) || null;
@@ -1280,7 +1281,7 @@ export async function muteCommunityUser(user: PublicUser, targetUserIdInput: str
 
 export async function saveSongNote(user: PublicUser, song: { slug: string; title: string; artist: string }, chartTokenInput: string, noteInput: string): Promise<void> {
   requireUsername(user);
-  const chartToken = cleanText(chartTokenInput).slice(0, 24);
+  const chartToken = cleanText(chartTokenInput).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const note = String(noteInput ?? "").trim().slice(0, 4000);
   if (!chartToken) {
     throw new Error("Select a chart before saving a note.");
