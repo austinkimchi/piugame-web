@@ -1179,7 +1179,7 @@ async function markAllPlaysBackfillFailed(userId: ObjectId, piuVersion: PiuCatal
 function playEventDocument(userId: ObjectId, piuVersion: PiuCatalogVersion, piuUsername: string, play: RecentPlay, now: Date): PerformancePlayEventDocument {
   const chartToken = chartTokenFromPlay(play);
   const playedAt = parsePlayDate(play.playedAt);
-  const playKey = performancePlayKey({ playedAt });
+  const playKey = performancePlayKey({ playedAt, playedAtRaw: play.playedAt });
   const playHash = createHash("sha256")
     .update([userId.toHexString(), piuVersion, playKey].join("|"))
     .digest("hex");
@@ -1224,7 +1224,7 @@ async function upsertRecentPlayEvent(
   const matchingPlays = candidatePlays.filter(
     (candidate) =>
       candidate.playKey === play.playKey ||
-      performancePlayKey({ playedAt: candidate.playedAt }) === play.playKey,
+      performancePlayKey({ playedAt: candidate.playedAt, playedAtRaw: candidate.playedAtRaw }) === play.playKey,
   );
   const canonicalPlay = matchingPlays.find((candidate) => candidate.playKey === play.playKey) ?? matchingPlays[0];
 
