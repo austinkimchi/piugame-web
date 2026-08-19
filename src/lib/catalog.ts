@@ -1384,7 +1384,7 @@ export async function getCatalogEditorPayload(slug: string): Promise<CatalogEdit
   return song ? catalogEditorPayloadFromSong(song) : null;
 }
 
-export async function updateCatalogSong(slug: string, input: Partial<CatalogEditorPayload>, audioFile?: File | null): Promise<PublicSong> {
+export async function updateCatalogSong(slug: string, input: Partial<CatalogEditorPayload>, audioFile?: File | null, chartVersion?: PiuSeriesId): Promise<PublicSong> {
   if (!hasMongoConfig()) {
     throw new Error("Catalog database is not configured.");
   }
@@ -1397,7 +1397,8 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
 
   const collection = await collectionFor(MAIN_CATALOG_VERSION);
   const chartsFull = updatedChartsFull(document.chartsFull, payload.chartTokens);
-  const $set: Partial<CatalogDocument> = {
+  const selectedChartVersion = chartVersion ?? versionFromDocument(document, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION));
+  const $set: Document = {
     songName: payload.title,
     artist: payload.artist,
     folder: payload.folder,
@@ -1405,6 +1406,7 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
     series: payload.series,
     tags: payload.tags,
     chartTokens: payload.chartTokens,
+    [`chartTokensByVersion.${selectedChartVersion}`]: payload.chartTokens,
     history: payload.history,
     chartHistory: payload.chartHistory,
     chartLinks: payload.chartLinks,
@@ -1435,7 +1437,7 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
     throw new Error("Song not found after update.");
   }
 
-  return publicSongFromDocument(updated, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION));
+  return publicSongFromDocument(updated, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION), undefined, selectedChartVersion);
 }
 
 export async function getSitemapSongs(limit = 5000): Promise<PublicSong[]> {

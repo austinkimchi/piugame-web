@@ -319,7 +319,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <CatalogAdminEditor label="song details" song={currentSong} userIsAdmin={userIsAdmin} onSaved={handleCatalogSaved} />
+            <CatalogAdminEditor catalogVersion={catalogVersion} label="song details" song={currentSong} userIsAdmin={userIsAdmin} onSaved={handleCatalogSaved} />
             {canToggleCompact ? (
               <button
                 aria-label={compactView ? "Show full screen view" : "Show small screen view"}

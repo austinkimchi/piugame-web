@@ -1472,7 +1472,7 @@ function SongDetailNotebook({
               onPointerDown={maybeStartResize}
           >
             <div className="absolute right-3 top-4 z-20 flex shrink-0 items-center gap-1 sm:right-7 sm:gap-2 sm:top-8">
-              <CatalogAdminEditor label="song details" song={song} userIsAdmin={userIsAdmin} onSaved={onCatalogSaved} />
+              <CatalogAdminEditor catalogVersion={catalogVersion} label="song details" song={song} userIsAdmin={userIsAdmin} onSaved={onCatalogSaved} />
               <a
                 aria-label="Open full song page"
                 className="notebook-action inline-flex size-10 items-center justify-center border border-[#cfd7c8] bg-white/90 text-[#343b30] shadow-[0_8px_22px_rgba(30,34,26,0.10)] backdrop-blur transition hover:bg-[#eef1e8]"

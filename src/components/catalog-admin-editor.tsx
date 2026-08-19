@@ -4,12 +4,13 @@ import { Music, Pencil, Plus, Save, Trash2, Upload, X } from "lucide-react";
 import { type ChangeEvent, type DragEvent, useMemo, useState } from "react";
 
 import { useAdminViewMode } from "@/lib/admin-view-mode";
-import type { CatalogEditorPayload, PublicSong } from "@/lib/types";
+import type { CatalogEditorPayload, PiuSeriesId, PublicSong } from "@/lib/types";
 
 interface CatalogAdminEditorProps {
   song: PublicSong;
   userIsAdmin: boolean;
   label: string;
+  catalogVersion?: PiuSeriesId;
   focus?: "song" | "charts";
   onSaved?: (song: PublicSong) => void;
 }
@@ -17,7 +18,7 @@ interface CatalogAdminEditorProps {
 type SaveStatus = "idle" | "saving" | "error";
 const AUDIO_ACCEPT = "audio/mpeg,audio/mp3,audio/ogg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,.mp3,.ogg,.wav,.m4a";
 
-export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song", onSaved }: CatalogAdminEditorProps) {
+export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, focus = "song", onSaved }: CatalogAdminEditorProps) {
   const { viewingAsRegular } = useAdminViewMode();
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<SaveStatus>("idle");
@@ -125,7 +126,8 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song", o
       requestBody.set("audio", audioFile);
     }
 
-    const response = await fetch(`/api/songs/${encodeURIComponent(song.slug)}/catalog`, {
+    const query = catalogVersion ? `?${new URLSearchParams({ version: catalogVersion }).toString()}` : "";
+    const response = await fetch(`/api/songs/${encodeURIComponent(song.slug)}/catalog${query}`, {
       method: "PATCH",
       headers,
       body: requestBody,
