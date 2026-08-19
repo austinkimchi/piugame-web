@@ -13,6 +13,7 @@ export interface PerformanceChartStatSummary {
   previousBestGrade: string | null;
   previousBestPlate: string | null;
   previousBestSyncedAt: Date | null;
+  lastUpscoredAt: Date | null;
   latestScore: number | null;
   latestGrade: string | null;
   latestPlate: string | null;
@@ -67,6 +68,7 @@ export function applyRecentPlaySummary(
       previousBestGrade: summary.bestGrade,
       previousBestPlate: summary.bestPlate,
       previousBestSyncedAt: summary.bestSyncedAt,
+      lastUpscoredAt: summary.bestScore === null ? summary.lastUpscoredAt : now,
     };
   }
 
@@ -109,6 +111,7 @@ export function applyBucketBestSummary(
     previousBestGrade: existing?.bestGrade ?? null,
     previousBestPlate: existing?.bestPlate ?? null,
     previousBestSyncedAt: existing?.bestSyncedAt ?? null,
+    lastUpscoredAt: currentBest !== null && incomingBest > currentBest ? now : existing?.lastUpscoredAt ?? null,
   };
 }
 
@@ -146,6 +149,7 @@ function emptySummary(songName: string, mode: string | null, level: string | nul
     previousBestGrade: null,
     previousBestPlate: null,
     previousBestSyncedAt: null,
+    lastUpscoredAt: null,
     latestScore: null,
     latestGrade: null,
     latestPlate: null,

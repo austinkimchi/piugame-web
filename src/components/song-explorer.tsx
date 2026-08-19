@@ -35,10 +35,13 @@ interface SongExplorerProps {
   initialTotalResults?: number;
   guestPerformanceSummary?: {
     averageBestScore: number | null;
-    averageBestScoreChangeThisWeek: number | null;
+    averageBestScoreChange24Hours: number | null;
     canSync: boolean;
+    lastSyncedAt: string | null;
     pumbility: number | null;
-    pumbilityChangeThisWeek: number | null;
+    pumbilityChange24Hours: number | null;
+    recentNewScores: number;
+    recentlyPlayed: number;
     synced: boolean;
     upscoresThisWeek: number;
     upscoresToday: number;
@@ -132,6 +135,7 @@ export function SongExplorer({
   const didMountPreviewPreferencesRef = useRef(false);
   const hasSearchedQueryRef = useRef(false);
   const wasRecentSearchRef = useRef(false);
+  const queryRef = useRef("");
   const appendSearchRef = useRef(false);
   const lastSavedPreviewPreferencesRef = useRef<{ muted: boolean; volume: number } | null>(null);
   const [preferredPreviewMuted, setPreferredPreviewMuted] = useState(initialPreviewMuted);
@@ -314,6 +318,7 @@ export function SongExplorer({
         setNextCursor(body.nextCursor);
         setTotalResults(body.total);
         setStatus(body.songs.length === 0 && !cursor && !recentUnchanged ? "No songs matched those filters." : "");
+
       } catch {
         setStatus("Search failed. Try again in a moment.");
       } finally {
@@ -325,6 +330,43 @@ export function SongExplorer({
     },
     [endpoint, filterOptions],
   );
+
+  const submitSearch = useCallback((searchQuery = query) => {
+    const submittedQuery = searchQuery.trim();
+    void runSearch(searchQuery);
+    if (submittedQuery.toLowerCase() !== "recent") {
+      return;
+    }
+
+    void fetch("/api/performance/sync?response=json", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(async (response) => ({ response, body: (await response.json().catch(() => null)) as { throttled?: boolean } | null }))
+      .then(({ response, body }) => {
+        if (response.ok && !body?.throttled && queryRef.current.trim().toLowerCase() === "recent") {
+          void runSearch(queryRef.current);
+        }
+      })
+      .catch(() => undefined);
+  }, [query, runSearch]);
+
+  useEffect(() => {
+    function openRecentCatalog() {
+      const nextFilters = selectedFiltersRef.current.charts.length === 1 && selectedFiltersRef.current.charts[0] === "singles"
+        ? { ...selectedFiltersRef.current, charts: [] }
+        : selectedFiltersRef.current;
+      selectedFiltersRef.current = nextFilters;
+      setSelectedFilters(nextFilters);
+      queryRef.current = "recent";
+      setQuery("recent");
+      submitSearch("recent");
+    }
+
+    window.addEventListener("piu:open-recent-catalog", openRecentCatalog);
+    return () => window.removeEventListener("piu:open-recent-catalog", openRecentCatalog);
+  }, [submitSearch]);
 
   const updateSongFavorite = useCallback((songSlug: string, isFavorite: boolean) => {
     setFavoriteSlugs((current) => {
@@ -633,6 +675,10 @@ export function SongExplorer({
   }, [preferredPreviewMuted, previewMuted, savePreviewPreferences, stopSongPreview]);
 
   useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
+
+  useEffect(() => {
     function scrollToSearchTop(behavior: ScrollBehavior = "auto") {
       const searchSection = searchSectionRef.current;
       if (!searchSection) {
@@ -695,7 +741,7 @@ export function SongExplorer({
     }
     hasSearchedQueryRef.current = true;
     const timeout = window.setTimeout(() => {
-      void runSearch(query);
+      void runSearch(query, null, selectedFiltersRef.current, levelModeRef.current, sortByRef.current, sortDirectionRef.current, favoritesFirstRef.current);
     }, 260);
 
     return () => window.clearTimeout(timeout);
@@ -986,16 +1032,32 @@ export function SongExplorer({
               >
                 <Search aria-hidden="true" size={18} className="shrink-0 text-[#626c5c]" />
                 <input
-                  className="w-full bg-transparent text-base outline-none placeholder:text-[#8b9483]"
+                  className="ios-search-input w-full bg-transparent text-base outline-none placeholder:text-[#8b9483]"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    queryRef.current = event.target.value;
+                    setQuery(event.target.value);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
-                      void runSearch(query);
+                      submitSearch();
                     }
                   }}
                   placeholder={searchPlaceholder}
                 />
+                {query ? (
+                  <button
+                    aria-label="Clear search"
+                    className="inline-flex size-7 shrink-0 items-center justify-center text-[#707a69] transition hover:bg-[#eef1e8] hover:text-[#171916]"
+                    type="button"
+                    onClick={() => {
+                      queryRef.current = "";
+                      setQuery("");
+                    }}
+                  >
+                    <X aria-hidden="true" size={17} />
+                  </button>
+                ) : null}
               </motion.label>
               <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[16.75rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem]">
                 <label className={`relative h-full ${isRecentSearch ? "opacity-45" : ""}`}>
@@ -1531,7 +1593,10 @@ function songDetailHref(song: PublicSong, version: PiuSeriesId, chartToken: stri
 }
 
 function sameSongSequence(left: PublicSong[], right: PublicSong[]): boolean {
-  return left.length === right.length && left.every((song, index) => song.slug === right[index]?.slug);
+  return left.length === right.length && left.every((song, index) => {
+    const other = right[index];
+    return song.slug === other?.slug && song.chartSummary.join("|") === other.chartSummary.join("|");
+  });
 }
 
 function FilterGroup({

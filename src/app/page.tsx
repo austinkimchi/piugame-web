@@ -1,5 +1,6 @@
 import { AccountBar } from "@/components/account-bar";
 import { HomeHero } from "@/components/home-hero";
+import { HomePerformanceRefresh } from "@/components/home-performance-refresh";
 import { HomePerformanceSummary } from "@/components/home-performance-summary";
 import { SongExplorer } from "@/components/song-explorer";
 import { getAllFavoriteSongSlugs, getCurrentUser, getFavoriteSongSlugSet, isAdmin } from "@/lib/auth";
@@ -42,13 +43,17 @@ export default async function Home() {
   return (
     <main className="min-h-screen bg-[#f7f8f2] text-[#171916]">
       <HomeHero accountSlot={<AccountBar />} canChangeVersion={Boolean(user)} catalogLabel={catalog.label} catalogVersion={catalogVersion} />
+      <HomePerformanceRefresh enabled={Boolean(user?.piuProfile && performance.mongoReady)} />
       {user ? (
         <HomePerformanceSummary
           averageBestScore={performance.totals.averageBestScore}
-          averageBestScoreChangeThisWeek={performance.totals.averageBestScoreChangeThisWeek}
+          averageBestScoreChange24Hours={performance.totals.averageBestScoreChange24Hours}
           canSync={Boolean(user.piuProfile && performance.mongoReady)}
+          lastSyncedAt={performance.profile?.lastSyncedAt ?? null}
           pumbility={performance.profile?.pumbilityScore ?? null}
-          pumbilityChangeThisWeek={performance.totals.pumbilityChangeThisWeek}
+          pumbilityChange24Hours={performance.totals.pumbilityChange24Hours}
+          recentNewScores={performance.totals.recentNewScores}
+          recentlyPlayed={performance.totals.recentlyPlayed}
           synced={Boolean(performance.profile?.lastSyncedAt)}
           upscoresThisWeek={performance.totals.upscoresThisWeek}
           upscoresToday={performance.totals.upscoresToday}
@@ -73,10 +78,13 @@ export default async function Home() {
           !user
             ? {
                 averageBestScore: performance.totals.averageBestScore,
-                averageBestScoreChangeThisWeek: performance.totals.averageBestScoreChangeThisWeek,
+                averageBestScoreChange24Hours: performance.totals.averageBestScoreChange24Hours,
                 canSync: false,
+                lastSyncedAt: performance.profile?.lastSyncedAt ?? null,
                 pumbility: performance.profile?.pumbilityScore ?? null,
-                pumbilityChangeThisWeek: performance.totals.pumbilityChangeThisWeek,
+                pumbilityChange24Hours: performance.totals.pumbilityChange24Hours,
+                recentNewScores: performance.totals.recentNewScores,
+                recentlyPlayed: performance.totals.recentlyPlayed,
                 synced: false,
                 upscoresThisWeek: performance.totals.upscoresThisWeek,
                 upscoresToday: performance.totals.upscoresToday,

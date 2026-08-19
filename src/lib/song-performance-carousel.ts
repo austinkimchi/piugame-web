@@ -80,5 +80,5 @@ function timestampValue(value: string | null): number {
 }
 
 function isFailedAttempt<TJudgments>(attempt: SongPerformanceAttempt<TJudgments>): boolean {
-  return attempt.stageBreak || (isFailedPerformanceGrade(attempt.grade) && !String(attempt.grade ?? "").trim().toLowerCase().endsWith("_p"));
+  return attempt.stageBreak || isFailedPerformanceGrade(attempt.grade);
 }

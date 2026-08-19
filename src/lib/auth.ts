@@ -9,6 +9,7 @@ import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { encryptCredential } from "@/lib/credential-crypto";
 import { piuDisplayName } from "@/lib/piu-account";
 import { getScoreLinkablePerformancePlay } from "@/lib/performance";
+import { isFailedPerformanceGrade } from "@/lib/performance-format";
 import { DEFAULT_PIU_GAME_VERSION, isPiuGameVersion, normalizePiuGameVersion } from "@/lib/piu-version";
 import type { DiscordProfile } from "@/lib/discord-oauth";
 import type { PiuCatalogVersion, SongSortOption, SortDirection } from "@/lib/types";
@@ -1127,6 +1128,7 @@ async function scoreLinkForPost(
   if (!performancePlayId) {
     throw new Error("That performance attempt is no longer available to link.");
   }
+  const failedAttempt = performancePlay.stageBreak || isFailedPerformanceGrade(performancePlay.grade);
 
   return {
     performancePlayId,
@@ -1136,7 +1138,7 @@ async function scoreLinkForPost(
     stageBreak: performancePlay.stageBreak,
     judgments: performancePlay.judgments,
     playedAt: performancePlay.playedAt ? new Date(performancePlay.playedAt) : null,
-    showPlate: input.showPlate !== false,
+    showPlate: !failedAttempt && input.showPlate !== false,
     showJudgments: input.showJudgments === true,
   };
 }

@@ -24,3 +24,17 @@ export function checkRateLimit(key: string): boolean {
   current.count += 1;
   return true;
 }
+
+const cooldowns = new Map<string, number>();
+
+/** Returns true only for the first request in a cooldown window. */
+export function claimCooldown(key: string, cooldownMs: number): boolean {
+  const now = Date.now();
+  const nextAllowedAt = cooldowns.get(key) ?? 0;
+  if (nextAllowedAt > now) {
+    return false;
+  }
+
+  cooldowns.set(key, now + cooldownMs);
+  return true;
+}

@@ -108,6 +108,7 @@ test("completed recent upscore replaces best and preserves the prior best", () =
   assert.equal(summary.previousBestScore, 943818);
   assert.equal(summary.previousBestGrade, "aa_p");
   assert.equal(summary.previousBestSyncedAt, previousSync);
+  assert.equal(summary.lastUpscoredAt, NOW);
 });
 
 test("failed recent play does not establish a best", () => {
@@ -182,6 +183,7 @@ test("bucket best change preserves previous best score, grade, and plate", () =>
   assert.equal(summary.previousBestGrade, "aa");
   assert.equal(summary.previousBestPlate, "fg");
   assert.equal(summary.previousBestSyncedAt, previousSync);
+  assert.equal(summary.lastUpscoredAt, NOW);
 });
 
 test("top play summary stores Pumbility score separately from bucket best", () => {
@@ -218,6 +220,7 @@ function summaryFixture(overrides: Partial<PerformanceChartStatSummary> = {}): P
     previousBestGrade: null,
     previousBestPlate: null,
     previousBestSyncedAt: null,
+    lastUpscoredAt: null,
     latestScore: null,
     latestGrade: null,
     latestPlate: null,

@@ -249,6 +249,17 @@ button:disabled {
   transform: translateY(-2px);
 }
 
+/* iOS Safari zooms focused text inputs whose computed font size is below 16px.
+   Keep the input at 16px for Safari while rendering it at the prior visual size. */
+@media (max-width: 720px) {
+  .ios-search-input {
+    font-size: 16px;
+    transform: scale(0.875);
+    transform-origin: left center;
+    width: 114.286%;
+  }
+}
+
 @keyframes song-card-in {
   from {
     opacity: 0;

@@ -240,17 +240,23 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
       return;
     }
 
+    const nextSaved = !favoriteSaved;
+    setFavoriteSaved(nextSaved);
     setFavoriteSaving(true);
     try {
       const response = await fetch(`/api/songs/${encodeURIComponent(currentSong.slug)}/community`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save", saved: !favoriteSaved }),
+        body: JSON.stringify({ action: "save", saved: nextSaved }),
       });
       const body = (await response.json()) as { state?: SongCommunityState };
       if (response.ok && body.state) {
         setFavoriteSaved(body.state.saved);
+      } else {
+        setFavoriteSaved(!nextSaved);
       }
+    } catch {
+      setFavoriteSaved(!nextSaved);
     } finally {
       setFavoriteSaving(false);
     }
@@ -758,7 +764,7 @@ function PerformanceScoreCard({
 }
 
 function isFailedChartGrade(grade: string | null | undefined): boolean {
-  return isFailedPerformanceGrade(grade) && !String(grade ?? "").trim().toLowerCase().endsWith("_p");
+  return isFailedPerformanceGrade(grade);
 }
 
 const performanceBodyMotion = {

@@ -11,6 +11,7 @@ import { performanceChartTokenCandidates, performanceChartTokenCandidatesFromPla
 import { piuTimestampToDate } from "@/lib/performance-format";
 import { performancePlayKey } from "@/lib/performance-play-key";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
+import { startsNewSession } from "@/lib/performance-session";
 import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
@@ -151,9 +152,11 @@ export interface PerformanceDashboard {
     upscores: number;
     upscoresThisWeek: number;
     upscoresToday: number;
+    recentNewScores: number;
     averageBestScore: number | null;
-    pumbilityChangeThisWeek: number | null;
-    averageBestScoreChangeThisWeek: number | null;
+    pumbilityChange24Hours: number | null;
+    averageBestScoreChange24Hours: number | null;
+    recentlyPlayed: number;
   };
   recentPlays: Array<{
     songName: string;
@@ -199,6 +202,11 @@ export interface PerformanceRecentPlaysPage {
   recentPlays: PerformanceDashboard["recentPlays"];
   nextOffset: number | null;
   total: number;
+}
+
+export interface FreshPerformanceRecentPlays {
+  recentPlays: RecentPlay[];
+  persist(): Promise<void>;
 }
 
 export type PerformanceTopChartsSort = "pumbility" | "score";
@@ -324,6 +332,51 @@ function recentPlaySort(direction: "asc" | "desc" = "desc") {
   return { playedAt: order, ingestedAt: order, _id: order } as const;
 }
 
+async function getLatestSessionPlayCount(plays: Collection<PerformancePlayEventDocument>, userId: ObjectId, piuVersion: PiuCatalogVersion): Promise<number> {
+  const cursor = plays
+    .find({ userId, piuVersion, playedAt: { $type: "date" } }, { projection: { playedAt: 1 } })
+    .sort({ playedAt: -1, ingestedAt: -1, _id: -1 });
+
+  let previous: Date | null = null;
+  let count = 0;
+
+  try {
+    for await (const play of cursor) {
+      if (!play.playedAt) {
+        continue;
+      }
+      if (previous && startsNewSession(previous, play.playedAt)) {
+        break;
+      }
+      count += 1;
+      previous = play.playedAt;
+    }
+  } finally {
+    await cursor.close();
+  }
+
+  return count;
+}
+
+async function getRolling24HourMetricBaseline(
+  metricSnapshots: Collection<PerformanceMetricSnapshotDocument>,
+  userId: ObjectId,
+  piuVersion: PiuCatalogVersion,
+  twentyFourHoursAgo: Date,
+): Promise<WithId<PerformanceMetricSnapshotDocument> | null> {
+  const fullWindowBaseline = await metricSnapshots
+    .find({ userId, piuVersion, capturedAt: { $lte: twentyFourHoursAgo } })
+    .sort({ capturedAt: -1 })
+    .limit(1)
+    .next();
+
+  if (fullWindowBaseline) {
+    return fullWindowBaseline;
+  }
+
+  return metricSnapshots.find({ userId, piuVersion }).sort({ capturedAt: 1 }).limit(1).next();
+}
+
 function topChartsSort(sort: PerformanceTopChartsSort): Sort {
   if (sort === "pumbility") {
     return { topPlayRank: 1, bestScore: -1, updatedAt: -1, _id: 1 };
@@ -347,8 +400,9 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
   const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const startOfWeek = new Date(startOfToday);
   startOfWeek.setUTCDate(startOfWeek.getUTCDate() - 6);
-  const upscoreFilter = { userId, piuVersion, previousBestScore: { $ne: null } };
-  const [profile, recentPlays, topCharts, trackedPlays, trackedCharts, trackedPumbilityCharts, upscoreCharts, upscoresThisWeek, upscoresToday, averageScores, weeklyBaseline] = await Promise.all([
+  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const upscoreFilter = { userId, piuVersion, lastUpscoredAt: { $ne: null } };
+  const [profile, recentPlays, topCharts, trackedPlays, trackedCharts, trackedPumbilityCharts, upscoreCharts, upscoresThisWeek, upscoresToday, recentNewScores, averageScores, dailyBaseline, recentlyPlayed] = await Promise.all([
     profiles.findOne({ userId, piuVersion }),
     plays.find({ userId, piuVersion }).sort(recentPlaySort()).limit(PERFORMANCE_RECENT_PLAYS_PAGE_SIZE).toArray(),
     chartStats.find(topChartsFilter(userId, piuVersion, "pumbility")).sort(topChartsSort("pumbility")).limit(PERFORMANCE_TOP_CHARTS_PAGE_SIZE).toArray(),
@@ -356,15 +410,17 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
     chartStats.countDocuments({ userId, piuVersion }),
     chartStats.countDocuments(topChartsFilter(userId, piuVersion, "pumbility")),
     chartStats.countDocuments(upscoreFilter),
-    chartStats.countDocuments({ ...upscoreFilter, previousBestSyncedAt: { $gte: startOfWeek } }),
-    chartStats.countDocuments({ ...upscoreFilter, previousBestSyncedAt: { $gte: startOfToday } }),
+    chartStats.countDocuments({ ...upscoreFilter, lastUpscoredAt: { $gte: startOfWeek } }),
+    chartStats.countDocuments({ ...upscoreFilter, lastUpscoredAt: { $gte: startOfToday } }),
+    chartStats.countDocuments({ ...upscoreFilter, lastUpscoredAt: { $gte: twentyFourHoursAgo } }),
     chartStats
       .aggregate<{ averageBestScore: number }>([
         { $match: { userId, piuVersion, bestScore: { $type: "number" } } },
         { $group: { _id: null, averageBestScore: { $avg: "$bestScore" } } },
       ])
       .toArray(),
-    metricSnapshots.find({ userId, piuVersion, capturedAt: { $lte: startOfWeek } }).sort({ capturedAt: -1 }).limit(1).next(),
+    getRolling24HourMetricBaseline(metricSnapshots, userId, piuVersion, twentyFourHoursAgo),
+    getLatestSessionPlayCount(plays, userId, piuVersion),
   ]);
 
   const averageBestScore = roundedAverageBestScore(averageScores[0]?.averageBestScore);
@@ -380,9 +436,11 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
       upscores: upscoreCharts,
       upscoresThisWeek,
       upscoresToday,
+      recentNewScores,
       averageBestScore,
-      pumbilityChangeThisWeek: metricChangeSince(profile?.pumbilityScore ?? null, weeklyBaseline?.pumbilityScore ?? null),
-      averageBestScoreChangeThisWeek: metricChangeSince(averageBestScore, weeklyBaseline?.averageBestScore ?? null),
+      pumbilityChange24Hours: metricChangeSince(profile?.pumbilityScore ?? null, dailyBaseline?.pumbilityScore ?? null),
+      averageBestScoreChange24Hours: metricChangeSince(averageBestScore, dailyBaseline?.averageBestScore ?? null),
+      recentlyPlayed,
     },
     recentPlays: recentPlays.map(publicRecentPlay),
     topCharts: publicTopCharts,
@@ -751,6 +809,52 @@ export async function syncCurrentUserPerformance(userIdInput: string | null): Pr
     await markSyncFailed(userId, normalizePiuGameVersion(user?.preferences?.piuGameVersion), error);
     throw error;
   }
+}
+
+/**
+ * Fetches PIUGAME recent plays and profile data in parallel without waiting for MongoDB writes.
+ * Call `persist` after the response has been sent to finish the full sync.
+ */
+export async function fetchCurrentUserRecentPlays(userIdInput: string | null): Promise<FreshPerformanceRecentPlays> {
+  const userId = objectIdFromString(userIdInput);
+  if (!userId) {
+    throw new Error("Sign in before syncing performance data.");
+  }
+
+  const { users } = await collections();
+  const user = await users.findOne({ _id: userId });
+  const piuVersion = normalizePiuGameVersion(user?.preferences?.piuGameVersion);
+  const piuUsername = user?.piuLink?.piuUsername?.trim();
+  const encryptedPassword = user?.piuLink?.encryptedPassword;
+  if (!piuUsername || !encryptedPassword) {
+    throw new Error("A linked PIU account with saved credentials is required.");
+  }
+
+  const client = new PiuClient({ version: piuVersion });
+  await client.login(piuUsername, decryptCredential(encryptedPassword));
+  const profileResultPromise = client
+    .getPlayerData(piuUsername)
+    .then((profile) => ({ ok: true as const, profile }))
+    .catch((error: unknown) => ({ ok: false as const, error }));
+  const recentPlays = await client.getRecentPlays(piuUsername);
+
+  return {
+    recentPlays,
+    async persist() {
+      try {
+        const profileResult = await profileResultPromise;
+        if (!profileResult.ok) {
+          throw profileResult.error;
+        }
+        const profile = profileResult.profile;
+        await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays);
+        await queueAllPlaysBackfill(userId, piuVersion);
+      } catch (error) {
+        await markSyncFailed(userId, piuVersion, error);
+        throw error;
+      }
+    },
+  };
 }
 
 export async function syncCurrentUserTopPlaysIfDue(userIdInput: string | null): Promise<void> {
@@ -1367,9 +1471,11 @@ function emptyDashboard(mongoReady: boolean): PerformanceDashboard {
       upscores: 0,
       upscoresThisWeek: 0,
       upscoresToday: 0,
+      recentNewScores: 0,
       averageBestScore: null,
-      pumbilityChangeThisWeek: null,
-      averageBestScoreChangeThisWeek: null,
+      pumbilityChange24Hours: null,
+      averageBestScoreChange24Hours: null,
+      recentlyPlayed: 0,
     },
     recentPlays: [],
     topCharts: [],

@@ -60,9 +60,11 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Sign in required to view recent songs." }, { status: 401 });
     }
+
     const offset = Math.max(0, Number.parseInt(request.nextUrl.searchParams.get("cursor") ?? "0", 10) || 0);
     const direction = parseSortDirection(request.nextUrl.searchParams.get("sortDirection"));
-    const recent = await getPerformanceRecentPlays(user.id, { offset, limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 35) : 24, sortDirection: direction });
+    const recentLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 35) : 24;
+    const recent = await getPerformanceRecentPlays(user.id, { offset, limit: recentLimit, sortDirection: direction });
     const songsByTitle = await getSongsByTitles(normalizePiuGameVersion(user.preferences.piuGameVersion), recent.recentPlays.map((play) => play.songName));
     const filters = {
       folders: parseList(request.nextUrl.searchParams, "folder"),
