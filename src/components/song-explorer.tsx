@@ -117,6 +117,7 @@ export function SongExplorer({
   removedFromVersion,
   showLanding = true,
 }: SongExplorerProps) {
+  const landingSectionRef = useRef<HTMLElement | null>(null);
   const searchSectionRef = useRef<HTMLElement | null>(null);
   const songsRef = useRef(initialSongs);
   const filterPanelRef = useRef<HTMLElement | null>(null);
@@ -1327,6 +1328,23 @@ export function SongExplorer({
 
 function clampPreviewVolume(volume: number): number {
   return Number.isFinite(volume) ? Math.min(Math.max(volume, 0), 1) : 0.5;
+}
+
+function landingSongVisibilityClass(index: number): string {
+  if (index < 4) {
+    return "block";
+  }
+  if (index < 6) {
+    return "hidden sm:block";
+  }
+  if (index < 8) {
+    return "hidden md:block";
+  }
+  if (index < 12) {
+    return "hidden xl:block";
+  }
+
+  return "hidden";
 }
 
 function PreviewToggleButton({
