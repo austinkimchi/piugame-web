@@ -23,6 +23,9 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song", o
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [message, setMessage] = useState("");
   const [draft, setDraft] = useState<CatalogEditorPayload>(() => payloadFromSong(song));
+  const [historyJson, setHistoryJson] = useState(() => JSON.stringify(payloadFromSong(song).history, null, 2));
+  const [chartHistoryJson, setChartHistoryJson] = useState(() => JSON.stringify(payloadFromSong(song).chartHistory, null, 2));
+  const [chartLinksJson, setChartLinksJson] = useState(() => JSON.stringify(payloadFromSong(song).chartLinks, null, 2));
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [draggingAudio, setDraggingAudio] = useState(false);
   const canEdit = userIsAdmin && !viewingAsRegular;
@@ -90,9 +93,22 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song", o
   async function save() {
     setStatus("saving");
     setMessage("");
+    let history: CatalogEditorPayload["history"];
+    let chartHistory: CatalogEditorPayload["chartHistory"];
+    let chartLinks: CatalogEditorPayload["chartLinks"];
+    try {
+      history = JSON.parse(historyJson) as CatalogEditorPayload["history"];
+      chartHistory = JSON.parse(chartHistoryJson) as CatalogEditorPayload["chartHistory"];
+      chartLinks = JSON.parse(chartLinksJson) as CatalogEditorPayload["chartLinks"];
+    } catch {
+      setStatus("error");
+      setMessage("History and chart links must contain valid JSON.");
+      return;
+    }
     const tags = draft.tags.map((tag) => tag.trim()).filter(Boolean);
     const chartTokens = draft.chartTokens.map((token) => token.trim()).filter(Boolean);
-    const requestBody = audioFile ? new FormData() : JSON.stringify({ ...draft, tags, chartTokens });
+    const nextDraft = { ...draft, tags, chartTokens, history, chartHistory, chartLinks };
+    const requestBody = audioFile ? new FormData() : JSON.stringify(nextDraft);
     const headers: HeadersInit = audioFile ? {} : { "Content-Type": "application/json" };
 
     if (audioFile && requestBody instanceof FormData) {
@@ -103,6 +119,9 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song", o
       requestBody.set("series", draft.series);
       requestBody.set("tags", JSON.stringify(tags));
       requestBody.set("chartTokens", JSON.stringify(chartTokens));
+      requestBody.set("history", JSON.stringify(history));
+      requestBody.set("chartHistory", JSON.stringify(chartHistory));
+      requestBody.set("chartLinks", JSON.stringify(chartLinks));
       requestBody.set("audio", audioFile);
     }
 
@@ -120,6 +139,9 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song", o
 
     setStatus("idle");
     setDraft(payloadFromSong(responseBody.song));
+    setHistoryJson(JSON.stringify(responseBody.song.history, null, 2));
+    setChartHistoryJson(JSON.stringify(responseBody.song.chartHistory, null, 2));
+    setChartLinksJson(JSON.stringify(responseBody.song.chartLinks, null, 2));
     setAudioFile(null);
     setMessage("");
     onSaved?.(responseBody.song);
@@ -240,6 +262,13 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, focus = "song", o
                   ))}
                 </div>
               </section>
+              <section className="grid gap-3 border-t border-[#d8dfd1] pt-4">
+                <h3 className="text-sm font-black uppercase text-[#596153]">History and chart links</h3>
+                <p className="text-sm font-medium text-[#56604e]">Edit song-wide history, chart-specific history, and linked chart identities as JSON. Linked chart tokens share community data across versions.</p>
+                <JsonEditor label="Song history" value={historyJson} onChange={setHistoryJson} />
+                <JsonEditor label="Chart history" value={chartHistoryJson} onChange={setChartHistoryJson} />
+                <JsonEditor label="Chart links" value={chartLinksJson} onChange={setChartLinksJson} />
+              </section>
             </div>
 
             {message ? <p className="mt-4 text-sm font-bold text-[#9b2b1f]">{message}</p> : null}
@@ -268,5 +297,12 @@ function payloadFromSong(song: PublicSong): CatalogEditorPayload {
     series: song.series ?? "",
     tags: song.tags,
     chartTokens: song.chartSummary,
+    history: song.history,
+    chartHistory: song.chartHistory,
+    chartLinks: song.chartLinks,
   };
+}
+
+function JsonEditor({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="grid gap-1 text-xs font-black uppercase text-[#596153]">{label}<textarea className="min-h-32 border border-[#d8dfd1] bg-white p-3 font-mono text-xs font-medium normal-case text-[#171916] outline-none focus:border-[#28c950]" value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }

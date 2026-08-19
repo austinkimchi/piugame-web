@@ -13,6 +13,10 @@ export function formatPerformanceGrade(value: string | null | undefined): string
   return gradeDisplayLabel(base, plus);
 }
 
+export function isFailedPerformanceGrade(value: string | null | undefined): boolean {
+  return String(value ?? "").trim().toLowerCase().startsWith("x_");
+}
+
 export function piuTimestampToDate(value: string | null | undefined): Date | null {
   const text = String(value ?? "").trim();
   if (!text) {

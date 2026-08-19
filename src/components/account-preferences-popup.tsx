@@ -1,22 +1,40 @@
 "use client";
 
-import { Check, RefreshCw, Settings, UserRound, X } from "lucide-react";
-import { useState } from "react";
+import { Check, RefreshCw, UserRound, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import type { PublicUser } from "@/lib/auth";
 import type { PiuCatalogVersion } from "@/lib/types";
+import { AccountIntegrationsPanel } from "@/components/account-integrations";
 
-const VERSION_OPTIONS: Array<{ value: PiuCatalogVersion; label: string; detail: string }> = [
-  { value: "phoenix", label: "Phoenix", detail: "Current default" },
-  { value: "phoenix2", label: "Phoenix 2", detail: "Newer service" },
+const VERSION_OPTIONS: Array<{ value: PiuCatalogVersion; label: string }> = [
+  { value: "phoenix", label: "Phoenix" },
+  { value: "phoenix2", label: "Phoenix 2" },
 ];
 
-export function AccountPreferencesPopup({ user }: { user: PublicUser }) {
+export function AccountPreferencesPopup({ user, discordReady }: { user: PublicUser; discordReady: boolean }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [performanceAutoRefresh, setPerformanceAutoRefresh] = useState(user.preferences.performanceAutoRefresh);
   const [piuGameVersion, setPiuGameVersion] = useState<PiuCatalogVersion>(user.preferences.piuGameVersion);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   async function savePerformanceAutoRefresh(nextEnabled: boolean) {
     const previous = performanceAutoRefresh;
@@ -27,10 +45,13 @@ export function AccountPreferencesPopup({ user }: { user: PublicUser }) {
   async function savePiuGameVersion(nextVersion: PiuCatalogVersion) {
     const previous = piuGameVersion;
     setPiuGameVersion(nextVersion);
-    await savePreferences({ piuGameVersion: nextVersion }, () => setPiuGameVersion(previous));
+    const saved = await savePreferences({ piuGameVersion: nextVersion }, () => setPiuGameVersion(previous));
+    if (saved) {
+      router.refresh();
+    }
   }
 
-  async function savePreferences(preferences: { performanceAutoRefresh?: boolean; piuGameVersion?: PiuCatalogVersion }, revert: () => void) {
+  async function savePreferences(preferences: { performanceAutoRefresh?: boolean; piuGameVersion?: PiuCatalogVersion }, revert: () => void): Promise<boolean> {
     setSaving(true);
     setStatus("");
     const response = await fetch("/api/account/preferences", {
@@ -43,9 +64,10 @@ export function AccountPreferencesPopup({ user }: { user: PublicUser }) {
     if (!response.ok) {
       revert();
       setStatus(body?.error ?? "Could not save preference.");
-      return;
+      return false;
     }
     setStatus("Saved");
+    return true;
   }
 
   return (
@@ -64,14 +86,19 @@ export function AccountPreferencesPopup({ user }: { user: PublicUser }) {
       </div>
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#171916]/35 px-4 backdrop-blur-sm" role="presentation">
-          <div className="w-full max-w-md border border-[#cdd5c5] bg-[#fbfcf7] p-4 shadow-[0_28px_90px_rgba(17,19,15,0.24)]">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#171916]/35 px-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setOpen(false);
+            }
+          }}
+        >
+          <div aria-labelledby="account-preferences-title" aria-modal="true" className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto border border-[#cdd5c5] bg-[#fbfcf7] p-4 shadow-[0_28px_90px_rgba(17,19,15,0.24)]" role="dialog">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <div className="mb-2 inline-flex h-10 w-10 items-center justify-center bg-[#171916] text-white">
-                  <Settings aria-hidden="true" size={18} />
-                </div>
-                <h2 className="text-xl font-black text-[#11130f]">Account preferences</h2>
+                <h2 id="account-preferences-title" className="text-xl font-black text-[#11130f]">Account preferences</h2>
                 <p className="mt-1 text-sm font-medium leading-6 text-[#56604e]">{user.email}</p>
               </div>
               <button
@@ -112,7 +139,6 @@ export function AccountPreferencesPopup({ user }: { user: PublicUser }) {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-black text-[#171916]">PIUGAME version</p>
-                  <p className="mt-1 text-xs font-bold text-[#66705f]">Used for account linking and performance sync.</p>
                 </div>
                 {saving ? <span className="text-xs font-black uppercase text-[#66705f]">Saving</span> : null}
               </div>
@@ -121,7 +147,7 @@ export function AccountPreferencesPopup({ user }: { user: PublicUser }) {
                   const selected = piuGameVersion === option.value;
                   return (
                     <button
-                      className={`min-h-20 border px-3 py-2 text-left transition ${
+                      className={`min-h-11 border px-3 py-2 text-center transition ${
                         selected ? "border-[#28c950] bg-[#ecfff0] text-[#071109]" : "border-[#d8dfd0] bg-[#fbfcf7] text-[#56604e] hover:border-[#171916] hover:text-[#171916]"
                       }`}
                       disabled={saving}
@@ -129,16 +155,18 @@ export function AccountPreferencesPopup({ user }: { user: PublicUser }) {
                       onClick={() => void savePiuGameVersion(option.value)}
                       type="button"
                     >
-                      <span className="flex items-center justify-between gap-2">
+                      <span className="flex items-center justify-center gap-2">
                         <span className="text-sm font-black">{option.label}</span>
                         {selected ? <Check aria-hidden="true" size={16} /> : null}
                       </span>
-                      <span className="mt-1 block text-xs font-bold">{option.detail}</span>
                     </button>
                   );
                 })}
               </div>
               {status ? <p className={`mt-2 text-xs font-bold ${status === "Saved" ? "text-[#1b8f40]" : "text-[#9b2b1f]"}`}>{status}</p> : null}
+            </div>
+            <div className="mt-3">
+              <AccountIntegrationsPanel discordReady={discordReady} user={user} />
             </div>
           </div>
         </div>

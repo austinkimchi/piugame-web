@@ -2,7 +2,15 @@
 
 import { Search, Sparkles, Volume2 } from "lucide-react";
 import { MotionConfig, motion, type Variants } from "motion/react";
-import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+import type { PiuCatalogVersion } from "@/lib/types";
+
+const VERSION_OPTIONS: Array<{ label: string; value: PiuCatalogVersion }> = [
+  { label: "Phoenix", value: "phoenix" },
+  { label: "Phoenix 2", value: "phoenix2" },
+];
 
 const heroContainer: Variants = {
   hidden: {},
@@ -23,7 +31,62 @@ const heroItem: Variants = {
   },
 };
 
-export function HomeHero({ accountSlot }: { accountSlot?: ReactNode }) {
+export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel = "Phoenix 2", catalogVersion = "phoenix2" }: { accountSlot?: ReactNode; canChangeVersion?: boolean; catalogLabel?: string; catalogVersion?: PiuCatalogVersion }) {
+  const router = useRouter();
+  const [openVersionMenu, setOpenVersionMenu] = useState(false);
+  const [savingVersion, setSavingVersion] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState(catalogVersion);
+  const versionMenuCloseTimeoutRef = useRef<number | null>(null);
+
+  function keepVersionMenuOpen() {
+    if (versionMenuCloseTimeoutRef.current !== null) {
+      window.clearTimeout(versionMenuCloseTimeoutRef.current);
+      versionMenuCloseTimeoutRef.current = null;
+    }
+    setOpenVersionMenu(true);
+  }
+
+  function closeVersionMenuSoon() {
+    if (versionMenuCloseTimeoutRef.current !== null) {
+      window.clearTimeout(versionMenuCloseTimeoutRef.current);
+    }
+    versionMenuCloseTimeoutRef.current = window.setTimeout(() => {
+      setOpenVersionMenu(false);
+      versionMenuCloseTimeoutRef.current = null;
+    }, 160);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (versionMenuCloseTimeoutRef.current !== null) {
+        window.clearTimeout(versionMenuCloseTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  async function changeVersion(nextVersion: PiuCatalogVersion) {
+    if (!canChangeVersion || nextVersion === selectedVersion || savingVersion) {
+      return;
+    }
+
+    const previousVersion = selectedVersion;
+    setSelectedVersion(nextVersion);
+    setSavingVersion(true);
+    const response = await fetch("/api/account/preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ piuGameVersion: nextVersion }),
+    });
+    setSavingVersion(false);
+    if (!response.ok) {
+      setSelectedVersion(previousVersion);
+      return;
+    }
+
+    setOpenVersionMenu(false);
+    router.refresh();
+  }
+
   return (
     <MotionConfig reducedMotion="user">
       <section className="hero-stage relative overflow-hidden border-b border-[#d9ded2] bg-[#fbfcf7]">
@@ -34,7 +97,7 @@ export function HomeHero({ accountSlot }: { accountSlot?: ReactNode }) {
         variants={heroContainer}
       >
         {accountSlot ? <div className="mb-7 flex justify-end sm:absolute sm:right-8 sm:top-5 sm:mb-0 lg:right-10">{accountSlot}</div> : null}
-        <motion.div variants={heroItem} className="mb-7 flex flex-wrap items-center gap-3 text-sm font-medium text-[#596153]">
+        <motion.div variants={heroItem} className="relative z-40 mb-7 flex flex-wrap items-center gap-3 text-sm font-medium text-[#596153]">
           <motion.span
             className="hero-chip inline-flex items-center gap-2 border border-[#cdd5c5] bg-white px-3 py-1.5"
             whileHover={{ y: -3, scale: 1.03 }}
@@ -43,14 +106,50 @@ export function HomeHero({ accountSlot }: { accountSlot?: ReactNode }) {
             <Volume2 aria-hidden="true" size={16} />
             Supports Song Previews
           </motion.span>
-          <motion.span
-            className="hero-chip hero-chip-delayed inline-flex items-center gap-2 border border-[#cdd5c5] bg-white px-3 py-1.5"
+          <motion.div
+            className="hero-chip hero-chip-delayed relative"
             whileHover={{ y: -3, scale: 1.03 }}
             whileTap={{ scale: 0.98 }}
+            onMouseEnter={keepVersionMenuOpen}
+            onMouseLeave={closeVersionMenuSoon}
           >
-            <Sparkles aria-hidden="true" size={16} />
-            Phoenix 2
-          </motion.span>
+            <button
+              aria-expanded={openVersionMenu}
+              aria-haspopup="menu"
+              className="inline-flex items-center gap-2 border border-[#cdd5c5] bg-white px-3 py-1.5 text-[#596153] transition hover:border-[#28c950] hover:text-[#1f7a43] focus:outline-none focus:ring-2 focus:ring-[#28c950]/45"
+              onClick={() => setOpenVersionMenu((current) => !current)}
+              onFocus={keepVersionMenuOpen}
+              type="button"
+            >
+              <Sparkles aria-hidden="true" size={16} />
+              {VERSION_OPTIONS.find((option) => option.value === selectedVersion)?.label ?? catalogLabel}
+            </button>
+            {openVersionMenu ? (
+              <div
+                className="absolute left-0 top-full z-30 min-w-40 border border-[#cdd5c5] bg-white p-1 shadow-[0_14px_34px_rgba(29,35,24,0.14)]"
+                role="menu"
+                onMouseEnter={keepVersionMenuOpen}
+              >
+                {VERSION_OPTIONS.map((option) => {
+                  const selected = option.value === selectedVersion;
+                  return (
+                    <button
+                      aria-pressed={selected}
+                      className={`flex w-full items-center justify-between gap-4 px-3 py-2 text-left text-sm font-black transition ${selected ? "bg-[#ecfff0] text-[#1f7a43]" : "text-[#3d4638] hover:bg-[#f5f7f0]"} disabled:cursor-not-allowed disabled:opacity-55`}
+                      disabled={!canChangeVersion || savingVersion}
+                      key={option.value}
+                      onClick={() => void changeVersion(option.value)}
+                      role="menuitemradio"
+                      type="button"
+                    >
+                      {option.label}
+                      {selected ? <span aria-hidden="true">✓</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </motion.div>
         </motion.div>
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
           <motion.div variants={heroItem} className="hero-copy">
@@ -69,7 +168,7 @@ export function HomeHero({ accountSlot }: { accountSlot?: ReactNode }) {
           >
             <div className="flex items-center gap-3 text-sm font-semibold uppercase tracking-normal text-[#596153]">
               <Search aria-hidden="true" size={17} />
-              Latest Catalog
+              {catalogLabel} Catalog
             </div>
             <p className="mt-3 text-sm leading-6 text-[#56604e]">
               Your personal notebook for the songs you are learning, clearing, and coming back to.

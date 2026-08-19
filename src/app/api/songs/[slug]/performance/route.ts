@@ -1,26 +1,28 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth";
-import { getSongBySlug } from "@/lib/catalog";
 import { getSongChartPerformance } from "@/lib/performance";
+import { normalizePiuGameVersion } from "@/lib/piu-version";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
-  const song = await getSongBySlug(slug);
-  if (!song) {
-    return NextResponse.json({ error: "Song not found." }, { status: 404 });
-  }
+  await params;
 
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ performance: null }, { headers: { "Cache-Control": "private, no-store" } });
   }
 
-  const chartToken = normalizeChartToken(request.nextUrl.searchParams.get("chart") ?? undefined, song.chartSummary);
-  const performance = await getSongChartPerformance(user.id, { songName: song.title, chartToken });
+  const songName = request.nextUrl.searchParams.get("songName")?.trim();
+  if (!songName) {
+    return NextResponse.json({ error: "Song name is required." }, { status: 400 });
+  }
+
+  const chartToken = normalizeChartToken(request.nextUrl.searchParams.get("chart") ?? undefined);
+  const piuVersion = normalizePiuGameVersion(request.nextUrl.searchParams.get("version"));
+  const performance = await getSongChartPerformance(user.id, { songName, chartToken, piuVersion });
 
   return NextResponse.json(
     { performance },
@@ -30,7 +32,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   );
 }
 
-function normalizeChartToken(value: string | undefined, availableTokens: string[]): string | null {
+function normalizeChartToken(value: string | undefined): string | null {
   const normalized = String(value ?? "").trim().toUpperCase();
-  return availableTokens.find((token) => token.toUpperCase() === normalized) ?? null;
+  return /^(?:S|D|C)\d{1,2}$/.test(normalized) ? normalized : null;
 }

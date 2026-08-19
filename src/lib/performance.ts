@@ -9,6 +9,8 @@ import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { performanceChartTokenCandidates, performanceChartTokenCandidatesFromPlay, performanceChartTokenKey } from "@/lib/performance-chart-key";
 import { piuTimestampToDate } from "@/lib/performance-format";
+import { performancePlayKey } from "@/lib/performance-play-key";
+import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
@@ -19,6 +21,7 @@ const USERS_COLLECTION = process.env.COMMUNITY_USERS_COLLECTION ?? "users";
 const PERFORMANCE_PROFILES_COLLECTION = process.env.PERFORMANCE_PROFILES_COLLECTION ?? "performance_profiles";
 const PERFORMANCE_PLAYS_COLLECTION = process.env.PERFORMANCE_PLAYS_COLLECTION ?? "performance_play_events";
 const PERFORMANCE_CHART_STATS_COLLECTION = process.env.PERFORMANCE_CHART_STATS_COLLECTION ?? "performance_chart_stats";
+const PERFORMANCE_METRIC_SNAPSHOTS_COLLECTION = process.env.PERFORMANCE_METRIC_SNAPSHOTS_COLLECTION ?? "performance_metric_snapshots";
 const PERFORMANCE_REFRESH_MINUTES = Number(process.env.PERFORMANCE_REFRESH_MINUTES ?? "30");
 const PERFORMANCE_TOP_PLAYS_REFRESH_HOURS = Number(process.env.PERFORMANCE_TOP_PLAYS_REFRESH_HOURS ?? "24");
 const PERFORMANCE_SYNC_BATCH_SIZE = Number(process.env.PERFORMANCE_SYNC_BATCH_SIZE ?? "5");
@@ -46,6 +49,7 @@ interface MinimalUserDocument {
 
 interface PerformanceProfileDocument {
   userId: ObjectId;
+  piuVersion: PiuCatalogVersion;
   piuUsername: string;
   displayName: string;
   titleName: string | null;
@@ -79,7 +83,9 @@ interface PerformanceProfileDocument {
 
 interface PerformancePlayEventDocument {
   userId: ObjectId;
+  piuVersion: PiuCatalogVersion;
   playHash: string;
+  playKey?: string;
   piuUsername: string;
   songName: string;
   chartToken: string;
@@ -98,8 +104,17 @@ interface PerformancePlayEventDocument {
 
 interface PerformanceChartStatDocument extends PerformanceChartStatSummary {
   userId: ObjectId;
+  piuVersion: PiuCatalogVersion;
   chartToken: string;
   piuUsername: string;
+}
+
+interface PerformanceMetricSnapshotDocument {
+  userId: ObjectId;
+  piuVersion: PiuCatalogVersion;
+  capturedAt: Date;
+  pumbilityScore: number | null;
+  averageBestScore: number | null;
 }
 
 export interface PerformanceDashboard {
@@ -134,7 +149,11 @@ export interface PerformanceDashboard {
     trackedCharts: number;
     trackedPumbilityCharts: number;
     upscores: number;
+    upscoresThisWeek: number;
+    upscoresToday: number;
     averageBestScore: number | null;
+    pumbilityChangeThisWeek: number | null;
+    averageBestScoreChangeThisWeek: number | null;
   };
   recentPlays: Array<{
     songName: string;
@@ -193,6 +212,7 @@ export interface PerformanceTopChartsPage {
 
 export interface SongChartPerformance {
   latestPlay: {
+    id: string;
     score: number | null;
     grade: string | null;
     plate: string | null;
@@ -201,6 +221,7 @@ export interface SongChartPerformance {
     judgments: RecentPlay["judgments"];
   } | null;
   history: Array<{
+    id: string;
     score: number | null;
     grade: string | null;
     plate: string | null;
@@ -213,6 +234,7 @@ export interface SongChartPerformance {
     previousBestScore: number | null;
     latestScore: number | null;
     latestStageBreak: boolean;
+    latestPlayedAt: string | null;
     recentPlayCount: number;
     stageBreakCount: number;
     bestGrade: string | null;
@@ -220,6 +242,17 @@ export interface SongChartPerformance {
     bestBucketPage: number | null;
     bestSyncedAt: string | null;
   } | null;
+}
+
+export interface ScoreLinkablePerformancePlay {
+  id: string;
+  piuVersion: PiuCatalogVersion;
+  score: number | null;
+  grade: string | null;
+  plate: string | null;
+  stageBreak: boolean;
+  judgments: RecentPlay["judgments"];
+  playedAt: string | null;
 }
 
 async function collections() {
@@ -234,6 +267,7 @@ async function collections() {
     profiles: db.collection<PerformanceProfileDocument>(PERFORMANCE_PROFILES_COLLECTION),
     plays: db.collection<PerformancePlayEventDocument>(PERFORMANCE_PLAYS_COLLECTION),
     chartStats: db.collection<PerformanceChartStatDocument>(PERFORMANCE_CHART_STATS_COLLECTION),
+    metricSnapshots: db.collection<PerformanceMetricSnapshotDocument>(PERFORMANCE_METRIC_SNAPSHOTS_COLLECTION),
   };
 
   if (!globalThis.piuPerformanceIndexesPromise) {
@@ -248,23 +282,46 @@ async function ensurePerformanceIndexes(args: {
   profiles: Collection<PerformanceProfileDocument>;
   plays: Collection<PerformancePlayEventDocument>;
   chartStats: Collection<PerformanceChartStatDocument>;
+  metricSnapshots: Collection<PerformanceMetricSnapshotDocument>;
 }): Promise<void> {
   await Promise.all([
-    args.profiles.createIndex({ userId: 1 }, { unique: true }),
-    args.profiles.createIndex({ nextRefreshAt: 1, syncStatus: 1, syncLeaseUntil: 1 }),
-    args.profiles.createIndex({ allPlaysSyncStatus: 1, allPlaysLeaseUntil: 1, updatedAt: 1 }),
-    args.plays.createIndex({ userId: 1, playHash: 1 }, { unique: true }),
-    args.plays.createIndex({ userId: 1, playedAt: -1, ingestedAt: -1 }),
-    args.plays.createIndex({ userId: 1, chartToken: 1, playedAt: -1 }),
-    args.chartStats.createIndex({ userId: 1, chartToken: 1 }, { unique: true }),
-    args.chartStats.createIndex({ userId: 1, bestScore: -1 }),
-    args.chartStats.createIndex({ userId: 1, topPlayRank: 1, bestScore: -1 }),
-    args.chartStats.createIndex({ userId: 1, updatedAt: -1 }),
+    dropLegacyPerformanceVersionIndexes(args.profiles),
+    dropLegacyPerformanceVersionIndexes(args.plays),
+    dropLegacyPerformanceVersionIndexes(args.chartStats),
+  ]);
+
+  await Promise.all([
+    args.profiles.createIndex({ userId: 1, piuVersion: 1 }, { unique: true }),
+    args.profiles.createIndex({ piuVersion: 1, nextRefreshAt: 1, syncStatus: 1, syncLeaseUntil: 1 }),
+    args.profiles.createIndex({ piuVersion: 1, allPlaysSyncStatus: 1, allPlaysLeaseUntil: 1, updatedAt: 1 }),
+    args.plays.createIndex({ userId: 1, piuVersion: 1, playHash: 1 }, { unique: true }),
+    args.plays.createIndex({ userId: 1, piuVersion: 1, playKey: 1 }, { unique: true, partialFilterExpression: { playKey: { $type: "string" } } }),
+    args.plays.createIndex({ userId: 1, piuVersion: 1, playedAt: -1, ingestedAt: -1 }),
+    args.plays.createIndex({ userId: 1, piuVersion: 1, chartToken: 1, playedAt: -1 }),
+    args.chartStats.createIndex({ userId: 1, piuVersion: 1, chartToken: 1 }, { unique: true }),
+    args.chartStats.createIndex({ userId: 1, piuVersion: 1, bestScore: -1 }),
+    args.chartStats.createIndex({ userId: 1, piuVersion: 1, topPlayRank: 1, bestScore: -1 }),
+    args.chartStats.createIndex({ userId: 1, piuVersion: 1, updatedAt: -1 }),
+    args.metricSnapshots.createIndex({ userId: 1, piuVersion: 1, capturedAt: -1 }),
   ]);
 }
 
-function recentPlaySort() {
-  return { playedAt: -1, ingestedAt: -1, _id: -1 } as const;
+async function dropLegacyPerformanceVersionIndexes<T extends PerformanceProfileDocument | PerformancePlayEventDocument | PerformanceChartStatDocument>(collection: Collection<T>): Promise<void> {
+  const indexes = await collection.indexes();
+  const legacyIndexes = indexes.filter(
+    (index) =>
+      index.name !== "_id_" &&
+      index.unique === true &&
+      Object.hasOwn(index.key ?? {}, "userId") &&
+      !Object.hasOwn(index.key ?? {}, "piuVersion"),
+  );
+  const legacyIndexNames = legacyIndexes.map((index) => index.name).filter((name): name is string => Boolean(name));
+  await Promise.all(legacyIndexNames.map((name) => collection.dropIndex(name)));
+}
+
+function recentPlaySort(direction: "asc" | "desc" = "desc") {
+  const order = direction === "asc" ? 1 : -1;
+  return { playedAt: order, ingestedAt: order, _id: order } as const;
 }
 
 function topChartsSort(sort: PerformanceTopChartsSort): Sort {
@@ -282,24 +339,37 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
     return empty;
   }
 
-  const { users, profiles, plays, chartStats } = await collections();
-  await ensureUserPerformanceSchedule(userId, users, profiles);
+  const { users, profiles, plays, chartStats, metricSnapshots } = await collections();
+  const piuVersion = await performanceVersionForUser(users, userId);
+  await ensureUserPerformanceSchedule(userId, users, profiles, piuVersion);
 
-  const [profile, recentPlays, topCharts, trackedPlays, trackedCharts, trackedPumbilityCharts, upscoreCharts, averageScores] = await Promise.all([
-    profiles.findOne({ userId }),
-    plays.find({ userId }).sort(recentPlaySort()).limit(PERFORMANCE_RECENT_PLAYS_PAGE_SIZE).toArray(),
-    chartStats.find(topChartsFilter(userId, "pumbility")).sort(topChartsSort("pumbility")).limit(PERFORMANCE_TOP_CHARTS_PAGE_SIZE).toArray(),
-    plays.countDocuments({ userId }),
-    chartStats.countDocuments({ userId }),
-    chartStats.countDocuments(topChartsFilter(userId, "pumbility")),
-    chartStats.countDocuments({ userId, previousBestScore: { $ne: null } }),
+  const now = new Date();
+  const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const startOfWeek = new Date(startOfToday);
+  startOfWeek.setUTCDate(startOfWeek.getUTCDate() - 6);
+  const upscoreFilter = { userId, piuVersion, previousBestScore: { $ne: null } };
+  const [profile, recentPlays, topCharts, trackedPlays, trackedCharts, trackedPumbilityCharts, upscoreCharts, upscoresThisWeek, upscoresToday, averageScores, weeklyBaseline] = await Promise.all([
+    profiles.findOne({ userId, piuVersion }),
+    plays.find({ userId, piuVersion }).sort(recentPlaySort()).limit(PERFORMANCE_RECENT_PLAYS_PAGE_SIZE).toArray(),
+    chartStats.find(topChartsFilter(userId, piuVersion, "pumbility")).sort(topChartsSort("pumbility")).limit(PERFORMANCE_TOP_CHARTS_PAGE_SIZE).toArray(),
+    plays.countDocuments({ userId, piuVersion }),
+    chartStats.countDocuments({ userId, piuVersion }),
+    chartStats.countDocuments(topChartsFilter(userId, piuVersion, "pumbility")),
+    chartStats.countDocuments(upscoreFilter),
+    chartStats.countDocuments({ ...upscoreFilter, previousBestSyncedAt: { $gte: startOfWeek } }),
+    chartStats.countDocuments({ ...upscoreFilter, previousBestSyncedAt: { $gte: startOfToday } }),
     chartStats
       .aggregate<{ averageBestScore: number }>([
-        { $match: { userId, bestScore: { $type: "number" } } },
+        { $match: { userId, piuVersion, bestScore: { $type: "number" } } },
         { $group: { _id: null, averageBestScore: { $avg: "$bestScore" } } },
       ])
       .toArray(),
+    metricSnapshots.find({ userId, piuVersion, capturedAt: { $lte: startOfWeek } }).sort({ capturedAt: -1 }).limit(1).next(),
   ]);
+
+  const averageBestScore = roundedAverageBestScore(averageScores[0]?.averageBestScore);
+
+  const publicTopCharts = await publicTopChartsWithRecentBestFallback(plays, userId, piuVersion, topCharts);
 
   return {
     profile: profile ? publicProfile(profile) : null,
@@ -308,10 +378,14 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
       trackedCharts,
       trackedPumbilityCharts,
       upscores: upscoreCharts,
-      averageBestScore: averageScores[0]?.averageBestScore ? Math.round(averageScores[0].averageBestScore) : null,
+      upscoresThisWeek,
+      upscoresToday,
+      averageBestScore,
+      pumbilityChangeThisWeek: metricChangeSince(profile?.pumbilityScore ?? null, weeklyBaseline?.pumbilityScore ?? null),
+      averageBestScoreChangeThisWeek: metricChangeSince(averageBestScore, weeklyBaseline?.averageBestScore ?? null),
     },
     recentPlays: recentPlays.map(publicRecentPlay),
-    topCharts: topCharts.map(publicTopChart),
+    topCharts: publicTopCharts,
     canSync: Boolean(profile),
     mongoReady: true,
   };
@@ -329,24 +403,70 @@ export async function getPerformanceTopCharts(
 
   const offset = Math.max(0, Math.trunc(args.offset ?? 0));
   const limit = Math.min(Math.max(1, Math.trunc(args.limit ?? PERFORMANCE_TOP_CHARTS_PAGE_SIZE)), PERFORMANCE_TOP_CHARTS_PAGE_SIZE);
-  const { chartStats } = await collections();
-  const filter = topChartsFilter(userId, sort);
+  const { users, chartStats, plays } = await collections();
+  const piuVersion = await performanceVersionForUser(users, userId);
+  const filter = topChartsFilter(userId, piuVersion, sort);
   const [topCharts, total] = await Promise.all([
     chartStats.find(filter).sort(topChartsSort(sort)).skip(offset).limit(limit).toArray(),
     chartStats.countDocuments(filter),
   ]);
 
   return {
-    topCharts: topCharts.map(publicTopChart),
+    topCharts: await publicTopChartsWithRecentBestFallback(plays, userId, piuVersion, topCharts),
     nextOffset: offset + topCharts.length < total ? offset + topCharts.length : null,
     total,
     sort,
   };
 }
 
+async function publicTopChartsWithRecentBestFallback(
+  plays: Collection<PerformancePlayEventDocument>,
+  userId: ObjectId,
+  piuVersion: PiuCatalogVersion,
+  charts: Array<WithId<PerformanceChartStatDocument>>,
+): Promise<PerformanceDashboard["topCharts"]> {
+  const chartTokensWithoutBest = charts.filter((chart) => chart.bestScore === null).map((chart) => chart.chartToken);
+  if (chartTokensWithoutBest.length === 0) {
+    return charts.map(publicTopChart);
+  }
+
+  const fallbackPlays = await plays
+    .find({
+      userId,
+      piuVersion,
+      chartToken: { $in: chartTokensWithoutBest },
+      score: { $gte: 0 },
+      stageBreak: { $ne: true },
+      grade: { $not: /^x_/i },
+    })
+    .sort({ chartToken: 1, score: -1, playedAt: -1, ingestedAt: -1, _id: -1 })
+    .toArray();
+  const bestPlayByChart = new Map<string, PerformancePlayEventDocument>();
+  for (const play of fallbackPlays) {
+    if (!bestPlayByChart.has(play.chartToken)) {
+      bestPlayByChart.set(play.chartToken, play);
+    }
+  }
+
+  return charts.map((chart) => {
+    const fallback = bestPlayByChart.get(chart.chartToken);
+    if (!fallback) {
+      return publicTopChart(chart);
+    }
+
+    return {
+      ...publicTopChart(chart),
+      bestScore: fallback.score,
+      bestGrade: fallback.grade,
+      bestPlate: fallback.plate,
+      bestSyncedAt: fallback.playedAt?.toISOString() ?? null,
+    };
+  });
+}
+
 export async function getPerformanceRecentPlays(
   userIdInput: string | null,
-  args: { offset?: number; limit?: number } = {},
+  args: { offset?: number; limit?: number; sortDirection?: "asc" | "desc" } = {},
 ): Promise<PerformanceRecentPlaysPage> {
   const userId = objectIdFromString(userIdInput);
   if (!userId || !hasMongoConfig()) {
@@ -355,10 +475,11 @@ export async function getPerformanceRecentPlays(
 
   const offset = Math.max(0, Math.trunc(args.offset ?? 0));
   const limit = Math.min(Math.max(1, Math.trunc(args.limit ?? PERFORMANCE_RECENT_PLAYS_PAGE_SIZE)), PERFORMANCE_RECENT_PLAYS_PAGE_SIZE);
-  const { plays } = await collections();
+  const { users, plays } = await collections();
+  const piuVersion = await performanceVersionForUser(users, userId);
   const [recentPlays, total] = await Promise.all([
-    plays.find({ userId }).sort(recentPlaySort()).skip(offset).limit(limit).toArray(),
-    plays.countDocuments({ userId }),
+    plays.find({ userId, piuVersion }).sort(recentPlaySort(args.sortDirection)).skip(offset).limit(limit).toArray(),
+    plays.countDocuments({ userId, piuVersion }),
   ]);
 
   return {
@@ -370,7 +491,7 @@ export async function getPerformanceRecentPlays(
 
 export async function getSongChartPerformance(
   userIdInput: string | null,
-  args: { songName: string; chartToken: string | null | undefined; limit?: number },
+  args: { songName: string; chartToken: string | null | undefined; piuVersion: PiuCatalogVersion; limit?: number },
 ): Promise<SongChartPerformance | null> {
   const userId = objectIdFromString(userIdInput);
   if (!userId || !hasMongoConfig()) {
@@ -385,8 +506,8 @@ export async function getSongChartPerformance(
   const limit = Math.min(Math.max(1, Math.trunc(args.limit ?? 30)), 100);
   const { plays, chartStats } = await collections();
   const [historyDesc, statsCandidates] = await Promise.all([
-    plays.find({ userId, chartToken: { $in: chartTokens } }).sort(recentPlaySort()).limit(limit).toArray(),
-    chartStats.find({ userId, chartToken: { $in: chartTokens } }).toArray(),
+    plays.find({ userId, piuVersion: args.piuVersion, chartToken: { $in: chartTokens } }).sort(recentPlaySort()).limit(limit).toArray(),
+    chartStats.find({ userId, piuVersion: args.piuVersion, chartToken: { $in: chartTokens } }).toArray(),
   ]);
   const stats = firstByCandidateOrder(statsCandidates, chartTokens);
 
@@ -399,6 +520,7 @@ export async function getSongChartPerformance(
             previousBestScore: stats.previousBestScore,
             latestScore: stats.latestScore,
             latestStageBreak: stats.latestStageBreak,
+            latestPlayedAt: stats.latestPlayedAt?.toISOString() ?? null,
             recentPlayCount: stats.recentPlayCount,
             stageBreakCount: stats.stageBreakCount,
             bestGrade: stats.bestGrade,
@@ -407,6 +529,41 @@ export async function getSongChartPerformance(
             bestSyncedAt: stats.bestSyncedAt?.toISOString() ?? null,
           }
         : null,
+  };
+}
+
+export async function getScoreLinkablePerformancePlay(
+  userIdInput: string | null,
+  args: { playId: string; songName: string; chartToken: string },
+): Promise<ScoreLinkablePerformancePlay | null> {
+  const userId = objectIdFromString(userIdInput);
+  const playId = objectIdFromString(args.playId);
+  const chartToken = args.chartToken.trim().toUpperCase();
+  if (!userId || !playId || !chartToken || !hasMongoConfig()) {
+    return null;
+  }
+
+  const chartTokens = performanceChartTokenCandidates(args.songName, chartToken);
+  if (chartTokens.length === 0) {
+    return null;
+  }
+
+  const { plays } = await collections();
+  const play = await plays.findOne({ _id: playId, userId });
+  if (!play || !chartTokens.includes(play.chartToken) || songLookupKey(play.songName) !== songLookupKey(args.songName)) {
+    return null;
+  }
+
+  const playedAtFromRaw = parsePlayDate(play.playedAtRaw);
+  return {
+    id: play._id.toHexString(),
+    piuVersion: play.piuVersion,
+    score: play.score,
+    grade: play.grade,
+    plate: play.plate,
+    stageBreak: play.stageBreak,
+    judgments: play.judgments,
+    playedAt: playedAtFromRaw?.toISOString() ?? play.playedAt?.toISOString() ?? play.playedAtRaw,
   };
 }
 
@@ -433,9 +590,11 @@ export async function syncDuePerformanceUsers(): Promise<PerformanceSyncResult> 
       break;
     }
 
-    await ensureUserPerformanceSchedule(user._id, users, profiles);
+    const piuVersion = normalizePiuGameVersion(user.preferences?.piuGameVersion);
+    await ensureUserPerformanceSchedule(user._id, users, profiles, piuVersion);
     const profile = await profiles.findOne({
       userId: user._id,
+      piuVersion,
       nextRefreshAt: { $lte: now },
       $or: [{ syncLeaseUntil: null }, { syncLeaseUntil: { $lte: now } }],
     });
@@ -458,10 +617,10 @@ export async function syncDuePerformanceUsers(): Promise<PerformanceSyncResult> 
     }
 
     try {
-      await syncSingleUserPerformance(profile.userId, user);
+      await syncSingleUserPerformance(profile.userId, user, piuVersion);
       result.synced += 1;
     } catch (error) {
-      await markSyncFailed(profile.userId, error);
+      await markSyncFailed(profile.userId, piuVersion, error);
       result.failed += 1;
     }
   }
@@ -485,6 +644,7 @@ export async function syncQueuedAllPlaysBackfillForUser(userIdInput: string | nu
   const now = new Date();
   const profile = await profiles.findOne({
     userId,
+    piuVersion: await performanceVersionForUser(users, userId),
     allPlaysSyncStatus: "queued",
     allPlaysSyncedAt: null,
     $or: [{ allPlaysLeaseUntil: null }, { allPlaysLeaseUntil: { $lte: now } }],
@@ -518,10 +678,10 @@ export async function syncQueuedAllPlaysBackfillForUser(userIdInput: string | nu
 
   try {
     const user = await users.findOne({ _id: userId });
-    await backfillAllPlaysForUser(userId, user, chartStats);
+    await backfillAllPlaysForUser(userId, user, chartStats, claimed.piuVersion);
     return true;
   } catch (error) {
-    await markAllPlaysBackfillFailed(userId, error);
+    await markAllPlaysBackfillFailed(userId, profile.piuVersion, error);
     return false;
   }
 }
@@ -566,10 +726,10 @@ async function syncQueuedAllPlaysBackfills(batchSize: number): Promise<Pick<Perf
 
     try {
       const user = await users.findOne({ _id: profile.userId });
-      await backfillAllPlaysForUser(profile.userId, user, chartStats);
+      await backfillAllPlaysForUser(profile.userId, user, chartStats, profile.piuVersion);
       result.backfilled += 1;
     } catch (error) {
-      await markAllPlaysBackfillFailed(profile.userId, error);
+      await markAllPlaysBackfillFailed(profile.userId, profile.piuVersion, error);
       result.failed += 1;
     }
   }
@@ -586,9 +746,9 @@ export async function syncCurrentUserPerformance(userIdInput: string | null): Pr
   const { users } = await collections();
   const user = await users.findOne({ _id: userId });
   try {
-    await syncSingleUserPerformance(userId, user);
+    await syncSingleUserPerformance(userId, user, normalizePiuGameVersion(user?.preferences?.piuGameVersion));
   } catch (error) {
-    await markSyncFailed(userId, error);
+    await markSyncFailed(userId, normalizePiuGameVersion(user?.preferences?.piuGameVersion), error);
     throw error;
   }
 }
@@ -600,16 +760,18 @@ export async function syncCurrentUserTopPlaysIfDue(userIdInput: string | null): 
   }
 
   const { users, profiles, chartStats } = await collections();
-  await ensureUserPerformanceSchedule(userId, users, profiles);
-  await syncTopPlaysForUserIfDue(userId, users, profiles, chartStats);
+  const piuVersion = await performanceVersionForUser(users, userId);
+  await ensureUserPerformanceSchedule(userId, users, profiles, piuVersion);
+  await syncTopPlaysForUserIfDue(userId, users, profiles, chartStats, piuVersion);
 }
 
 async function ensureUserPerformanceSchedule(
   userId: ObjectId,
   users: Collection<MinimalUserDocument>,
   profiles: Collection<PerformanceProfileDocument>,
+  piuVersion: PiuCatalogVersion,
 ): Promise<void> {
-  const existing = await profiles.findOne({ userId }, { projection: { _id: 1 } });
+  const existing = await profiles.findOne({ userId, piuVersion }, { projection: { _id: 1 } });
   if (existing) {
     return;
   }
@@ -622,10 +784,11 @@ async function ensureUserPerformanceSchedule(
 
   const now = new Date();
   await profiles.updateOne(
-    { userId },
+    { userId, piuVersion },
     {
       $setOnInsert: {
         userId,
+        piuVersion,
         piuUsername,
         displayName: user?.piuLink?.displayName?.trim() || piuUsername,
         titleName: null,
@@ -661,7 +824,7 @@ async function ensureUserPerformanceSchedule(
   );
 }
 
-async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalUserDocument> | null): Promise<void> {
+async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalUserDocument> | null, piuVersion: PiuCatalogVersion): Promise<void> {
   const piuUsername = user?.piuLink?.piuUsername?.trim();
   const encryptedPassword = user?.piuLink?.encryptedPassword;
   if (!piuUsername || !encryptedPassword) {
@@ -669,7 +832,7 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
   }
 
   const password = decryptCredential(encryptedPassword);
-  const client = new PiuClient({ version: normalizePiuGameVersion(user?.preferences?.piuGameVersion) });
+  const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, password);
   const profilePromise = client.getPlayerData(piuUsername);
   const recentPlaysPromise = client
@@ -684,22 +847,23 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
     }
   }
   const recentPlays = recentPlaysResult.ok ? recentPlaysResult.plays : [];
-  await storePerformanceSnapshot(userId, profile, recentPlays);
-  await queueAllPlaysBackfill(userId);
+  await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays);
+  await queueAllPlaysBackfill(userId, piuVersion);
 }
 
 async function storePerformanceSnapshot(
   userId: ObjectId,
+  piuVersion: PiuCatalogVersion,
   profile: PlayerData,
   recentPlays: RecentPlay[],
 ): Promise<void> {
-  const { profiles, plays, chartStats } = await collections();
+  const { profiles, plays, chartStats, metricSnapshots } = await collections();
   const now = new Date();
   const piuUsername = profile.username.trim();
   const nextRefreshAt = new Date(now.getTime() + Math.max(5, PERFORMANCE_REFRESH_MINUTES) * 60 * 1000);
 
   await profiles.updateOne(
-    { userId },
+    { userId, piuVersion },
     {
       $set: {
         piuUsername,
@@ -727,6 +891,7 @@ async function storePerformanceSnapshot(
       },
       $setOnInsert: {
         userId,
+        piuVersion,
         createdAt: now,
       },
     },
@@ -734,25 +899,38 @@ async function storePerformanceSnapshot(
   );
 
   for (const play of recentPlays) {
-    const playDoc = playEventDocument(userId, piuUsername, play, now);
-    const inserted = await plays.updateOne(
-      { userId, playHash: playDoc.playHash },
-      { $setOnInsert: playDoc },
-      { upsert: true },
-    );
+    const playDoc = playEventDocument(userId, piuVersion, piuUsername, play, now);
+    const { inserted, removedDuplicates } = await upsertRecentPlayEvent(plays, playDoc);
 
-    if (inserted.upsertedCount > 0) {
+    if (inserted) {
       await updateChartStat(chartStats, playDoc, now);
+    } else if (removedDuplicates > 0) {
+      await repairChartPlayCounts(chartStats, plays, playDoc, now);
     }
   }
+
+  const averageScores = await chartStats
+    .aggregate<{ averageBestScore: number }>([
+      { $match: { userId, piuVersion, bestScore: { $type: "number" } } },
+      { $group: { _id: null, averageBestScore: { $avg: "$bestScore" } } },
+    ])
+    .toArray();
+  await metricSnapshots.insertOne({
+    userId,
+    piuVersion,
+    capturedAt: now,
+    pumbilityScore: profile.pumbilityScore,
+    averageBestScore: roundedAverageBestScore(averageScores[0]?.averageBestScore),
+  });
 }
 
-async function queueAllPlaysBackfill(userId: ObjectId): Promise<void> {
+async function queueAllPlaysBackfill(userId: ObjectId, piuVersion: PiuCatalogVersion): Promise<void> {
   const { profiles } = await collections();
   const now = new Date();
   await profiles.updateOne(
     {
       userId,
+      piuVersion,
       allPlaysSyncedAt: null,
       $or: [
         { allPlaysSyncStatus: null },
@@ -775,6 +953,7 @@ async function backfillAllPlaysForUser(
   userId: ObjectId,
   user: WithId<MinimalUserDocument> | null,
   chartStats: Collection<PerformanceChartStatDocument>,
+  piuVersion: PiuCatalogVersion,
 ): Promise<void> {
   const piuUsername = user?.piuLink?.piuUsername?.trim();
   const encryptedPassword = user?.piuLink?.encryptedPassword;
@@ -783,18 +962,18 @@ async function backfillAllPlaysForUser(
   }
 
   const password = decryptCredential(encryptedPassword);
-  const client = new PiuClient({ version: normalizePiuGameVersion(user?.preferences?.piuGameVersion) });
+  const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, password);
   const result = await client.fetchAllPlays(piuUsername);
   const now = new Date();
 
   for (const play of result.plays) {
-    await upsertHistoricalBestPlay(chartStats, userId, piuUsername, play, now);
+    await upsertHistoricalBestPlay(chartStats, userId, piuVersion, piuUsername, play, now);
   }
 
   const { profiles } = await collections();
   await profiles.updateOne(
-    { userId },
+    { userId, piuVersion },
     {
       $set: {
         allPlaysSyncStatus: "synced",
@@ -812,9 +991,10 @@ async function syncTopPlaysForUserIfDue(
   users: Collection<MinimalUserDocument>,
   profiles: Collection<PerformanceProfileDocument>,
   chartStats: Collection<PerformanceChartStatDocument>,
+  piuVersion: PiuCatalogVersion,
 ): Promise<void> {
   const now = new Date();
-  const profile = await findDueTopPlaysProfile(userId, profiles, now);
+  const profile = await findDueTopPlaysProfile(userId, piuVersion, profiles, now);
   if (!profile) {
     return;
   }
@@ -827,12 +1007,12 @@ async function syncTopPlaysForUserIfDue(
   }
 
   const password = decryptCredential(encryptedPassword);
-  const client = new PiuClient({ version: normalizePiuGameVersion(user?.preferences?.piuGameVersion) });
+  const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, password);
   const topPlays = await client.getTopPlays(piuUsername);
-  await storeTopPlays(chartStats, userId, piuUsername, topPlays, now);
+  await storeTopPlays(chartStats, userId, piuVersion, piuUsername, topPlays, now);
   await profiles.updateOne(
-    { userId },
+    { userId, piuVersion },
     {
       $set: {
         syncError: null,
@@ -846,11 +1026,13 @@ async function syncTopPlaysForUserIfDue(
 
 async function findDueTopPlaysProfile(
   userId: ObjectId,
+  piuVersion: PiuCatalogVersion,
   profiles: Collection<PerformanceProfileDocument>,
   now: Date,
 ): Promise<WithId<PerformanceProfileDocument> | null> {
   return profiles.findOne({
     userId,
+    piuVersion,
     $or: [
       { nextTopPlaysRefreshAt: null },
       { nextTopPlaysRefreshAt: { $exists: false } },
@@ -868,22 +1050,24 @@ function nextTopPlaysRefreshDate(now: Date): Date {
 async function storeTopPlays(
   chartStats: Collection<PerformanceChartStatDocument>,
   userId: ObjectId,
+  piuVersion: PiuCatalogVersion,
   piuUsername: string,
   topPlays: TopPlay[],
   now: Date,
 ): Promise<void> {
-  await chartStats.updateMany({ userId, topPlayRank: { $ne: null } }, { $set: { topPlayRank: null } });
+  await chartStats.updateMany({ userId, piuVersion, topPlayRank: { $ne: null } }, { $set: { topPlayRank: null } });
 
   for (const play of topPlays) {
     const chartToken = chartTokenFromPlay(play);
     const playedAt = parsePlayDate(play.playedAt);
-    const existing = await chartStats.findOne({ userId, chartToken });
+    const existing = await chartStats.findOne({ userId, piuVersion, chartToken });
     const summary = applyTopPlaySummary(existing, play, playedAt, now);
     await chartStats.updateOne(
-      { userId, chartToken },
+      { userId, piuVersion, chartToken },
       {
         $set: {
           userId,
+          piuVersion,
           chartToken,
           piuUsername,
           ...summary,
@@ -897,19 +1081,21 @@ async function storeTopPlays(
 async function upsertHistoricalBestPlay(
   chartStats: Collection<PerformanceChartStatDocument>,
   userId: ObjectId,
+  piuVersion: PiuCatalogVersion,
   piuUsername: string,
   play: BestPlay,
   now: Date,
 ): Promise<void> {
   const chartTokenCandidates = performanceChartTokenCandidatesFromPlay(play);
   const chartToken = chartTokenCandidates[0];
-  const existing = await chartStats.findOne({ userId, chartToken: { $in: chartTokenCandidates } });
+  const existing = await chartStats.findOne({ userId, piuVersion, chartToken: { $in: chartTokenCandidates } });
   const targetChartToken = existing?.chartToken ?? chartToken;
   const summary = applyBucketBestSummary(existing, play, now);
 
   if (!existing) {
     await chartStats.insertOne({
       userId,
+      piuVersion,
       chartToken,
       piuUsername,
       ...summary,
@@ -918,7 +1104,7 @@ async function upsertHistoricalBestPlay(
   }
 
   await chartStats.updateOne(
-    { userId, chartToken: targetChartToken },
+    { userId, piuVersion, chartToken: targetChartToken },
     {
       $set: {
         piuUsername,
@@ -933,12 +1119,13 @@ async function updateChartStat(
   play: PerformancePlayEventDocument,
   now: Date,
 ): Promise<void> {
-  const existing = await chartStats.findOne({ userId: play.userId, chartToken: play.chartToken });
+  const existing = await chartStats.findOne({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken });
   const summary = applyRecentPlaySummary(existing, play, play.playedAt, now);
 
   if (!existing) {
     await chartStats.insertOne({
       userId: play.userId,
+      piuVersion: play.piuVersion,
       chartToken: play.chartToken,
       piuUsername: play.piuUsername,
       ...summary,
@@ -947,7 +1134,7 @@ async function updateChartStat(
   }
 
   await chartStats.updateOne(
-    { userId: play.userId, chartToken: play.chartToken },
+    { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
     {
       $set: {
         piuUsername: play.piuUsername,
@@ -957,11 +1144,11 @@ async function updateChartStat(
   );
 }
 
-async function markSyncFailed(userId: ObjectId, error: unknown): Promise<void> {
+async function markSyncFailed(userId: ObjectId, piuVersion: PiuCatalogVersion, error: unknown): Promise<void> {
   const { profiles } = await collections();
   const now = new Date();
   await profiles.updateOne(
-    { userId },
+    { userId, piuVersion },
     {
       $set: {
         syncStatus: "failed",
@@ -974,10 +1161,10 @@ async function markSyncFailed(userId: ObjectId, error: unknown): Promise<void> {
   );
 }
 
-async function markAllPlaysBackfillFailed(userId: ObjectId, error: unknown): Promise<void> {
+async function markAllPlaysBackfillFailed(userId: ObjectId, piuVersion: PiuCatalogVersion, error: unknown): Promise<void> {
   const { profiles } = await collections();
   await profiles.updateOne(
-    { userId },
+    { userId, piuVersion },
     {
       $set: {
         allPlaysSyncStatus: "failed",
@@ -989,16 +1176,19 @@ async function markAllPlaysBackfillFailed(userId: ObjectId, error: unknown): Pro
   );
 }
 
-function playEventDocument(userId: ObjectId, piuUsername: string, play: RecentPlay, now: Date): PerformancePlayEventDocument {
+function playEventDocument(userId: ObjectId, piuVersion: PiuCatalogVersion, piuUsername: string, play: RecentPlay, now: Date): PerformancePlayEventDocument {
   const chartToken = chartTokenFromPlay(play);
   const playedAt = parsePlayDate(play.playedAt);
+  const playKey = performancePlayKey({ playedAt });
   const playHash = createHash("sha256")
-    .update([userId.toHexString(), chartToken, play.playedAt ?? "", play.score ?? "", play.grade ?? "", play.plate ?? ""].join("|"))
+    .update([userId.toHexString(), piuVersion, playKey].join("|"))
     .digest("hex");
 
   return {
     userId,
+    piuVersion,
     playHash,
+    playKey,
     piuUsername,
     songName: play.songName,
     chartToken,
@@ -1016,12 +1206,67 @@ function playEventDocument(userId: ObjectId, piuUsername: string, play: RecentPl
   };
 }
 
+async function upsertRecentPlayEvent(
+  plays: Collection<PerformancePlayEventDocument>,
+  play: PerformancePlayEventDocument,
+): Promise<{ inserted: boolean; removedDuplicates: number }> {
+  const candidatePlays = await plays
+    .find({
+      userId: play.userId,
+      piuVersion: play.piuVersion,
+      $or: [
+        { playKey: play.playKey },
+        { playedAt: play.playedAt },
+      ],
+    })
+    .sort({ ingestedAt: 1, _id: 1 })
+    .toArray();
+  const matchingPlays = candidatePlays.filter(
+    (candidate) =>
+      candidate.playKey === play.playKey ||
+      performancePlayKey({ playedAt: candidate.playedAt }) === play.playKey,
+  );
+  const canonicalPlay = matchingPlays.find((candidate) => candidate.playKey === play.playKey) ?? matchingPlays[0];
+
+  if (!canonicalPlay) {
+    const result = await plays.updateOne({ userId: play.userId, piuVersion: play.piuVersion, playKey: play.playKey }, { $setOnInsert: play }, { upsert: true });
+    return { inserted: result.upsertedCount > 0, removedDuplicates: 0 };
+  }
+
+  await plays.updateOne({ _id: canonicalPlay._id }, { $set: { playKey: play.playKey } });
+  const duplicateIds = matchingPlays.slice(1).map((duplicate) => duplicate._id);
+  if (duplicateIds.length > 0) {
+    await plays.deleteMany({ _id: { $in: duplicateIds } });
+  }
+  return { inserted: false, removedDuplicates: duplicateIds.length };
+}
+
+async function repairChartPlayCounts(
+  chartStats: Collection<PerformanceChartStatDocument>,
+  plays: Collection<PerformancePlayEventDocument>,
+  play: PerformancePlayEventDocument,
+  now: Date,
+): Promise<void> {
+  const [recentPlayCount, stageBreakCount] = await Promise.all([
+    plays.countDocuments({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken }),
+    plays.countDocuments({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken, stageBreak: true }),
+  ]);
+  await chartStats.updateOne(
+    { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
+    { $set: { recentPlayCount, stageBreakCount, updatedAt: now } },
+  );
+}
+
 function chartTokenFromPlay(play: Pick<RecentPlay, "songName" | "mode" | "level">): string {
   return performanceChartTokenKey(play.songName, play.mode, play.level);
 }
 
 function parsePlayDate(value: string | null): Date | null {
   return piuTimestampToDate(value);
+}
+
+function songLookupKey(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function firstByCandidateOrder<T extends { chartToken: string }>(documents: T[], chartTokens: string[]): T | null {
@@ -1082,6 +1327,7 @@ function publicRecentPlay(play: WithId<PerformancePlayEventDocument>): Performan
 function publicSongChartPlay(play: WithId<PerformancePlayEventDocument>): NonNullable<SongChartPerformance["latestPlay"]> {
   const playedAtFromRaw = parsePlayDate(play.playedAtRaw);
   return {
+    id: play._id.toHexString(),
     score: play.score,
     grade: play.grade,
     plate: play.plate,
@@ -1119,7 +1365,11 @@ function emptyDashboard(mongoReady: boolean): PerformanceDashboard {
       trackedCharts: 0,
       trackedPumbilityCharts: 0,
       upscores: 0,
+      upscoresThisWeek: 0,
+      upscoresToday: 0,
       averageBestScore: null,
+      pumbilityChangeThisWeek: null,
+      averageBestScoreChangeThisWeek: null,
     },
     recentPlays: [],
     topCharts: [],
@@ -1132,12 +1382,17 @@ function normalizeTopChartsSort(value: PerformanceTopChartsSort | null | undefin
   return value === "score" ? "score" : "pumbility";
 }
 
-function topChartsFilter(userId: ObjectId, sort: PerformanceTopChartsSort): Filter<PerformanceChartStatDocument> {
+function topChartsFilter(userId: ObjectId, piuVersion: PiuCatalogVersion, sort: PerformanceTopChartsSort): Filter<PerformanceChartStatDocument> {
   if (sort === "pumbility") {
-    return { userId, topPlayRank: { $exists: true, $ne: null } };
+    return { userId, piuVersion, topPlayRank: { $exists: true, $ne: null } };
   }
 
-  return { userId, bestScore: { $exists: true, $ne: null } };
+  return { userId, piuVersion, bestScore: { $exists: true, $ne: null } };
+}
+
+async function performanceVersionForUser(users: Collection<MinimalUserDocument>, userId: ObjectId): Promise<PiuCatalogVersion> {
+  const user = await users.findOne({ _id: userId }, { projection: { "preferences.piuGameVersion": 1 } });
+  return normalizePiuGameVersion(user?.preferences?.piuGameVersion);
 }
 
 function objectIdFromString(value: string | null | undefined): ObjectId | null {

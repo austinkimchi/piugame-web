@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatPerformanceGrade, piuTimestampToDate } from "../src/lib/performance-format.ts";
+import { formatPerformanceGrade, isFailedPerformanceGrade, piuTimestampToDate } from "../src/lib/performance-format.ts";
 
 test("formats grade asset codes as display labels", () => {
   assert.equal(formatPerformanceGrade("aaa_p"), "AAA+");
@@ -15,6 +15,13 @@ test("formats grade asset codes as display labels", () => {
 test("formats prefixed and empty grade values", () => {
   assert.equal(formatPerformanceGrade("x_aa_p"), "AA+");
   assert.equal(formatPerformanceGrade(null), "Played");
+});
+
+test("identifies failed grades without changing their displayed label", () => {
+  assert.equal(isFailedPerformanceGrade("x_a"), true);
+  assert.equal(isFailedPerformanceGrade("x_aa_p"), true);
+  assert.equal(isFailedPerformanceGrade("aa"), false);
+  assert.equal(formatPerformanceGrade("x_a"), "A");
 });
 
 test("parses PIUGAME GMT timestamps into instants", () => {

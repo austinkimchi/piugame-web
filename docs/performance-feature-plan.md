@@ -43,7 +43,7 @@ Branch: `codex/feature-performance`
 `src/lib/performance.ts`
 
 - Owns performance collections, indexes, dashboard projection, and sync logic.
-- Uses `@austinkimchi/piugame-sdk` with `version: "phoenix2"`.
+- Uses `@austinkimchi/piugame-sdk` with the user's selected PIU version.
 - Fetches profile and recent plays, then persists normalized snapshots.
 - Creates a performance schedule row for a user when they first visit `/performance` with a linked PIU account.
 
@@ -51,7 +51,7 @@ Branch: `codex/feature-performance`
 
 ### `performance_profiles`
 
-One document per app user.
+One document per app user and PIU version.
 
 Purpose:
 
@@ -61,8 +61,8 @@ Purpose:
 
 Indexes:
 
-- `{ userId: 1 }`, unique.
-- `{ nextRefreshAt: 1, syncStatus: 1, syncLeaseUntil: 1 }` for due-user scans.
+- `{ userId: 1, piuVersion: 1 }`, unique.
+- `{ piuVersion: 1, nextRefreshAt: 1, syncStatus: 1, syncLeaseUntil: 1 }` for due-user scans.
 
 ### `performance_play_events`
 
@@ -76,13 +76,13 @@ Purpose:
 
 Indexes:
 
-- `{ userId: 1, playHash: 1 }`, unique, for idempotent ingestion.
-- `{ userId: 1, playedAt: -1, ingestedAt: -1 }` for recent-play timelines.
-- `{ userId: 1, chartToken: 1, playedAt: -1 }` for future song/chart drilldowns.
+- `{ userId: 1, piuVersion: 1, playHash: 1 }`, unique, for idempotent ingestion.
+- `{ userId: 1, piuVersion: 1, playedAt: -1, ingestedAt: -1 }` for recent-play timelines.
+- `{ userId: 1, piuVersion: 1, chartToken: 1, playedAt: -1 }` for future song/chart drilldowns.
 
 ### `performance_chart_stats`
 
-One aggregate document per user and chart.
+One aggregate document per user, PIU version, and chart. The `piuVersion` field prevents Phoenix and Phoenix 2 scores from ever sharing a best-score aggregate.
 
 Purpose:
 
@@ -92,9 +92,20 @@ Purpose:
 
 Indexes:
 
-- `{ userId: 1, chartToken: 1 }`, unique.
-- `{ userId: 1, bestScore: -1 }` for top charts.
-- `{ userId: 1, updatedAt: -1 }` for recent chart movement.
+- `{ userId: 1, piuVersion: 1, chartToken: 1 }`, unique.
+- `{ userId: 1, piuVersion: 1, bestScore: -1 }` for top charts.
+- `{ userId: 1, piuVersion: 1, updatedAt: -1 }` for recent chart movement.
+
+### Version migration
+
+Before deploying the version-aware schema to an existing database, label the legacy data and replace the old user-only unique indexes. First inspect the migration, then run it with the version that produced the existing data:
+
+```bash
+npm run migrate:performance:version -- --legacy-version=phoenix2
+npm run migrate:performance:version:write -- --legacy-version=phoenix2
+```
+
+Use `phoenix` instead when the existing records came from Phoenix. The migration is intentionally explicit because the database cannot infer the source version from an old unlabelled record.
 
 ## Scheduler Design
 

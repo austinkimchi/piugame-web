@@ -21,6 +21,12 @@ function parseFormList(formData: FormData, key: keyof CatalogEditorPayload): str
   return Array.isArray(parsed) ? parsed.map(String) : [];
 }
 
+function parseFormJson(formData: FormData, key: keyof CatalogEditorPayload): unknown {
+  const value = formValue(formData, key);
+  if (typeof value !== "string") return [];
+  return JSON.parse(value) as unknown;
+}
+
 function parseFormPayload(formData: FormData): Partial<CatalogEditorPayload> {
   const folderPosition = formValue(formData, "folderPosition");
 
@@ -32,6 +38,9 @@ function parseFormPayload(formData: FormData): Partial<CatalogEditorPayload> {
     series: String(formValue(formData, "series") ?? ""),
     tags: parseFormList(formData, "tags"),
     chartTokens: parseFormList(formData, "chartTokens"),
+    history: parseFormJson(formData, "history") as CatalogEditorPayload["history"],
+    chartHistory: parseFormJson(formData, "chartHistory") as CatalogEditorPayload["chartHistory"],
+    chartLinks: parseFormJson(formData, "chartLinks") as CatalogEditorPayload["chartLinks"],
   };
 }
 

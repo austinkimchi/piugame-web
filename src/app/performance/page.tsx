@@ -113,6 +113,8 @@ export default async function PerformancePage() {
           key={`${dashboard.profile?.lastSyncedAt ?? "pending"}:${dashboard.totals.trackedPlays}:${dashboard.totals.trackedCharts}`}
           nextTopChartsOffset={nextTopChartsOffset}
           nextRecentPlaysOffset={nextRecentPlaysOffset}
+          performanceVersion={normalizePiuGameVersion(user?.preferences.piuGameVersion)}
+          communityUser={user}
           previewVolume={user?.preferences.songPreviewVolume ?? 0.5}
           lastFetchedAt={dashboard.profile?.lastSyncedAt}
           recentArcade={dashboard.profile?.recentArcade}
@@ -190,12 +192,18 @@ function formatDate(value: string | null): string {
     return value;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
+  return formatStableDateTime(parsed);
+}
+
+function formatStableDateTime(value: Date): string {
+  const month = new Intl.DateTimeFormat("en-US", { month: "short" }).format(value);
+  const day = new Intl.DateTimeFormat("en-US", { day: "numeric" }).format(value);
+  const time = new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
-  }).format(parsed);
+  }).format(value);
+
+  return `${month} ${day}, ${time}`;
 }
 
 function songLookupKey(value: string): string {

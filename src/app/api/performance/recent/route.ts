@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
   const page = await getPerformanceRecentPlays(user.id, {
     offset: Number.isFinite(offset) ? offset : 0,
     limit: Number.isFinite(limit) ? limit : 35,
+    sortDirection: request.nextUrl.searchParams.get("sortDirection") === "asc" ? "asc" : "desc",
   });
   const songsByTitle = await getSongsByTitles(
     normalizePiuGameVersion(user.preferences.piuGameVersion),
