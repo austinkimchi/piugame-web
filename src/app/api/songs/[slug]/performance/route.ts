@@ -34,5 +34,5 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
 function normalizeChartToken(value: string | undefined): string | null {
   const normalized = String(value ?? "").trim().toUpperCase();
-  return /^(?:S|D|C)\d{1,2}$/.test(normalized) ? normalized : null;
+  return /^(?:S|D|C(?:X)?)\d{1,2}[+-]?$/.test(normalized) ? normalized : null;
 }
