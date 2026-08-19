@@ -1059,7 +1059,7 @@ export function SongExplorer({
                   </button>
                 ) : null}
               </motion.label>
-              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[19.5rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem_2.75rem]">
+              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[19.5rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem]">
                 <label className={`relative h-full ${isRecentSearch ? "opacity-45" : ""}`}>
                   <span className="sr-only">Sort by</span>
                   <select
@@ -1129,12 +1129,6 @@ export function SongExplorer({
                     <span className="absolute right-1.5 top-1.5 h-2 w-2 bg-[#28c950]" />
                   ) : null}
                 </motion.button>
-                <PreviewToggleButton
-                  muted={previewMuted}
-                  volume={previewVolume}
-                  onVolumeChange={changePreviewVolume}
-                  onToggle={togglePreviewMuted}
-                />
               </div>
             </motion.div>
 
