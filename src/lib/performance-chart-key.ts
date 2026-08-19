@@ -17,6 +17,17 @@ export function performanceChartTokenCandidatesFromPlay(play: { songName: string
   return normalizedModeVariants(play.mode).map((mode) => performanceChartTokenKey(play.songName, mode, play.level));
 }
 
+export function catalogChartTokenFromPlay(play: { mode: string | null | undefined; level: string | null | undefined }): string | null {
+  const prefix = normalizedModeVariants(play.mode)[0];
+  const level = String(play.level ?? "").trim();
+
+  if (!/^[SDC]$/.test(prefix) || !/^\d{1,2}[+-]?$/.test(level)) {
+    return null;
+  }
+
+  return `${prefix}${level}`;
+}
+
 function parseCatalogChartToken(value: string | null | undefined): { level: string; modeVariants: string[] } | null {
   const match = CHART_TOKEN_PATTERN.exec(String(value ?? "").trim());
   if (!match) {

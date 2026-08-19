@@ -5,6 +5,9 @@ import type { Metadata } from "next";
 import { SongDetailView } from "@/components/song-detail-view";
 import { getCurrentUser, getSongCommunityState, isAdmin } from "@/lib/auth";
 import { getSongBySlug } from "@/lib/catalog";
+import { chartCommunityKey } from "@/lib/chart-community";
+import { isPiuSeriesId, normalizePiuSeriesId } from "@/lib/catalog-version";
+import { normalizePiuGameVersion } from "@/lib/piu-version";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { absoluteSiteUrl, siteName, sitePreviewImage } from "@/lib/site";
 
@@ -13,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 interface SongPageProps {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ chart?: string | string[] }>;
+  searchParams?: Promise<{ chart?: string | string[]; version?: string | string[] }>;
 }
 
 export async function generateMetadata({ params }: SongPageProps): Promise<Metadata> {
@@ -82,13 +85,25 @@ export default async function SongPage({ params, searchParams }: SongPageProps) 
   }
 
   const { slug } = await params;
-  const song = await getSongBySlug(slug);
+  const user = await getCurrentUser();
+  const requestedVersion = normalizeRequestedVersion((await searchParams)?.version);
+  const baseSong = await getSongBySlug(slug);
+  if (!baseSong) {
+    notFound();
+  }
+  const preferredVersion = user ? normalizePiuGameVersion(user.preferences.piuGameVersion) : "phoenix2";
+  const catalogVersion = baseSong.supportedVersions.includes(requestedVersion)
+    ? requestedVersion
+    : baseSong.supportedVersions.includes(preferredVersion)
+      ? preferredVersion
+      : baseSong.supportedVersions[0];
+  const song = await getSongBySlug(slug, catalogVersion);
   if (!song) {
     notFound();
   }
-  const user = await getCurrentUser();
   const selectedChart = normalizeSelectedChart((await searchParams)?.chart, song.chartSummary);
-  const communityState = await getSongCommunityState(user, song.slug, selectedChart ?? song.chartSummary[0] ?? null);
+  const communityChart = selectedChart ?? song.chartSummary[0] ?? null;
+  const communityState = await getSongCommunityState(user, song.slug, communityChart, chartCommunityKey(song, catalogVersion, communityChart));
 
   return (
     <main className="min-h-screen bg-[#f7f8f2] text-[#171916]">
@@ -99,6 +114,8 @@ export default async function SongPage({ params, searchParams }: SongPageProps) 
           initialState: communityState,
         }}
         initialSelectedChartToken={selectedChart}
+        catalogVersion={catalogVersion}
+        performanceVersion={normalizePiuGameVersion(catalogVersion)}
         userIsAdmin={isAdmin(user)}
       />
     </main>
@@ -108,4 +125,9 @@ export default async function SongPage({ params, searchParams }: SongPageProps) 
 function normalizeSelectedChart(value: string | string[] | undefined, chartSummary: string[]): string | null {
   const chart = Array.isArray(value) ? value[0] : value;
   return chart && chartSummary.includes(chart) ? chart : null;
+}
+
+function normalizeRequestedVersion(value: string | string[] | undefined) {
+  const version = Array.isArray(value) ? value[0] : value;
+  return isPiuSeriesId(version) ? version : normalizePiuSeriesId(undefined);
 }

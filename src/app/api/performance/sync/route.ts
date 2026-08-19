@@ -4,8 +4,9 @@ import { after } from "next/server";
 
 import { getCurrentUserId } from "@/lib/auth";
 import { publicRequestOrigin } from "@/lib/oauth-origin";
-import { syncCurrentUserPerformance, syncCurrentUserTopPlaysIfDue, syncQueuedAllPlaysBackfillForUser } from "@/lib/performance";
+import { fetchCurrentUserRecentPlays, syncCurrentUserPerformance, syncCurrentUserTopPlaysIfDue, syncQueuedAllPlaysBackfillForUser } from "@/lib/performance";
 import { verifyPerformanceSyncToken } from "@/lib/performance-sync-token";
+import { claimCooldown } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,26 +18,38 @@ export async function POST(request: NextRequest) {
       return syncErrorResponse(request, "Sign in before syncing performance data.", 401);
     }
 
-    await syncCurrentUserPerformance(userId);
-    after(() => {
-      void syncCurrentUserTopPlaysIfDue(userId).catch(() => undefined);
-      void syncQueuedAllPlaysBackfillForUser(userId).catch(() => undefined);
-    });
-
-    if (wantsJson(request)) {
-      return NextResponse.json(
-        { ok: true },
-        {
-          headers: { "Cache-Control": "private, no-store" },
-        },
-      );
+    if (!claimCooldown(`performance-sync:${userId}`, 10_000)) {
+      return syncJsonOrRedirect(request, { ok: true, throttled: true });
     }
 
-    const publicOrigin = publicRequestOrigin(request.headers, request.nextUrl.origin);
-    return NextResponse.redirect(new URL("/performance", publicOrigin), 303);
+    if (request.nextUrl.searchParams.get("background") === "true") {
+      const fresh = await fetchCurrentUserRecentPlays(userId);
+      after(() => {
+        void fresh.persist()
+          .then(() => Promise.all([syncCurrentUserTopPlaysIfDue(userId), syncQueuedAllPlaysBackfillForUser(userId)]))
+          .catch(() => undefined);
+      });
+    } else {
+      await syncCurrentUserPerformance(userId);
+      after(() => {
+        void syncCurrentUserTopPlaysIfDue(userId).catch(() => undefined);
+        void syncQueuedAllPlaysBackfillForUser(userId).catch(() => undefined);
+      });
+    }
+
+    return syncJsonOrRedirect(request, { ok: true });
   } catch (error) {
     return syncErrorResponse(request, error instanceof Error ? error.message : "Performance sync failed.", 400);
   }
+}
+
+function syncJsonOrRedirect(request: NextRequest, body: { ok: true; throttled?: boolean }) {
+  if (wantsJson(request)) {
+    return NextResponse.json(body, { headers: { "Cache-Control": "private, no-store" } });
+  }
+
+  const publicOrigin = publicRequestOrigin(request.headers, request.nextUrl.origin);
+  return NextResponse.redirect(new URL("/performance", publicOrigin), 303);
 }
 
 function wantsJson(request: NextRequest): boolean {

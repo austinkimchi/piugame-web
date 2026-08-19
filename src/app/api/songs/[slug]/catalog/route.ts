@@ -2,7 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser, isAdmin } from "@/lib/auth";
 import { updateCatalogSong } from "@/lib/catalog";
-import type { CatalogEditorPayload } from "@/lib/types";
+import { isPiuSeriesId } from "@/lib/catalog-version";
+import type { CatalogEditorPayload, PiuSeriesId } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,12 @@ function parseFormList(formData: FormData, key: keyof CatalogEditorPayload): str
   return Array.isArray(parsed) ? parsed.map(String) : [];
 }
 
+function parseFormJson(formData: FormData, key: keyof CatalogEditorPayload): unknown {
+  const value = formValue(formData, key);
+  if (typeof value !== "string") return [];
+  return JSON.parse(value) as unknown;
+}
+
 function parseFormPayload(formData: FormData): Partial<CatalogEditorPayload> {
   const folderPosition = formValue(formData, "folderPosition");
 
@@ -32,6 +39,9 @@ function parseFormPayload(formData: FormData): Partial<CatalogEditorPayload> {
     series: String(formValue(formData, "series") ?? ""),
     tags: parseFormList(formData, "tags"),
     chartTokens: parseFormList(formData, "chartTokens"),
+    history: parseFormJson(formData, "history") as CatalogEditorPayload["history"],
+    chartHistory: parseFormJson(formData, "chartHistory") as CatalogEditorPayload["chartHistory"],
+    chartLinks: parseFormJson(formData, "chartLinks") as CatalogEditorPayload["chartLinks"],
   };
 }
 
@@ -45,6 +55,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   const { slug } = await params;
+  const requestedVersion = request.nextUrl.searchParams.get("version");
+  const chartVersion: PiuSeriesId | undefined = isPiuSeriesId(requestedVersion) ? requestedVersion : undefined;
   const contentType = request.headers.get("content-type") ?? "";
   let body: Partial<CatalogEditorPayload> | null = null;
   let audioFile: File | null = null;
@@ -65,7 +77,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: "Missing catalog edits." }, { status: 400 });
     }
 
-    const song = await updateCatalogSong(slug, body, audioFile);
+    const song = await updateCatalogSong(slug, body, audioFile, chartVersion);
     return NextResponse.json(
       { song },
       {

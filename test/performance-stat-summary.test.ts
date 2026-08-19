@@ -57,6 +57,81 @@ test("non-stage-break recent play does not overwrite bucket best", () => {
   assert.equal(summary.stageBreakCount, 0);
 });
 
+test("completed recent play establishes a best before historical bests are synced", () => {
+  const summary = applyRecentPlaySummary(
+    null,
+    {
+      songName: "Big Daddy",
+      mode: "S",
+      level: "19",
+      score: 927885,
+      grade: "aa_p",
+      plate: "fg",
+      stageBreak: false,
+      judgments: JUDGMENTS,
+    },
+    PLAYED_AT,
+    NOW,
+  );
+
+  assert.equal(summary.bestScore, 927885);
+  assert.equal(summary.bestGrade, "aa_p");
+  assert.equal(summary.bestPlate, "fg");
+  assert.equal(summary.bestSyncedAt, NOW);
+});
+
+test("completed recent upscore replaces best and preserves the prior best", () => {
+  const previousSync = new Date("2026-08-10T12:00:00.000Z");
+  const summary = applyRecentPlaySummary(
+    summaryFixture({
+      bestScore: 943818,
+      bestGrade: "aa_p",
+      bestPlate: "fg",
+      bestSyncedAt: previousSync,
+    }),
+    {
+      songName: "Viyella's Nightmare",
+      mode: "S",
+      level: "16",
+      score: 954386,
+      grade: "aaa",
+      plate: "fg",
+      stageBreak: false,
+      judgments: JUDGMENTS,
+    },
+    PLAYED_AT,
+    NOW,
+  );
+
+  assert.equal(summary.bestScore, 954386);
+  assert.equal(summary.bestGrade, "aaa");
+  assert.equal(summary.previousBestScore, 943818);
+  assert.equal(summary.previousBestGrade, "aa_p");
+  assert.equal(summary.previousBestSyncedAt, previousSync);
+  assert.equal(summary.lastUpscoredAt, NOW);
+});
+
+test("failed recent play does not establish a best", () => {
+  const summary = applyRecentPlaySummary(
+    null,
+    {
+      songName: "Destrucimate",
+      mode: "S",
+      level: "19",
+      score: 912934,
+      grade: "x_aa",
+      plate: "fg",
+      stageBreak: false,
+      judgments: JUDGMENTS,
+    },
+    PLAYED_AT,
+    NOW,
+  );
+
+  assert.equal(summary.bestScore, null);
+  assert.equal(summary.bestGrade, null);
+});
+
 test("fetchAllPlays bucket best fills an existing Pumbility shell", () => {
   const existing = summaryFixture({ topPlayRank: 2, topPumbilityScore: 550, bestScore: null });
   const summary = applyBucketBestSummary(
@@ -108,6 +183,7 @@ test("bucket best change preserves previous best score, grade, and plate", () =>
   assert.equal(summary.previousBestGrade, "aa");
   assert.equal(summary.previousBestPlate, "fg");
   assert.equal(summary.previousBestSyncedAt, previousSync);
+  assert.equal(summary.lastUpscoredAt, NOW);
 });
 
 test("top play summary stores Pumbility score separately from bucket best", () => {
@@ -144,6 +220,7 @@ function summaryFixture(overrides: Partial<PerformanceChartStatSummary> = {}): P
     previousBestGrade: null,
     previousBestPlate: null,
     previousBestSyncedAt: null,
+    lastUpscoredAt: null,
     latestScore: null,
     latestGrade: null,
     latestPlate: null,

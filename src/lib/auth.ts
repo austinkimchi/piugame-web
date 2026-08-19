@@ -8,6 +8,8 @@ import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { encryptCredential } from "@/lib/credential-crypto";
 import { piuDisplayName } from "@/lib/piu-account";
+import { getScoreLinkablePerformancePlay } from "@/lib/performance";
+import { isFailedPerformanceGrade } from "@/lib/performance-format";
 import { DEFAULT_PIU_GAME_VERSION, isPiuGameVersion, normalizePiuGameVersion } from "@/lib/piu-version";
 import type { DiscordProfile } from "@/lib/discord-oauth";
 import type { PiuCatalogVersion, SongSortOption, SortDirection } from "@/lib/types";
@@ -28,6 +30,7 @@ const POSTS_COLLECTION = process.env.COMMUNITY_POSTS_COLLECTION ?? "song_communi
 const SITE_LOGS_COLLECTION = process.env.SITE_LOGS_COLLECTION ?? "site_logs";
 const DISCORD_BOT_DB_NAME = process.env.DISCORD_BOT_DB_NAME ?? "piugame_discord";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+const COMMUNITY_CHART_KEY_MAX_LENGTH = 80;
 
 export type UserRole = "user" | "moderator" | "admin";
 type AuthProvider = "google" | "discord" | "piugame";
@@ -174,6 +177,7 @@ interface CommunityPostDocument {
   youtubeUrl: string | null;
   youtubeVideoId: string | null;
   caption: string | null;
+  scoreLink?: CommunityPostScoreLinkDocument | null;
   status: CommunityPostStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -181,6 +185,18 @@ interface CommunityPostDocument {
   removedBy?: ObjectId | null;
   archivedAt?: Date | null;
   moderationNote?: string | null;
+}
+
+interface CommunityPostScoreLinkDocument {
+  performancePlayId: ObjectId;
+  score: number | null;
+  grade: string | null;
+  plate: string | null;
+  stageBreak: boolean;
+  judgments: { perfect: number | null; great: number | null; good: number | null; bad: number | null; miss: number | null } | null;
+  playedAt: Date | null;
+  showPlate: boolean;
+  showJudgments: boolean;
 }
 
 export interface CommunityPost {
@@ -191,6 +207,17 @@ export interface CommunityPost {
   youtubeUrl: string | null;
   youtubeVideoId: string | null;
   caption: string | null;
+  scoreLink: {
+    performancePlayId: string;
+    score: number | null;
+    grade: string | null;
+    plate: string | null;
+    stageBreak: boolean;
+    judgments: { perfect: number | null; great: number | null; good: number | null; bad: number | null; miss: number | null } | null;
+    playedAt: string | null;
+    showPlate: boolean;
+    showJudgments: boolean;
+  } | null;
   createdAt: string;
   canDelete: boolean;
   canArchive: boolean;
@@ -730,6 +757,48 @@ export async function linkPiuAccount(
   return publicUser(result);
 }
 
+export async function unlinkDiscordAccount(user: PublicUser): Promise<PublicUser> {
+  const { users } = await collections();
+  const existing = await users.findOne({ _id: objectIdFromUser(user) });
+  if (!existing) {
+    throw new Error("User not found.");
+  }
+
+  const discordIdentity = existing.providers.find((provider) => provider.provider === "discord");
+  if (!discordIdentity) {
+    return publicUser(existing);
+  }
+  if (existing.providers.length <= 1) {
+    throw new Error("Link another sign-in service before disconnecting Discord.");
+  }
+
+  const piuLinkWithoutDiscord = { ...(existing.piuLink ?? {}) };
+  delete piuLinkWithoutDiscord.discordUserId;
+  delete piuLinkWithoutDiscord.discordUsername;
+  const updated = await users.findOneAndUpdate(
+    { _id: existing._id },
+    {
+      $pull: { providers: { provider: "discord" } },
+      $set: {
+        piuLink: piuLinkWithoutDiscord,
+        updatedAt: new Date(),
+      },
+    },
+    { returnDocument: "after" },
+  );
+  if (!updated) {
+    throw new Error("Could not disconnect Discord.");
+  }
+
+  const { accountLinks, playerProfiles } = await botCollections();
+  await Promise.all([
+    accountLinks.deleteOne({ discordUserId: discordIdentity.providerAccountId }),
+    playerProfiles.deleteOne({ discordUserId: discordIdentity.providerAccountId }),
+  ]);
+
+  return publicUser(updated);
+}
+
 async function syncBotLinkFromPiuLink(piuLink: UserDocument["piuLink"]): Promise<void> {
   if (!piuLink?.discordUserId || !piuLink.piuUsername || !piuLink.encryptedPassword) {
     return;
@@ -805,7 +874,7 @@ export function sessionCookieOptions() {
   };
 }
 
-export async function getSongCommunityState(user: PublicUser | null, songSlug: string, selectedChartToken?: string | null): Promise<SongCommunityState> {
+export async function getSongCommunityState(user: PublicUser | null, songSlug: string, selectedChartToken?: string | null, communityKeyInput?: string | null): Promise<SongCommunityState> {
   const emptyState: SongCommunityState = {
     saved: false,
     note: "",
@@ -822,9 +891,10 @@ export async function getSongCommunityState(user: PublicUser | null, songSlug: s
   const { savedSongs, tagVotes, notes, posts } = await collections();
   const userId = user ? objectIdFromUser(user) : null;
   const chartToken = cleanText(selectedChartToken).slice(0, 24);
+  const communityKey = cleanText(communityKeyInput ?? chartToken).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const [saved, note, userVotes, tagScores, communityPosts] = await Promise.all([
     userId ? savedSongs.findOne({ userId, songSlug }) : null,
-    userId && chartToken ? notes.findOne({ userId, songSlug, chartToken }) : null,
+    userId && communityKey ? notes.findOne({ userId, songSlug, chartToken: communityKey }) : null,
     userId
       ? tagVotes
           .find({ userId, songSlug, chartToken: { $type: "string" } })
@@ -839,7 +909,7 @@ export async function getSongCommunityState(user: PublicUser | null, songSlug: s
         { $sort: { "_id.chartToken": 1, score: -1, "_id.tag": 1 } },
       ])
       .toArray(),
-    chartToken ? posts.find({ songSlug, chartToken, status: "active" }).sort({ createdAt: -1 }).limit(40).toArray() : [],
+    communityKey ? posts.find({ songSlug, chartToken: communityKey, status: "active" }).sort({ createdAt: -1 }).limit(40).toArray() : [],
   ]);
   const myVotes = new Map(userVotes.map((entry) => [`${entry.chartToken}:${entry.tag}`, entry.value]));
   const canModerate = isModerator(user);
@@ -847,15 +917,15 @@ export async function getSongCommunityState(user: PublicUser | null, songSlug: s
   return {
     saved: Boolean(saved),
     note: note?.note ?? "",
-    userTags: userVotes.filter((entry) => entry.value === 1).map((entry) => ({ chartToken: entry.chartToken, tag: entry.tag })),
-    communityTags: tagScores.map((entry) => ({
-      chartToken: entry._id.chartToken,
+    userTags: userVotes.filter((entry) => entry.value === 1 && entry.chartToken === communityKey).map((entry) => ({ chartToken, tag: entry.tag })),
+    communityTags: tagScores.filter((entry) => entry._id.chartToken === communityKey).map((entry) => ({
+      chartToken,
       tag: entry._id.tag,
       score: entry.score,
-      mine: myVotes.get(`${entry._id.chartToken}:${entry._id.tag}`) === 1,
-      myVote: myVotes.get(`${entry._id.chartToken}:${entry._id.tag}`) ?? null,
+      mine: myVotes.get(`${communityKey}:${entry._id.tag}`) === 1,
+      myVote: myVotes.get(`${communityKey}:${entry._id.tag}`) ?? null,
     })),
-    tagVotes: userVotes.map((entry) => ({ chartToken: entry.chartToken, tag: entry.tag, vote: entry.value })),
+    tagVotes: userVotes.filter((entry) => entry.chartToken === communityKey).map((entry) => ({ chartToken, tag: entry.tag, vote: entry.value })),
     posts: communityPosts.map((post) => publicCommunityPost(post, user, canModerate)),
   };
 }
@@ -923,7 +993,7 @@ export async function addSongTag(user: PublicUser, song: { slug: string; title: 
 export async function voteSongTag(user: PublicUser, song: { slug: string; title: string; artist: string }, chartTokenInput: string, tagInput: string, value: 1 | -1): Promise<string | null> {
   requireUsername(user);
   requireNotMuted(user);
-  const chartToken = cleanText(chartTokenInput).slice(0, 24);
+  const chartToken = cleanText(chartTokenInput).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const tag = normalizeTag(tagInput);
   if (!chartToken || !tag) {
     return null;
@@ -974,7 +1044,7 @@ export async function voteSongTag(user: PublicUser, song: { slug: string; title:
 
 export async function removeSongTag(user: PublicUser, songSlug: string, chartTokenInput: string, tagInput: string): Promise<void> {
   requireUsername(user);
-  const chartToken = cleanText(chartTokenInput).slice(0, 24);
+  const chartToken = cleanText(chartTokenInput).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const tag = normalizeTag(tagInput);
   if (!chartToken || !tag) {
     return;
@@ -995,19 +1065,25 @@ export async function createCommunityPost(
   bodyInput: string,
   youtubeUrlInput?: string,
   captionInput?: string,
+  scoreLinkInput?: { performancePlayId?: string; piuVersion?: string; showPlate?: boolean; showJudgments?: boolean },
+  performanceChartTokenInput?: string,
 ): Promise<void> {
   requireUsername(user);
   requireNotMuted(user);
-  const chartToken = cleanText(chartTokenInput).slice(0, 24);
+  const chartToken = cleanText(chartTokenInput).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const body = cleanMultiline(bodyInput).slice(0, 1600);
   const youtube = parseYouTubeUrl(youtubeUrlInput);
   const caption = cleanText(captionInput).slice(0, 180) || null;
   if (!chartToken) {
     throw new Error("Select a chart before posting.");
   }
-  if (body.length < 2 && !youtube) {
+  if (body.length < 2 && !youtube && !scoreLinkInput?.performancePlayId) {
     throw new Error("Add a comment or YouTube video.");
   }
+
+  const scoreLink = scoreLinkInput?.performancePlayId
+    ? await scoreLinkForPost(user, song, cleanText(performanceChartTokenInput ?? chartToken).slice(0, 24), scoreLinkInput)
+    : null;
 
   const { posts } = await collections();
   const userId = objectIdFromUser(user);
@@ -1028,10 +1104,44 @@ export async function createCommunityPost(
     youtubeUrl: youtube?.url ?? null,
     youtubeVideoId: youtube?.videoId ?? null,
     caption,
+    scoreLink,
     status: "active",
     createdAt: now,
     updatedAt: now,
   });
+}
+
+async function scoreLinkForPost(
+  user: PublicUser,
+  song: { slug: string; title: string; artist: string },
+  chartToken: string,
+  input: { performancePlayId?: string; piuVersion?: string; showPlate?: boolean; showJudgments?: boolean },
+): Promise<CommunityPostScoreLinkDocument> {
+  const performancePlay = await getScoreLinkablePerformancePlay(user.id, {
+    playId: input.performancePlayId ?? "",
+    songName: song.title,
+    chartToken,
+  });
+  if (!performancePlay) {
+    throw new Error("That performance attempt is no longer available to link.");
+  }
+  const performancePlayId = objectIdFromString(performancePlay.id);
+  if (!performancePlayId) {
+    throw new Error("That performance attempt is no longer available to link.");
+  }
+  const failedAttempt = performancePlay.stageBreak || isFailedPerformanceGrade(performancePlay.grade);
+
+  return {
+    performancePlayId,
+    score: performancePlay.score,
+    grade: performancePlay.grade,
+    plate: performancePlay.plate,
+    stageBreak: performancePlay.stageBreak,
+    judgments: performancePlay.judgments,
+    playedAt: performancePlay.playedAt ? new Date(performancePlay.playedAt) : null,
+    showPlate: !failedAttempt && input.showPlate !== false,
+    showJudgments: input.showJudgments === true,
+  };
 }
 
 export async function archiveCommunityPost(user: PublicUser, postIdInput: string): Promise<void> {
@@ -1171,7 +1281,7 @@ export async function muteCommunityUser(user: PublicUser, targetUserIdInput: str
 
 export async function saveSongNote(user: PublicUser, song: { slug: string; title: string; artist: string }, chartTokenInput: string, noteInput: string): Promise<void> {
   requireUsername(user);
-  const chartToken = cleanText(chartTokenInput).slice(0, 24);
+  const chartToken = cleanText(chartTokenInput).slice(0, COMMUNITY_CHART_KEY_MAX_LENGTH);
   const note = String(noteInput ?? "").trim().slice(0, 4000);
   if (!chartToken) {
     throw new Error("Select a chart before saving a note.");
@@ -1434,6 +1544,19 @@ function publicCommunityPost(post: WithId<CommunityPostDocument>, viewer: Public
     youtubeUrl: post.youtubeUrl,
     youtubeVideoId: post.youtubeVideoId,
     caption: post.caption,
+    scoreLink: post.scoreLink
+      ? {
+          performancePlayId: post.scoreLink.performancePlayId.toHexString(),
+          score: post.scoreLink.score,
+          grade: post.scoreLink.grade,
+          plate: post.scoreLink.plate,
+          stageBreak: post.scoreLink.stageBreak,
+          judgments: post.scoreLink.judgments,
+          playedAt: post.scoreLink.playedAt?.toISOString() ?? null,
+          showPlate: post.scoreLink.showPlate,
+          showJudgments: post.scoreLink.showJudgments,
+        }
+      : null,
     createdAt: post.createdAt.toISOString(),
     canDelete: Boolean(viewer && (viewer.id === authorId || viewerCanModerate)),
     canArchive: Boolean(viewer && viewer.id === authorId),

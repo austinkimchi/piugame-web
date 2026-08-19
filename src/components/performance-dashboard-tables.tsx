@@ -6,10 +6,10 @@ import Image from "next/image";
 import { useEffect, useRef, useState, useSyncExternalStore, type UIEvent } from "react";
 
 import { SongDetailView } from "@/components/song-detail-view";
-import type { SongCommunityState } from "@/lib/auth";
-import { formatPerformanceGrade, piuTimestampToDate } from "@/lib/performance-format";
+import type { PublicUser, SongCommunityState } from "@/lib/auth";
+import { formatPerformanceGrade, isFailedPerformanceGrade, piuTimestampToDate } from "@/lib/performance-format";
 import { getPerformanceRefreshState, subscribePerformanceRefreshState } from "@/lib/performance-refresh-events";
-import type { PublicSong } from "@/lib/types";
+import type { PiuCatalogVersion, PublicSong } from "@/lib/types";
 
 interface TopChartRow {
   songName: string;
@@ -80,6 +80,8 @@ export function PerformanceDashboardTables({
   totalTopCharts,
   topCharts,
   previewVolume,
+  performanceVersion,
+  communityUser,
 }: {
   lastFetchedAt: string | null | undefined;
   nextTopChartsOffset: number | null;
@@ -90,6 +92,8 @@ export function PerformanceDashboardTables({
   totalTopCharts: number;
   topCharts: TopChartRow[];
   previewVolume: number;
+  performanceVersion: PiuCatalogVersion;
+  communityUser: PublicUser | null;
 }) {
   const loadingTopChartsRef = useRef(false);
   const loadingRecentPlaysRef = useRef(false);
@@ -118,7 +122,7 @@ export function PerformanceDashboardTables({
     const chartToken = openChartToken ?? openSong.chartSummary[0] ?? null;
 
     async function loadCommunity() {
-      const params = chartToken ? `?${new URLSearchParams({ chart: chartToken }).toString()}` : "";
+      const params = `?${new URLSearchParams({ version: performanceVersion, ...(chartToken ? { chart: chartToken } : {}) }).toString()}`;
       const response = await fetch(`/api/songs/${encodeURIComponent(songSlug)}/community${params}`, { cache: "no-store" });
       if (!response.ok) {
         return;
@@ -144,7 +148,7 @@ export function PerformanceDashboardTables({
       document.body.style.overflow = "";
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [openChartToken, openSong]);
+  }, [openChartToken, openSong, performanceVersion]);
 
   async function changeTopSort(sort: TopChartsSort) {
     if (sort === topSort && visibleTopCharts.length > 0) {
@@ -182,7 +186,7 @@ export function PerformanceDashboardTables({
   }
 
   async function copySongLink(song: PublicSong, chartToken: string | null = null) {
-    await navigator.clipboard?.writeText(`${window.location.origin}${songDetailHref(song, chartToken)}`).catch(() => undefined);
+    await navigator.clipboard?.writeText(`${window.location.origin}${songDetailHref(song, performanceVersion, chartToken)}`).catch(() => undefined);
     setCopiedSongSlug(song.slug);
     window.setTimeout(() => setCopiedSongSlug((current) => (current === song.slug ? null : current)), 1200);
   }
@@ -252,12 +256,12 @@ export function PerformanceDashboardTables({
   return (
     <>
       <div className={PANEL_CLASS}>
-        <div className="flex items-center justify-between gap-4 border-b border-[#e4e8dd] px-5 py-4">
-          <div>
+        <div className="grid gap-3 border-b border-[#e4e8dd] px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0">
             <h2 className="text-lg font-black text-[#171916]">Top tracked charts</h2>
             <p className="mt-1 text-sm font-medium text-[#66705e]">{topSort === "pumbility" ? "Pumbility contributors from PIU" : "Best scores from tracked charts"}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 sm:justify-end">
             <div className="grid grid-cols-2 border border-[#cdd5c5] bg-[#eef1e8] p-1">
               <SortButton active={topSort === "pumbility"} label="Pumbility" onClick={() => void changeTopSort("pumbility")} />
               <SortButton active={topSort === "score"} label="Score" onClick={() => void changeTopSort("score")} />
@@ -266,26 +270,34 @@ export function PerformanceDashboardTables({
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto" onScroll={maybeLoadMoreTopCharts}>
-          <table className="w-full table-fixed border-collapse text-left">
-            {topSort === "pumbility" ? (
-              <colgroup>
-                <col className="w-[52%]" />
-                <col className="w-[18%]" />
-                <col className="w-[19%]" />
-                <col className="w-[11%]" />
-              </colgroup>
+          <div className="divide-y divide-[#edf0e8] sm:hidden">
+            {visibleTopCharts.length > 0 ? (
+              visibleTopCharts.map((chart) => (
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-5 py-4" key={chart.chartToken}>
+                  <SongCell mode={chart.mode} level={chart.level} song={chart.song} title={chart.songName} onOpen={() => chart.song && openNotebook(chart.song, chartTokenFor(chart))} />
+                  <div className="min-w-[7.25rem] text-left">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="font-mono text-sm font-black text-[#171916]">{formatNumber(chart.bestScore)}</p>
+                      <p className="text-xs font-black text-[#66705e]">{formatPerformanceGrade(chart.bestGrade ?? chart.bestPlate)}</p>
+                    </div>
+                    {topSort === "pumbility" ? <p className="mt-1 font-mono text-xs font-black text-[#66705e]">{formatNumber(chart.topPumbilityScore)} PP</p> : null}
+                  </div>
+                </div>
+              ))
             ) : (
-              <colgroup>
-                <col className="w-[64%]" />
-                <col className="w-[24%]" />
-                <col className="w-[12%]" />
-              </colgroup>
+              <p className="px-5 py-10 text-sm font-bold text-[#66705e]">No tracked chart scores yet.</p>
             )}
+          </div>
+          <table className="hidden w-full table-fixed border-collapse text-left sm:table">
+            <colgroup>
+              <col className="w-[64%]" />
+              <col className="w-[24%]" />
+              <col className="w-[12%]" />
+            </colgroup>
             <thead className="sticky top-0 z-10 bg-[#f2f4ed] text-xs font-black uppercase tracking-[0.08em] text-[#66705e]">
               <tr>
                 <th className="px-4 py-3">Chart</th>
                 <th className="px-4 py-3">Score</th>
-                {topSort === "pumbility" ? <th className="px-4 py-3">Pumbility</th> : null}
                 <th className="px-4 py-3">Grade</th>
               </tr>
             </thead>
@@ -296,14 +308,16 @@ export function PerformanceDashboardTables({
                     <td className="px-4 py-4">
                       <SongCell mode={chart.mode} level={chart.level} song={chart.song} title={chart.songName} onOpen={() => chart.song && openNotebook(chart.song, chartTokenFor(chart))} />
                     </td>
-                    <td className="px-4 py-4 font-mono text-sm font-black text-[#171916]">{formatNumber(chart.bestScore)}</td>
-                    {topSort === "pumbility" ? <td className="px-4 py-4 font-mono text-sm font-black text-[#171916]">{formatNumber(chart.topPumbilityScore)}</td> : null}
-                    <td className="whitespace-nowrap px-4 py-4 text-sm font-black text-[#171916]">{formatPerformanceGrade(chart.bestGrade ?? chart.bestPlate)}</td>
+                    <td className="align-middle px-4 py-4 text-left">
+                      <p className="font-mono text-sm font-black text-[#171916]">{formatNumber(chart.bestScore)}</p>
+                      {topSort === "pumbility" ? <p className="mt-1 font-mono text-xs font-black text-[#66705e]">{formatNumber(chart.topPumbilityScore)} PP</p> : null}
+                    </td>
+                    <td className="align-middle whitespace-nowrap px-4 py-4 text-left text-sm font-black text-[#171916]">{formatPerformanceGrade(chart.bestGrade ?? chart.bestPlate)}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td className="px-4 py-10 text-sm font-bold text-[#66705e]" colSpan={topSort === "pumbility" ? 4 : 3}>
+                  <td className="px-4 py-10 text-sm font-bold text-[#66705e]" colSpan={3}>
                     No tracked chart scores yet.
                   </td>
                 </tr>
@@ -347,8 +361,8 @@ export function PerformanceDashboardTables({
               <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-5 py-4" key={`${play.chartToken}-${play.playedAt ?? play.score ?? "play"}`}>
                 <SongCell mode={play.mode} level={play.level} playedAt={play.playedAt} song={play.song} title={play.songName} onOpen={() => play.song && openNotebook(play.song, chartTokenFor(play))} />
                 <div className="text-right">
-                  <p className="font-mono text-sm font-black text-[#171916]">{formatNumber(play.score)}</p>
-                  <p className="mt-1 text-xs font-black text-[#66705e]">{formatPerformanceGrade(play.grade ?? play.plate)}</p>
+                  <p className={`font-mono text-sm font-black ${isFailedPerformanceGrade(play.grade) ? "text-[#7a8471]" : "text-[#171916]"}`}>{formatNumber(play.score)}</p>
+                  <p className={`mt-1 text-xs ${isFailedPerformanceGrade(play.grade) ? "font-medium text-[#7a8471] line-through" : "font-black text-[#171916]"}`}>{formatPerformanceGrade(play.grade ?? play.plate)}</p>
                 </div>
               </div>
             ))
@@ -372,6 +386,9 @@ export function PerformanceDashboardTables({
       <SongNotebook
         copied={openSong ? copiedSongSlug === openSong.slug : false}
         communityState={openSong && openSongCommunity?.slug === openSong.slug ? openSongCommunity.state : null}
+        communityUser={communityUser}
+        catalogVersion={performanceVersion}
+        performanceVersion={performanceVersion}
         previewVolume={previewVolume}
         selectedChartToken={openChartToken}
         song={openSong}
@@ -488,6 +505,9 @@ function SongCell({
 function SongNotebook({
   copied,
   communityState,
+  communityUser,
+  catalogVersion,
+  performanceVersion,
   previewVolume,
   selectedChartToken,
   song,
@@ -496,6 +516,9 @@ function SongNotebook({
 }: {
   copied: boolean;
   communityState: SongCommunityState | null;
+  communityUser: PublicUser | null;
+  catalogVersion: PiuCatalogVersion;
+  performanceVersion: PiuCatalogVersion;
   previewVolume: number;
   selectedChartToken: string | null;
   song: PublicSong | null;
@@ -531,7 +554,7 @@ function SongNotebook({
               <a
                 aria-label="Open full song page"
                 className="notebook-action inline-flex size-10 items-center justify-center border border-[#cfd7c8] bg-white/90 text-[#343b30] shadow-[0_8px_22px_rgba(30,34,26,0.10)] backdrop-blur transition hover:bg-[#eef1e8]"
-                href={songDetailHref(song, selectedChartToken)}
+                href={songDetailHref(song, performanceVersion, selectedChartToken)}
                 title="Open full song page"
               >
                 <ExternalLink aria-hidden="true" size={17} />
@@ -557,10 +580,13 @@ function SongNotebook({
             <div className="notebook-scroll h-full overflow-y-auto bg-[#f7f8f2]">
               <SongDetailView
                 key={`${song.slug}:${selectedChartToken ?? ""}`}
-                community={{ user: null, initialState: communityState ?? EMPTY_COMMUNITY_STATE }}
+                community={{ user: communityUser, initialState: communityState ?? EMPTY_COMMUNITY_STATE }}
                 communityReadOnly
+                allowScoreLinkPost
                 initialSelectedChartToken={selectedChartToken}
                 mode="notebook"
+                performanceVersion={performanceVersion}
+                catalogVersion={catalogVersion}
                 previewVolume={previewVolume}
                 song={song}
                 onBack={onClose}
@@ -594,26 +620,27 @@ function formatDate(value: string | null): string {
     return value ?? "Pending";
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(parsed);
+  return formatStableDateTime(parsed);
 }
 
 function formatLastFetched(value: string | null | undefined, fallback: string | null | undefined): string {
   const parsed = piuTimestampToDate(value);
   if (parsed) {
-    return `Last fetched: ${new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(parsed)}`;
+    return `Last fetched: ${formatStableDateTime(parsed)}`;
   }
 
   return fallback ? `Last fetched: ${fallback}` : "Last fetched: Pending";
+}
+
+function formatStableDateTime(value: Date): string {
+  const month = new Intl.DateTimeFormat("en-US", { month: "short" }).format(value);
+  const day = new Intl.DateTimeFormat("en-US", { day: "numeric" }).format(value);
+  const time = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(value);
+
+  return `${month} ${day}, ${time}`;
 }
 
 function formatChartToken(mode: string | null, level: string | null): string {
@@ -651,10 +678,8 @@ function chartLevelToken(level: string | null): string | null {
   return normalized || null;
 }
 
-function songDetailHref(song: PublicSong, chartToken: string | null = null): string {
-  if (!chartToken) {
-    return `/songs/${song.slug}`;
-  }
-
-  return `/songs/${song.slug}?chart=${encodeURIComponent(chartToken)}`;
+function songDetailHref(song: PublicSong, version: PiuCatalogVersion, chartToken: string | null = null): string {
+  const params = new URLSearchParams({ version });
+  if (chartToken) params.set("chart", chartToken);
+  return `/songs/${song.slug}?${params.toString()}`;
 }

@@ -13,6 +13,7 @@ export interface PerformanceChartStatSummary {
   previousBestGrade: string | null;
   previousBestPlate: string | null;
   previousBestSyncedAt: Date | null;
+  lastUpscoredAt: Date | null;
   latestScore: number | null;
   latestGrade: string | null;
   latestPlate: string | null;
@@ -37,7 +38,7 @@ export function applyRecentPlaySummary(
   playedAt: Date | null,
   now: Date,
 ): PerformanceChartStatSummary {
-  return {
+  const summary = {
     ...emptySummary(play.songName, play.mode, play.level, now),
     ...existing,
     songName: play.songName,
@@ -53,6 +54,25 @@ export function applyRecentPlaySummary(
     stageBreakCount: (existing?.stageBreakCount ?? 0) + (play.stageBreak ? 1 : 0),
     updatedAt: now,
   };
+
+  // Recent plays arrive before the historical bests bucket. A completed play
+  // supplies the initial best and promotes a newly observed upscore.
+  if (isCompletedPlay(play) && (summary.bestScore === null || play.score > summary.bestScore)) {
+    return {
+      ...summary,
+      bestScore: play.score,
+      bestGrade: play.grade,
+      bestPlate: play.plate,
+      bestSyncedAt: now,
+      previousBestScore: summary.bestScore,
+      previousBestGrade: summary.bestGrade,
+      previousBestPlate: summary.bestPlate,
+      previousBestSyncedAt: summary.bestSyncedAt,
+      lastUpscoredAt: summary.bestScore === null ? summary.lastUpscoredAt : now,
+    };
+  }
+
+  return summary;
 }
 
 export function applyBucketBestSummary(
@@ -91,6 +111,7 @@ export function applyBucketBestSummary(
     previousBestGrade: existing?.bestGrade ?? null,
     previousBestPlate: existing?.bestPlate ?? null,
     previousBestSyncedAt: existing?.bestSyncedAt ?? null,
+    lastUpscoredAt: currentBest !== null && incomingBest > currentBest ? now : existing?.lastUpscoredAt ?? null,
   };
 }
 
@@ -128,6 +149,7 @@ function emptySummary(songName: string, mode: string | null, level: string | nul
     previousBestGrade: null,
     previousBestPlate: null,
     previousBestSyncedAt: null,
+    lastUpscoredAt: null,
     latestScore: null,
     latestGrade: null,
     latestPlate: null,
@@ -143,4 +165,8 @@ function emptySummary(songName: string, mode: string | null, level: string | nul
     firstSeenAt: now,
     updatedAt: now,
   };
+}
+
+function isCompletedPlay(play: Pick<RecentPlay, "score" | "grade" | "stageBreak">): play is Pick<RecentPlay, "score" | "grade" | "stageBreak"> & { score: number } {
+  return !play.stageBreak && typeof play.score === "number" && !String(play.grade ?? "").trim().toLowerCase().startsWith("x_");
 }
