@@ -1023,10 +1023,7 @@ function buildSearchFilter(params: {
   supportedVersion?: PiuSeriesId;
   removedFromVersion?: PiuSeriesId;
 }): Filter<CatalogDocument> {
-  const clauses: Filter<CatalogDocument>[] = [];
-  const query = cleanText(params.query);
-  const chartTokenField = params.supportedVersion ? `chartTokensByVersion.${params.supportedVersion}` : "chartTokens";
-
+  const chartTokenField = params.removedFromVersion ? "chartTokens" : params.supportedVersion ? `chartTokensByVersion.${params.supportedVersion}` : "chartTokens";
   if (query.length > 0) {
     const escaped = escapeRegex(query);
     const chartTokenQuery = chartTokenSearchRegex(query);
