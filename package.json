@@ -6,11 +6,20 @@
     "dev": "next dev -p 4080",
     "build": "next build",
     "start": "next start -p 4090",
+    "test": "node --experimental-strip-types --test",
     "lint": "eslint",
-    "sync:assets": "node scripts/sync-assets.mjs"
+    "sync:assets": "node scripts/sync-assets.mjs",
+    "migrate:catalog": "node scripts/migrate-catalog-versioning.mjs",
+    "migrate:catalog:write": "node scripts/migrate-catalog-versioning.mjs --write",
+    "migrate:catalog:tokens": "node scripts/backfill-catalog-versioned-chart-tokens.mjs",
+    "migrate:catalog:tokens:write": "node scripts/backfill-catalog-versioned-chart-tokens.mjs --write",
+    "import:phoenix2-changelog": "node scripts/import-phoenix2-changelog.mjs",
+    "migrate:community:chart-keys": "node scripts/migrate-community-chart-keys.mjs",
+    "migrate:performance:version": "node scripts/migrate-performance-versioning.mjs",
+    "migrate:performance:version:write": "node scripts/migrate-performance-versioning.mjs --write"
   },
   "dependencies": {
-    "@austinkimchi/piugame-sdk": "^1.2.2",
+    "@austinkimchi/piugame-sdk": "^1.3.0",
     "lucide-react": "^1.27.0",
     "mongodb": "^7.5.0",
     "motion": "^12.43.0",

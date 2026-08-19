@@ -1,14 +1,16 @@
 import "server-only";
 
 import { PiuClient, type PlayerData } from "@austinkimchi/piugame-sdk";
+import { normalizePiuGameVersion } from "@/lib/piu-version";
+import type { PiuCatalogVersion } from "@/lib/types";
 
-export async function fetchPiuProfile(args: { piuUsername: string; password: string }): Promise<PlayerData> {
+export async function fetchPiuProfile(args: { piuUsername: string; password: string; version?: PiuCatalogVersion }): Promise<PlayerData> {
   const piuUsername = args.piuUsername.trim();
   if (!piuUsername || !args.password) {
     throw new Error("PIU username and password are required.");
   }
 
-  const client = new PiuClient({ version: "phoenix2" });
+  const client = new PiuClient({ version: normalizePiuGameVersion(args.version) });
   await client.login(piuUsername, args.password);
   return client.getPlayerData(piuUsername);
 }

@@ -104,7 +104,7 @@ function ProviderLink({ children, href, provider, ready }: { children: string; h
       } ${ready ? "" : "pointer-events-none opacity-55"}`}
       href={href}
     >
-      {google ? <GoogleMark /> : <span className="grid h-7 w-7 place-items-center bg-white text-xs font-black text-[#171916]">D</span>}
+      {google ? <GoogleMark /> : <DiscordMark />}
       <span>{children}</span>
     </a>
   );
@@ -120,5 +120,13 @@ function GoogleMark() {
         <path d="M9 3.58c1.32 0 2.5.45 3.43 1.35l2.59-2.59A8.68 8.68 0 0 0 9 0 9 9 0 0 0 .94 4.96L3.95 7.3C4.66 5.16 6.65 3.58 9 3.58z" fill="#ea4335" />
       </svg>
     </span>
+  );
+}
+
+function DiscordMark() {
+  return (
+    <svg aria-hidden="true" className="h-7 w-7 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M20.32 4.37A19.8 19.8 0 0 0 15.37 3c-.21.38-.46.88-.63 1.28a18.27 18.27 0 0 0-5.47 0A12.64 12.64 0 0 0 8.63 3a19.74 19.74 0 0 0-4.95 1.37C.53 9.04-.32 13.58.11 18.06a19.9 19.9 0 0 0 6.07 3.07c.49-.67.93-1.38 1.31-2.11a12.7 12.7 0 0 1-2.07-.98c.17-.13.34-.26.51-.4 3.98 1.87 8.31 1.87 12.24 0 .16.14.33.27.51.4-.66.39-1.35.71-2.07.98.38.74.82 1.45 1.31 2.11a19.87 19.87 0 0 0 6.07-3.07c.5-5.19-.85-9.69-3.69-13.69ZM8.02 15.33c-1.2 0-2.18-1.09-2.18-2.43 0-1.34.96-2.43 2.18-2.43 1.22 0 2.2 1.1 2.18 2.43 0 1.34-.96 2.43-2.18 2.43Zm7.96 0c-1.2 0-2.18-1.09-2.18-2.43 0-1.34.96-2.43 2.18-2.43 1.22 0 2.2 1.1 2.18 2.43 0 1.34-.96 2.43-2.18 2.43Z" />
+    </svg>
   );
 }

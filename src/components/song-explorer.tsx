@@ -6,10 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CatalogAdminEditor } from "@/components/catalog-admin-editor";
 import { GuestFeatureShowcase } from "@/components/guest-feature-showcase";
+import { HomePerformanceSummary } from "@/components/home-performance-summary";
 import { SongCard } from "@/components/song-card";
 import { SongDetailView } from "@/components/song-detail-view";
-import type { SongCommunityState } from "@/lib/auth";
-import type { CatalogFilterOptions, LevelFilterMode, PublicSong, SongSortOption, SortDirection } from "@/lib/types";
+import type { PublicUser, SongCommunityState } from "@/lib/auth";
+import { piuSeriesMetadata } from "@/lib/catalog-version";
+import type { CatalogFilterOptions, LevelFilterMode, PiuSeriesId, PublicSong, SongSortOption, SortDirection } from "@/lib/types";
 
 interface SearchResponse {
   songs: PublicSong[];
@@ -29,11 +31,36 @@ interface SongExplorerProps {
   initialSortBy: SongSortOption;
   initialSortDirection: SortDirection;
   initialFavoritesFirst: boolean;
+  initialNextCursor?: string | null;
+  initialTotalResults?: number;
+  guestPerformanceSummary?: {
+    averageBestScore: number | null;
+    averageBestScoreChange24Hours: number | null;
+    canSync: boolean;
+    lastSyncedAt: string | null;
+    pumbility: number | null;
+    pumbilityChange24Hours: number | null;
+    recentNewScores: number;
+    recentlyPlayed: number;
+    synced: boolean;
+    upscoresThisWeek: number;
+    upscoresToday: number;
+  };
   userIsAdmin: boolean;
+  communityUser?: PublicUser | null;
+  catalogVersion?: PiuSeriesId;
+  removedFromVersion?: PiuSeriesId;
+  showLanding?: boolean;
 }
 
 type FilterKey = "folders" | "series" | "levels" | "charts";
 type LoadingMode = "replace" | "append" | null;
+const DEFAULT_FILTERS: Record<FilterKey, string[]> = {
+  folders: [],
+  series: [],
+  levels: [],
+  charts: ["singles"],
+};
 const SORT_OPTIONS: Array<{ value: SongSortOption; label: string }> = [
   { value: "series", label: "Series" },
   { value: "title", label: "Title" },
@@ -81,44 +108,54 @@ export function SongExplorer({
   initialSortBy,
   initialSortDirection,
   initialFavoritesFirst,
+  initialNextCursor = null,
+  initialTotalResults = initialSongs.length,
+  guestPerformanceSummary,
   userIsAdmin,
+  communityUser = null,
+  catalogVersion = "phoenix2",
+  removedFromVersion,
+  showLanding = true,
 }: SongExplorerProps) {
-  const landingSectionRef = useRef<HTMLElement | null>(null);
   const searchSectionRef = useRef<HTMLElement | null>(null);
+  const songsRef = useRef(initialSongs);
   const filterPanelRef = useRef<HTMLElement | null>(null);
   const selectedFiltersRef = useRef<Record<FilterKey, string[]>>({
-    folders: [],
-    series: [],
-    levels: [],
-    charts: [],
+    ...DEFAULT_FILTERS,
+    charts: [...DEFAULT_FILTERS.charts],
   });
   const levelModeRef = useRef<LevelFilterMode>("and");
   const sortByRef = useRef<SongSortOption>(initialSortBy);
   const sortDirectionRef = useRef<SortDirection>(initialSortDirection);
   const favoritesFirstRef = useRef(initialFavoritesFirst);
   const previewVoiceIdRef = useRef(0);
+  const previewRequestIdRef = useRef(0);
   const previewVoicesRef = useRef<PreviewVoice[]>([]);
   const previewAudioGraphRef = useRef<PreviewAudioGraph | null>(null);
   const activePreviewUrlRef = useRef<string | null>(null);
   const didMountPreviewPreferencesRef = useRef(false);
+  const hasSearchedQueryRef = useRef(false);
+  const wasRecentSearchRef = useRef(false);
+  const queryRef = useRef("");
+  const appendSearchRef = useRef(false);
   const lastSavedPreviewPreferencesRef = useRef<{ muted: boolean; volume: number } | null>(null);
   const [preferredPreviewMuted, setPreferredPreviewMuted] = useState(initialPreviewMuted);
   const [previewVolume, setPreviewVolume] = useState(() => clampPreviewVolume(initialPreviewVolume));
   const [manualUploadsVisible, setManualUploadsVisible] = useState(false);
   const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const isRecentSearch = query.trim().toLowerCase() === "recent";
+  const searchPlaceholder = `Search ${piuSeriesMetadata(catalogVersion).label.toUpperCase()}'s title, artists, folder, tag, series, or chart.`;
   const [selectedFilters, setSelectedFilters] = useState<Record<FilterKey, string[]>>({
-    folders: [],
-    series: [],
-    levels: [],
-    charts: [],
+    ...DEFAULT_FILTERS,
+    charts: [...DEFAULT_FILTERS.charts],
   });
   const [songs, setSongs] = useState<PublicSong[]>(initialSongs);
   const [favoriteSlugs, setFavoriteSlugs] = useState<Set<string>>(
     () => new Set(initialSongs.filter((song) => song.isFavorite).map((song) => song.slug)),
   );
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [totalResults, setTotalResults] = useState(initialSongs.length);
+  const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
+  const [totalResults, setTotalResults] = useState(initialTotalResults);
   const [status, setStatus] = useState("");
   const [loadingMode, setLoadingMode] = useState<LoadingMode>(null);
   const [resultBatch, setResultBatch] = useState(0);
@@ -136,6 +173,15 @@ export function SongExplorer({
     () => Object.values(selectedFilters).reduce((count, values) => count + values.length, 0),
     [selectedFilters],
   );
+  const canResetFilters = useMemo(
+    () =>
+      (Object.keys(DEFAULT_FILTERS) as FilterKey[]).some((key) => {
+        const defaultValues = DEFAULT_FILTERS[key];
+        const selectedValues = selectedFilters[key];
+        return selectedValues.length !== defaultValues.length || selectedValues.some((value) => !defaultValues.includes(value));
+      }),
+    [selectedFilters],
+  );
   const favoritedInitialSongs = useMemo(
     () => initialSongs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
     [favoriteSlugs, initialSongs],
@@ -143,6 +189,10 @@ export function SongExplorer({
   const previewMuted = preferredPreviewMuted;
   const previewEnabled = !previewMuted;
   const showManualUploadState = DEV_ADMIN_SETTINGS_ENABLED && userIsAdmin && manualUploadsVisible;
+
+  useEffect(() => {
+    songsRef.current = songs;
+  }, [songs]);
 
   const savePreviewPreferences = useCallback(
     (muted: boolean, volume: number, keepalive = false) => {
@@ -188,6 +238,11 @@ export function SongExplorer({
     params.set("q", searchQuery.trim());
     params.set("sortBy", sort);
     params.set("sortDirection", direction);
+    if (removedFromVersion) {
+      params.set("removedFromVersion", removedFromVersion);
+    } else {
+      params.set("supportedVersion", catalogVersion);
+    }
     if (preferFavorites) {
       params.set("favoritesFirst", "true");
     }
@@ -199,12 +254,10 @@ export function SongExplorer({
     filters.series.forEach((value) => params.append("series", value));
     filters.levels.forEach((value) => params.append("level", value));
     filters.charts.forEach((value) => params.append("chart", value));
-    if (mode === "and") {
-      params.set("levelMode", mode);
-    }
+    params.set("levelMode", mode);
 
     return `/api/songs/search?${params.toString()}`;
-  }, []);
+  }, [catalogVersion, removedFromVersion]);
 
   const runSearch = useCallback(
     async (
@@ -216,33 +269,107 @@ export function SongExplorer({
       direction = sortDirectionRef.current,
       preferFavorites = favoritesFirstRef.current,
     ) => {
-      setLoadingMode(cursor ? "append" : "replace");
+      if (cursor && appendSearchRef.current) {
+        return;
+      }
+      if (cursor) {
+        appendSearchRef.current = true;
+      }
+      const isRecentQuery = searchQuery.trim().toLowerCase() === "recent";
+      const requestFilters =
+        isRecentQuery && filters.charts.length === 1 && filters.charts[0] === "singles"
+          ? { ...filters, charts: [] }
+          : filters;
+      if (!isRecentQuery || cursor) {
+        setLoadingMode(cursor ? "append" : "replace");
+      }
       setStatus("");
 
       try {
-        const response = await fetch(endpoint(searchQuery, cursor, filters, mode, sort, direction, preferFavorites), { cache: "no-store" });
+        const response = await fetch(endpoint(searchQuery, cursor, requestFilters, mode, sort, direction, preferFavorites), { cache: "no-store" });
         const body = (await response.json()) as SearchResponse;
         if (!response.ok) {
           setStatus(body.error ?? "Search failed.");
           return;
         }
 
-        setSongs((current) => (cursor ? [...current, ...body.songs] : body.songs));
-        if (!cursor) {
+        const recentUnchanged = isRecentQuery && !cursor && sameSongSequence(songsRef.current, body.songs);
+        if (!recentUnchanged) {
+          setSongs((current) => (cursor ? [...current, ...body.songs] : body.songs));
+        }
+        setFavoriteSlugs((current) => {
+          const next = new Set(current);
+          for (const song of body.songs) {
+            if (song.isFavorite) next.add(song.slug);
+            else next.delete(song.slug);
+          }
+          return next;
+        });
+        if (!cursor && !recentUnchanged) {
           setResultBatch((current) => current + 1);
-          setCompatibleFilterOptions(body.filterOptions);
+          setCompatibleFilterOptions(
+            isRecentQuery
+              ? filterOptions
+              : {
+                  ...body.filterOptions,
+                  // Keep alternate series available while building a multi-series selection;
+                  // otherwise narrow this list to the current search results.
+                  series: requestFilters.series.length > 0 ? filterOptions.series : body.filterOptions.series,
+                },
+          );
         }
         setNextCursor(body.nextCursor);
         setTotalResults(body.total);
-        setStatus(body.songs.length === 0 && !cursor ? "No songs matched those filters." : "");
+        setStatus(body.songs.length === 0 && !cursor && !recentUnchanged ? "No songs matched those filters." : "");
+
       } catch {
         setStatus("Search failed. Try again in a moment.");
       } finally {
+        if (cursor) {
+          appendSearchRef.current = false;
+        }
         setLoadingMode(null);
       }
     },
-    [endpoint],
+    [endpoint, filterOptions],
   );
+
+  const submitSearch = useCallback((searchQuery = query) => {
+    const submittedQuery = searchQuery.trim();
+    void runSearch(searchQuery);
+    if (submittedQuery.toLowerCase() !== "recent") {
+      return;
+    }
+
+    void fetch("/api/performance/sync?response=json", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(async (response) => ({ response, body: (await response.json().catch(() => null)) as { throttled?: boolean } | null }))
+      .then(({ response, body }) => {
+        if (response.ok && !body?.throttled && queryRef.current.trim().toLowerCase() === "recent") {
+          void runSearch(queryRef.current);
+        }
+      })
+      .catch(() => undefined);
+  }, [query, runSearch]);
+
+  useEffect(() => {
+    function openRecentCatalog() {
+      const nextFilters = selectedFiltersRef.current.charts.length === 1 && selectedFiltersRef.current.charts[0] === "singles"
+        ? { ...selectedFiltersRef.current, charts: [] }
+        : selectedFiltersRef.current;
+      selectedFiltersRef.current = nextFilters;
+      setSelectedFilters(nextFilters);
+      queryRef.current = "recent";
+      setQuery("recent");
+      submitSearch("recent");
+    }
+
+    window.addEventListener("piu:open-recent-catalog", openRecentCatalog);
+    return () => window.removeEventListener("piu:open-recent-catalog", openRecentCatalog);
+  }, [submitSearch]);
 
   const updateSongFavorite = useCallback((songSlug: string, isFavorite: boolean) => {
     setFavoriteSlugs((current) => {
@@ -435,6 +562,7 @@ export function SongExplorer({
       return;
     }
 
+    previewRequestIdRef.current += 1;
     activePreviewUrlRef.current = null;
     setActivePreviewUrl(null);
 
@@ -457,49 +585,65 @@ export function SongExplorer({
         return;
       }
 
+      const requestId = previewRequestIdRef.current + 1;
+      previewRequestIdRef.current = requestId;
       const graph = ensurePreviewAudioGraph();
       if (graph?.context.state === "suspended") {
         await graph.context.resume().catch(() => undefined);
       }
+      if (requestId !== previewRequestIdRef.current) {
+        return;
+      }
 
       for (const voice of previewVoicesRef.current) {
-        if (voice.url !== song.previewUrl && voice.volume > 0) {
-          fadePreviewVoice(voice, 0, PREVIEW_FADE_OUT_MS, () => removePreviewVoice(voice));
+        if (voice.url !== song.previewUrl) {
+          // Keep the intentional crossfade for audible previews, but discard
+          // voices that have not started yet so a late play() cannot join in.
+          if (!voice.audio.paused && voice.volume > 0) {
+            fadePreviewVoice(voice, 0, PREVIEW_FADE_OUT_MS, () => removePreviewVoice(voice));
+          } else {
+            removePreviewVoice(voice);
+          }
         }
       }
 
       const existingVoice = previewVoicesRef.current.find((voice) => voice.url === song.previewUrl);
-      const voice =
-        existingVoice ??
-        {
-          id: previewVoiceIdRef.current + 1,
-          url: song.previewUrl,
-          audio: new Audio(song.previewUrl),
-          source: null,
-          compressor: null,
-          gain: null,
-          fadeFrame: null,
-          volume: 0,
-        };
-
-      if (!existingVoice) {
-        previewVoiceIdRef.current = voice.id;
-        voice.audio.loop = true;
-        voice.audio.preload = "auto";
-        voice.audio.volume = 0;
-        connectPreviewVoice(voice, graph);
-        previewVoicesRef.current = [...previewVoicesRef.current, voice];
+      if (existingVoice) {
+        cancelVoiceFade(existingVoice);
+        activePreviewUrlRef.current = song.previewUrl;
+        setActivePreviewUrl(song.previewUrl);
+        return;
       }
-      cancelVoiceFade(voice);
+      const voice = {
+        id: previewVoiceIdRef.current + 1,
+        url: song.previewUrl,
+        audio: new Audio(song.previewUrl),
+        source: null,
+        compressor: null,
+        gain: null,
+        fadeFrame: null,
+        volume: 0,
+      };
+
+      previewVoiceIdRef.current = voice.id;
+      voice.audio.loop = true;
+      voice.audio.preload = "auto";
+      voice.audio.volume = 0;
+      connectPreviewVoice(voice, graph);
+      previewVoicesRef.current = [...previewVoicesRef.current, voice];
       activePreviewUrlRef.current = song.previewUrl;
       setActivePreviewUrl(song.previewUrl);
 
       try {
         await voice.audio.play();
+        if (requestId !== previewRequestIdRef.current || activePreviewUrlRef.current !== song.previewUrl) {
+          removePreviewVoice(voice);
+          return;
+        }
         fadePreviewVoice(voice, previewVolume, PREVIEW_FADE_IN_MS);
       } catch {
         removePreviewVoice(voice);
-        if (activePreviewUrlRef.current === song.previewUrl) {
+        if (requestId === previewRequestIdRef.current && activePreviewUrlRef.current === song.previewUrl) {
           activePreviewUrlRef.current = null;
           setActivePreviewUrl(null);
         }
@@ -532,6 +676,10 @@ export function SongExplorer({
       stopSongPreview(null, false);
     }
   }, [preferredPreviewMuted, previewMuted, savePreviewPreferences, stopSongPreview]);
+
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
 
   useEffect(() => {
     function scrollToSearchTop(behavior: ScrollBehavior = "auto") {
@@ -576,8 +724,27 @@ export function SongExplorer({
   }, [favoritesFirst]);
 
   useEffect(() => {
+    if (isRecentSearch && !wasRecentSearchRef.current) {
+      if (sortDirectionRef.current !== "desc") {
+        sortDirectionRef.current = "desc";
+        setSortDirection("desc");
+      }
+      if (selectedFiltersRef.current.charts.length === 1 && selectedFiltersRef.current.charts[0] === "singles") {
+        const nextFilters = { ...selectedFiltersRef.current, charts: [] };
+        selectedFiltersRef.current = nextFilters;
+        setSelectedFilters(nextFilters);
+      }
+    }
+    wasRecentSearchRef.current = isRecentSearch;
+  }, [isRecentSearch]);
+
+  useEffect(() => {
+    if (!query.trim() && !hasSearchedQueryRef.current) {
+      return;
+    }
+    hasSearchedQueryRef.current = true;
     const timeout = window.setTimeout(() => {
-      void runSearch(query);
+      void runSearch(query, null, selectedFiltersRef.current, levelModeRef.current, sortByRef.current, sortDirectionRef.current, favoritesFirstRef.current);
     }, 260);
 
     return () => window.clearTimeout(timeout);
@@ -636,7 +803,7 @@ export function SongExplorer({
     const chartToken = openSongChartToken ?? openSong.chartSummary[0] ?? null;
 
     async function loadCommunity() {
-      const params = chartToken ? `?${new URLSearchParams({ chart: chartToken }).toString()}` : "";
+      const params = `?${new URLSearchParams({ version: catalogVersion, ...(chartToken ? { chart: chartToken } : {}) }).toString()}`;
       const response = await fetch(`/api/songs/${encodeURIComponent(songSlug)}/community${params}`, { cache: "no-store" });
       if (!response.ok) {
         return;
@@ -662,7 +829,7 @@ export function SongExplorer({
       document.body.style.overflow = "";
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [openSong, openSongChartToken]);
+  }, [catalogVersion, openSong, openSongChartToken]);
 
   function scrollToSearch() {
     window.history.replaceState(null, "", SEARCH_HASH);
@@ -685,11 +852,12 @@ export function SongExplorer({
     };
 
     setSelectedFilters(nextFilters);
-    void runSearch(query, null, nextFilters);
+    void runSearch(query, null, nextFilters, levelMode);
   }
 
   function toggleLevelMode() {
     const nextMode: LevelFilterMode = levelMode === "or" ? "and" : "or";
+    levelModeRef.current = nextMode;
     setLevelMode(nextMode);
     void runSearch(query, null, selectedFilters, nextMode);
   }
@@ -720,7 +888,7 @@ export function SongExplorer({
   }
 
   function clearFilters() {
-    const nextFilters = { folders: [], series: [], levels: [], charts: [] };
+    const nextFilters = { ...DEFAULT_FILTERS, charts: isRecentSearch ? [] : [...DEFAULT_FILTERS.charts] };
     setCompatibleFilterOptions(filterOptions);
     setTotalResults(initialSongs.length);
     setLevelMode("and");
@@ -730,7 +898,7 @@ export function SongExplorer({
 
   async function copySongLink(song: PublicSong, chartToken: string | null = null) {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}${songDetailHref(song, chartToken)}`);
+      await navigator.clipboard.writeText(`${window.location.origin}${songDetailHref(song, catalogVersion, chartToken)}`);
       setCopiedSongSlug(song.slug);
       window.setTimeout(() => setCopiedSongSlug((current) => (current === song.slug ? null : current)), 1200);
     } catch {
@@ -747,7 +915,7 @@ export function SongExplorer({
             Filters
           </div>
           <AnimatePresence initial={false}>
-            {activeFilterCount > 0 ? (
+            {canResetFilters ? (
               <motion.button
                 className="text-xs font-black text-[#1f7a43] hover:text-[#171916]"
                 type="button"
@@ -757,14 +925,14 @@ export function SongExplorer({
                 whileTap={{ scale: 0.94 }}
                 onClick={clearFilters}
               >
-                Clear
+                Reset
               </motion.button>
             ) : null}
           </AnimatePresence>
         </div>
 
         <LevelFilterGroup
-          label={levelMode === "and" ? "Levels (&)" : "Levels"}
+          label={levelMode === "or" ? "Levels (OR)" : "Levels"}
           labelTitle="Toggle level matching"
           chartOptions={compatibleFilterOptions.charts}
           levelOptions={compatibleFilterOptions.levels}
@@ -792,7 +960,8 @@ export function SongExplorer({
 
   return (
     <MotionConfig reducedMotion="user">
-      {canFavorite ? (
+      {showLanding ? (
+        canFavorite ? (
         <motion.section
           ref={landingSectionRef}
           className="mx-auto hidden max-w-7xl px-5 py-8 sm:block sm:px-8 lg:px-10"
@@ -849,9 +1018,13 @@ export function SongExplorer({
             </motion.button>
           </div>
         </motion.section>
-      ) : (
-        <GuestFeatureShowcase featureSong={featureSong ?? favoritedInitialSongs[0] ?? null} onExplore={scrollToSearch} />
-      )}
+        ) : (
+          <>
+            <GuestFeatureShowcase featureSong={featureSong ?? favoritedInitialSongs[0] ?? null} onExplore={scrollToSearch} />
+            {guestPerformanceSummary ? <HomePerformanceSummary {...guestPerformanceSummary} /> : null}
+          </>
+        )
+      ) : null}
 
       <motion.section
         ref={searchSectionRef}
@@ -921,22 +1094,40 @@ export function SongExplorer({
               >
                 <Search aria-hidden="true" size={18} className="shrink-0 text-[#626c5c]" />
                 <input
-                  className="w-full bg-transparent text-base outline-none placeholder:text-[#8b9483]"
+                  className="ios-search-input w-full bg-transparent text-base outline-none placeholder:text-[#8b9483]"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    queryRef.current = event.target.value;
+                    setQuery(event.target.value);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
-                      void runSearch(query);
+                      submitSearch();
                     }
                   }}
-                  placeholder="Search title, artist, folder, series, tag, or chart"
+                  placeholder={searchPlaceholder}
                 />
+                {query ? (
+                  <button
+                    aria-label="Clear search"
+                    className="inline-flex size-7 shrink-0 items-center justify-center text-[#707a69] transition hover:bg-[#eef1e8] hover:text-[#171916]"
+                    type="button"
+                    onClick={() => {
+                      queryRef.current = "";
+                      setQuery("");
+                    }}
+                  >
+                    <X aria-hidden="true" size={17} />
+                  </button>
+                ) : null}
               </motion.label>
               <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[19.5rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem_2.75rem]">
-                <label className="relative h-full">
+                <label className={`relative h-full ${isRecentSearch ? "opacity-45" : ""}`}>
                   <span className="sr-only">Sort by</span>
                   <select
                     className="h-full min-h-11 w-full appearance-none bg-transparent py-2 pl-3 pr-9 text-sm font-black uppercase text-[#171916] outline-none"
+                    disabled={isRecentSearch}
+                    title={isRecentSearch ? "Recent results are ordered by play time" : "Sort by"}
                     value={sortBy}
                     onChange={(event) => changeSortBy(toSongSortOption(event.target.value))}
                   >
@@ -1044,7 +1235,7 @@ export function SongExplorer({
             <div className="relative min-h-[520px]">
               <motion.div
                 key={`songs-${resultBatch}`}
-                className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5"
+                className="grid grid-cols-3 gap-0 md:gap-3 md:grid-cols-4 xl:grid-cols-5"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: loadingMode === "replace" ? 0.18 : 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
@@ -1053,13 +1244,14 @@ export function SongExplorer({
               >
                 {songs.map((song, index) => (
                     <SongCard
-                    key={`catalog-${resultBatch}-${song.version}-${song.slug}`}
+                    key={`catalog-${resultBatch}-${index}-${song.slug}`}
                     onOpen={openSongDetail}
                     isPreviewActive={Boolean(song.previewUrl && activePreviewUrl === song.previewUrl)}
                     previewEnabled={previewEnabled}
                     onPreviewStart={playSongPreview}
                     onPreviewStop={() => stopSongPreview(song.previewUrl)}
                     sequence={index}
+                    showSingleChartToken={isRecentSearch}
                     song={song}
                   />
                 ))}
@@ -1070,7 +1262,7 @@ export function SongExplorer({
                 {loadingMode === "replace" ? (
                   <motion.div
                     key="skeleton-replace"
-                    className="absolute left-0 right-0 top-0 z-10 grid grid-cols-2 gap-3 bg-[#eef1e8] sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5"
+                    className="absolute left-0 right-0 top-0 z-10 grid grid-cols-3 gap-3 bg-[#eef1e8] md:grid-cols-4 xl:grid-cols-5"
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
@@ -1110,6 +1302,9 @@ export function SongExplorer({
 
       <SongDetailNotebook
         canFavorite={canFavorite}
+        communityUser={communityUser}
+        catalogVersion={catalogVersion}
+        performanceVersion={performanceVersionForCatalog(catalogVersion, removedFromVersion)}
         copied={openSong ? copiedSongSlug === openSong.slug : false}
         isFavorite={openSong ? favoriteSlugs.has(openSong.slug) || Boolean(openSong.isFavorite) : false}
         song={openSong}
@@ -1123,27 +1318,11 @@ export function SongExplorer({
         }}
         onCopy={copySongLink}
         onCatalogSaved={handleCatalogSongSaved}
+        onSelectedChartTokenChange={setOpenSongChartToken}
         onToggleFavorite={toggleFavorite}
       />
     </MotionConfig>
   );
-}
-
-function landingSongVisibilityClass(index: number): string {
-  if (index < 4) {
-    return "block";
-  }
-  if (index < 6) {
-    return "hidden sm:block";
-  }
-  if (index < 8) {
-    return "hidden md:block";
-  }
-  if (index < 12) {
-    return "hidden xl:block";
-  }
-
-  return "hidden";
 }
 
 function clampPreviewVolume(volume: number): number {
@@ -1228,29 +1407,37 @@ function PreviewToggleButton({
 
 function SongDetailNotebook({
   canFavorite,
+  communityUser,
   copied,
   isFavorite,
   song,
   selectedChartToken,
   communityState,
   previewVolume,
+  catalogVersion,
+  performanceVersion,
   userIsAdmin,
   onClose,
   onCopy,
   onCatalogSaved,
+  onSelectedChartTokenChange,
   onToggleFavorite,
 }: {
   canFavorite: boolean;
+  communityUser: PublicUser | null;
   copied: boolean;
   isFavorite: boolean;
   song: PublicSong | null;
   selectedChartToken: string | null;
   communityState: SongCommunityState | null;
   previewVolume: number;
+  catalogVersion: PiuSeriesId;
+  performanceVersion: "phoenix" | "phoenix2";
   userIsAdmin: boolean;
   onClose: () => void;
   onCopy: (song: PublicSong, chartToken?: string | null) => void;
   onCatalogSaved: (song: PublicSong) => void;
+  onSelectedChartTokenChange: (chartToken: string | null) => void;
   onToggleFavorite: (song: PublicSong) => void;
 }) {
   const notebookRef = useRef<HTMLDivElement | null>(null);
@@ -1324,10 +1511,13 @@ function SongDetailNotebook({
     <AnimatePresence>
       {song ? (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#171916]/45 px-3 py-5 backdrop-blur-sm sm:px-6"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#171916]/45 px-1.5 py-2 backdrop-blur-sm sm:px-6 sm:py-5"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          // The catalog becomes interactive as soon as the dialog closes. Keep
+          // the fade-out visual, but do not let the exiting backdrop swallow a
+          // fast follow-up click.
+          exit={{ opacity: 0, pointerEvents: "none" }}
           transition={{ duration: 0.18 }}
           role="dialog"
           aria-modal="true"
@@ -1340,7 +1530,7 @@ function SongDetailNotebook({
         >
             <motion.div
               ref={notebookRef}
-              className="notebook-modal relative flex h-[min(92vh,880px)] w-[min(94vw,1180px)] flex-col overflow-hidden rounded-2xl border border-[#d6ddcf] bg-[#fbfcf7] shadow-[0_30px_90px_rgba(12,18,10,0.32)]"
+              className="notebook-modal relative flex h-[min(96vh,880px)] w-[calc(100vw-0.75rem)] flex-col overflow-hidden rounded-2xl border border-[#d6ddcf] bg-[#fbfcf7] shadow-[0_30px_90px_rgba(12,18,10,0.32)] sm:h-[min(92vh,880px)] sm:w-[min(94vw,1180px)]"
               initial={{ opacity: 0, y: 24, scale: 0.96, rotate: -0.4 }}
               animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
               exit={{ opacity: 0, y: 18, scale: 0.97 }}
@@ -1348,12 +1538,12 @@ function SongDetailNotebook({
               style={notebookSize ? { height: notebookSize.height, width: notebookSize.width } : undefined}
               onPointerDown={maybeStartResize}
           >
-            <div className="absolute right-7 top-8 z-20 flex shrink-0 items-center gap-2">
-              <CatalogAdminEditor label="song details" song={song} userIsAdmin={userIsAdmin} onSaved={onCatalogSaved} />
+            <div className="absolute right-3 top-4 z-20 flex shrink-0 items-center gap-1 sm:right-7 sm:gap-2 sm:top-8">
+              <CatalogAdminEditor catalogVersion={catalogVersion} label="song details" song={song} userIsAdmin={userIsAdmin} onSaved={onCatalogSaved} />
               <a
                 aria-label="Open full song page"
                 className="notebook-action inline-flex size-10 items-center justify-center border border-[#cfd7c8] bg-white/90 text-[#343b30] shadow-[0_8px_22px_rgba(30,34,26,0.10)] backdrop-blur transition hover:bg-[#eef1e8]"
-                href={songDetailHref(song, selectedChartToken)}
+                href={songDetailHref(song, performanceVersion === "phoenix" ? "phoenix" : "phoenix2", selectedChartToken)}
                 title="Open full song page"
               >
                 <ExternalLink aria-hidden="true" size={17} />
@@ -1387,15 +1577,19 @@ function SongDetailNotebook({
             </div>
             <div className="notebook-scroll h-full overflow-y-auto bg-[#f7f8f2]">
               <SongDetailView
-                key={`${song.slug}:${selectedChartToken ?? ""}`}
+                key={song.slug}
                 mode="notebook"
                 song={song}
+                performanceVersion={performanceVersion}
+                catalogVersion={catalogVersion}
                 initialSelectedChartToken={selectedChartToken}
                 previewVolume={previewVolume}
-                community={{ user: null, initialState: communityState ?? EMPTY_COMMUNITY_STATE }}
+                community={{ user: communityUser, initialState: communityState ?? EMPTY_COMMUNITY_STATE }}
                 communityReadOnly
+                allowScoreLinkPost
                 onCatalogSaved={onCatalogSaved}
                 onBack={onClose}
+                onSelectedChartTokenChange={onSelectedChartTokenChange}
               />
             </div>
             <div aria-hidden="true" className="notebook-resize-cue" />
@@ -1404,6 +1598,14 @@ function SongDetailNotebook({
       ) : null}
     </AnimatePresence>
   );
+}
+
+function performanceVersionForCatalog(catalogVersion: PiuSeriesId, removedFromVersion?: PiuSeriesId): "phoenix" | "phoenix2" {
+  if (catalogVersion === "phoenix" || removedFromVersion === "phoenix2") {
+    return "phoenix";
+  }
+
+  return "phoenix2";
 }
 
 function readStoredNotebookSize(): { width: number; height: number } | null {
@@ -1451,12 +1653,17 @@ function clampNotebookSize(size: { width: number; height: number }): { width: nu
   };
 }
 
-function songDetailHref(song: PublicSong, chartToken: string | null = null): string {
-  if (!chartToken) {
-    return `/songs/${song.slug}`;
-  }
+function songDetailHref(song: PublicSong, version: PiuSeriesId, chartToken: string | null = null): string {
+  const params = new URLSearchParams({ version });
+  if (chartToken) params.set("chart", chartToken);
+  return `/songs/${song.slug}?${params.toString()}`;
+}
 
-  return `/songs/${song.slug}?chart=${encodeURIComponent(chartToken)}`;
+function sameSongSequence(left: PublicSong[], right: PublicSong[]): boolean {
+  return left.length === right.length && left.every((song, index) => {
+    const other = right[index];
+    return song.slug === other?.slug && song.chartSummary.join("|") === other.chartSummary.join("|");
+  });
 }
 
 function FilterGroup({
@@ -1676,7 +1883,7 @@ function resultCountLabel(total: number, loadingMode: LoadingMode): string {
     return "0 results";
   }
 
-  const formattedTotal = total.toLocaleString();
+  const formattedTotal = total.toLocaleString("en-US");
   return `${formattedTotal} ${total === 1 ? "result" : "results"}`;
 }
 

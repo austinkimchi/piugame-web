@@ -1,26 +1,34 @@
 "use client";
 
 import { Archive, BookmarkCheck, ChevronDown, MessageSquare, Plus, Save, Send, Tag, ThumbsDown, ThumbsUp, Trash2, SquarePlay } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import { UsernamePrompt } from "@/components/username-prompt";
 import { useAdminViewMode } from "@/lib/admin-view-mode";
 import type { CommunityPost, PublicUser, SongCommunityState } from "@/lib/auth";
-import type { PublicSong } from "@/lib/types";
+import type { CommunityScoreLinkDraft } from "@/lib/community-score-link";
+import { formatPerformanceGrade, isFailedPerformanceGrade } from "@/lib/performance-format";
+import type { PiuSeriesId, PublicSong } from "@/lib/types";
 
 interface SongCommunityPanelProps {
   user: PublicUser | null;
   song: PublicSong;
   initialState: SongCommunityState;
+  initialChartToken?: string | null;
   selectedChartToken: string | null;
+  catalogVersion?: PiuSeriesId;
   afterCommunity?: ReactNode;
   readOnly?: boolean;
+  allowScoreLinkPost?: boolean;
+  scoreLinkDraft?: CommunityScoreLinkDraft | null;
+  onScoreLinkDismiss?: () => void;
 }
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type MessageScope = "tag" | "post" | "note";
+type OptimisticUpdate = (state: SongCommunityState) => SongCommunityState;
 
-export function SongCommunityPanel({ user, song, initialState, selectedChartToken, afterCommunity, readOnly = false }: SongCommunityPanelProps) {
+export function SongCommunityPanel({ user, song, initialState, initialChartToken = null, selectedChartToken, catalogVersion = "phoenix2", afterCommunity, readOnly = false, allowScoreLinkPost = false, scoreLinkDraft = null, onScoreLinkDismiss }: SongCommunityPanelProps) {
   const { viewingAsRegular } = useAdminViewMode();
   const [note, setNote] = useState(initialState.note);
   const [tagInput, setTagInput] = useState("");
@@ -30,11 +38,17 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
   const [postBody, setPostBody] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [caption, setCaption] = useState("");
+  const [showScorePlate, setShowScorePlate] = useState(true);
+  const [showScoreJudgments, setShowScoreJudgments] = useState(false);
   const [notesOpen, setNotesOpen] = useState(Boolean(initialState.note));
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [tagMessage, setTagMessage] = useState("");
   const [postMessage, setPostMessage] = useState("");
   const [noteMessage, setNoteMessage] = useState("");
+  const postComposerRef = useRef<HTMLDivElement | null>(null);
+  const communityCacheRef = useRef(
+    new Map<string, SongCommunityState>(initialChartToken ? [[initialChartToken, initialState]] : []),
+  );
   const selectedTags = useMemo(
     () => communityTags.filter((tag) => tag.chartToken === selectedChartToken),
     [communityTags, selectedChartToken],
@@ -43,10 +57,13 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
     () => tagVotes.filter((vote) => vote.chartToken === selectedChartToken),
     [selectedChartToken, tagVotes],
   );
-  const canUseCommunity = Boolean(user?.username && !user.mutedUntil && !readOnly);
+  const canUseCommunity = Boolean(user?.username && !user.mutedUntil && (!readOnly || (allowScoreLinkPost && scoreLinkDraft)));
   const canViewModeration = !readOnly && (!user?.roles.includes("admin") || !viewingAsRegular);
   const activeUserPost = useMemo(() => posts.find((post) => post.authorId === user?.id && post.canArchive) ?? null, [posts, user?.id]);
   const canCreatePost = canUseCommunity && Boolean(selectedChartToken) && !activeUserPost;
+  const isCoopChart = selectedChartToken?.trim().toUpperCase().startsWith("C") ?? false;
+  const scoreLinkIsFailed = Boolean(scoreLinkDraft?.stageBreak) || isFailedPerformanceGrade(scoreLinkDraft?.grade);
+  const canShowScorePlate = !isCoopChart && !scoreLinkIsFailed;
 
   const applyState = useCallback((state: SongCommunityState) => {
     setNote(state.note);
@@ -59,9 +76,16 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
     if (!selectedChartToken) {
       return;
     }
+    const chartToken = selectedChartToken;
+    const cachedState = communityCacheRef.current.get(chartToken);
+    if (cachedState) {
+      applyState(cachedState);
+      setNotesOpen(Boolean(cachedState.note));
+      return;
+    }
 
     let cancelled = false;
-    const params = new URLSearchParams({ chart: selectedChartToken });
+    const params = new URLSearchParams({ chart: chartToken, version: catalogVersion });
 
     async function loadChartCommunity() {
       const response = await fetch(`/api/songs/${encodeURIComponent(song.slug)}/community?${params.toString()}`, { cache: "no-store" });
@@ -72,6 +96,7 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
       if (cancelled) {
         return;
       }
+      communityCacheRef.current.set(chartToken, state);
       applyState(state);
       setNotesOpen(Boolean(state.note));
     }
@@ -81,7 +106,13 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
     return () => {
       cancelled = true;
     };
-  }, [applyState, selectedChartToken, song.slug]);
+  }, [applyState, catalogVersion, initialChartToken, selectedChartToken, song.slug]);
+
+  useEffect(() => {
+    if (scoreLinkDraft && allowScoreLinkPost) {
+      postComposerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [allowScoreLinkPost, scoreLinkDraft]);
 
   function clearMessages() {
     setTagMessage("");
@@ -99,29 +130,48 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
     }
   }
 
-  async function mutate(action: string, payload: Record<string, unknown>, scope: MessageScope) {
+  function currentCommunityState(): SongCommunityState {
+    return { saved: initialState.saved, note, userTags: [], communityTags, tagVotes, posts };
+  }
+
+  async function mutate(action: string, payload: Record<string, unknown>, scope: MessageScope, optimisticUpdate?: OptimisticUpdate) {
     if (!user) {
       return null;
     }
 
+    const previousState = currentCommunityState();
     setStatus("saving");
     clearMessages();
-    const response = await fetch(`/api/songs/${encodeURIComponent(song.slug)}/community`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, chartToken: selectedChartToken, ...payload }),
-    });
-    const body = (await response.json()) as { state?: SongCommunityState; error?: string };
-    if (!response.ok || !body.state) {
-      setStatus("error");
-      setScopedMessage(scope, body.error ?? "Could not save right now.");
-      return null;
+    if (optimisticUpdate) {
+      applyState(optimisticUpdate(previousState));
     }
 
-    applyState(body.state);
-    setStatus("saved");
-    window.setTimeout(() => setStatus("idle"), 1200);
-    return body.state;
+    try {
+      const response = await fetch(`/api/songs/${encodeURIComponent(song.slug)}/community`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, chartToken: selectedChartToken, version: catalogVersion, ...payload }),
+      });
+      const body = (await response.json()) as { state?: SongCommunityState; error?: string };
+      if (!response.ok || !body.state) {
+        throw new Error(body.error ?? "Could not save right now.");
+      }
+
+      applyState(body.state);
+      if (selectedChartToken) {
+        communityCacheRef.current.set(selectedChartToken, body.state);
+      }
+      setStatus("saved");
+      window.setTimeout(() => setStatus("idle"), 1200);
+      return body.state;
+    } catch (error) {
+      if (optimisticUpdate) {
+        applyState(previousState);
+      }
+      setStatus("error");
+      setScopedMessage(scope, error instanceof Error ? error.message : "Could not save right now.");
+      return null;
+    }
   }
 
   async function addTag() {
@@ -132,7 +182,13 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
       setTagMessage(selectedChartToken ? "Add a tag first." : "Select a chart before adding a tag.");
       return;
     }
-    const state = await mutate("add-tag", { chartToken: selectedChartToken, tag }, "tag");
+    const state = await mutate("add-tag", { chartToken: selectedChartToken, tag }, "tag", (current) => ({
+      ...current,
+      userTags: [...current.userTags, { chartToken: selectedChartToken, tag }],
+      communityTags: current.communityTags.some((item) => item.chartToken === selectedChartToken && item.tag === tag)
+        ? current.communityTags
+        : [...current.communityTags, { chartToken: selectedChartToken, tag, score: 1, mine: true, myVote: null }],
+    }));
     if (state) {
       setTagInput("");
     }
@@ -142,7 +198,11 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
     if (!selectedChartToken) {
       return;
     }
-    await mutate("vote-tag", { chartToken: selectedChartToken, tag, vote }, "tag");
+    await mutate("vote-tag", { chartToken: selectedChartToken, tag, vote }, "tag", (current) => ({
+      ...current,
+      communityTags: current.communityTags.map((item) => item.chartToken === selectedChartToken && item.tag === tag ? { ...item, score: item.score + vote, myVote: vote } : item),
+      tagVotes: [...current.tagVotes, { chartToken: selectedChartToken, tag, vote }],
+    }));
   }
 
   async function saveNote() {
@@ -162,20 +222,63 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
       setPostMessage("Select a chart before posting.");
       return;
     }
-    const state = await mutate("create-post", { body: postBody, youtubeUrl, caption }, "post");
+    const optimisticPost: CommunityPost = {
+      id: `pending-${crypto.randomUUID()}`,
+      authorId: user?.id ?? "",
+      username: user?.username ?? "You",
+      body: postBody.trim(),
+      youtubeUrl: youtubeUrl.trim() || null,
+      youtubeVideoId: null,
+      caption: caption.trim() || null,
+      scoreLink: scoreLinkDraft ? {
+        performancePlayId: scoreLinkDraft.performancePlayId,
+        score: scoreLinkDraft.score,
+        grade: scoreLinkDraft.grade,
+        plate: scoreLinkDraft.plate,
+        stageBreak: scoreLinkDraft.stageBreak,
+        judgments: scoreLinkDraft.judgments,
+        playedAt: null,
+        showPlate: canShowScorePlate && showScorePlate,
+        showJudgments: showScoreJudgments,
+      } : null,
+      createdAt: new Date().toISOString(),
+      canDelete: true,
+      canArchive: true,
+      canModerate: false,
+    };
+    const state = await mutate(
+      "create-post",
+      {
+        body: postBody,
+        youtubeUrl,
+        ...(scoreLinkDraft
+          ? {
+              scoreLink: {
+                performancePlayId: scoreLinkDraft.performancePlayId,
+                piuVersion: scoreLinkDraft.piuVersion,
+                showPlate: canShowScorePlate && showScorePlate,
+                showJudgments: showScoreJudgments,
+              },
+            }
+          : { caption }),
+      },
+      "post",
+      (current) => ({ ...current, posts: [optimisticPost, ...current.posts] }),
+    );
     if (state) {
       setPostBody("");
       setYoutubeUrl("");
       setCaption("");
+      onScoreLinkDismiss?.();
     }
   }
 
   async function deletePost(post: CommunityPost) {
-    await mutate("delete-post", { postId: post.id }, "post");
+    await mutate("delete-post", { postId: post.id }, "post", (current) => ({ ...current, posts: current.posts.filter((item) => item.id !== post.id) }));
   }
 
   async function archivePost(post: CommunityPost) {
-    await mutate("archive-post", { postId: post.id }, "note");
+    await mutate("archive-post", { postId: post.id }, "note", (current) => ({ ...current, posts: current.posts.filter((item) => item.id !== post.id) }));
   }
 
   async function removePost(event: MouseEvent<HTMLButtonElement>, post: CommunityPost) {
@@ -221,7 +324,7 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
         </div>
 
         {!readOnly && user && !user.username ? <div className="mt-4"><UsernamePrompt /></div> : null}
-        {!readOnly && user?.mutedUntil ? <p className="mt-4 text-sm font-bold text-[#9b2b1f]">You are muted from community actions until {new Date(user.mutedUntil).toLocaleDateString()}.</p> : null}
+        {!readOnly && user?.mutedUntil ? <p className="mt-4 text-sm font-bold text-[#9b2b1f]">You are muted from community actions until {new Date(user.mutedUntil).toLocaleDateString("en-US")}.</p> : null}
         {canUseCommunity ? (
           <div className="mt-4 flex gap-2">
             <input
@@ -269,17 +372,28 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
           </div>
         ) : null}
         {canCreatePost ? (
-          <div className="mb-5 grid gap-3 border border-[#d8dfd1] bg-white p-4">
+          <div ref={postComposerRef} className="mb-5 grid gap-3 border border-[#d8dfd1] bg-white p-4">
+            {scoreLinkDraft ? (
+              <div className="border border-[#d8dfd1] bg-[#f7f8f2] p-3">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#7a8471]">Linked score</p>
+                <p className={`mt-1 text-base font-black ${isFailedScoreLink(scoreLinkDraft) ? "text-[#7a8471] line-through" : "text-[#171916]"}`}>{scoreLinkText(scoreLinkDraft, canShowScorePlate && showScorePlate, showScoreJudgments)}</p>
+                <div className="mt-3 flex flex-wrap gap-3 text-xs font-bold text-[#596153]">
+                  {canShowScorePlate ? <label className="inline-flex items-center gap-2"><input checked={showScorePlate} onChange={(event) => setShowScorePlate(event.target.checked)} type="checkbox" /> Show plate</label> : null}
+                  <label className="inline-flex items-center gap-2"><input checked={showScoreJudgments} onChange={(event) => setShowScoreJudgments(event.target.checked)} type="checkbox" /> Show judgments</label>
+                  <button className="text-[#66705f] underline hover:text-[#171916]" onClick={onScoreLinkDismiss} type="button">Remove score</button>
+                </div>
+              </div>
+            ) : null}
             <textarea
               className="min-h-24 resize-y border border-[#d8dfd1] bg-[#f7f8f2] p-3 text-sm font-medium text-[#171916] outline-none focus:border-[#28c950]"
               maxLength={1600}
               onChange={(event) => setPostBody(event.target.value)}
-              placeholder="Talk about the map, patterns, tech, or chart feel."
+              placeholder={scoreLinkDraft ? "Comment optional" : "Talk about the map, patterns, tech, or chart feel."}
               value={postBody}
             />
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_auto]">
+            <div className={`grid gap-2 ${scoreLinkDraft ? "sm:grid-cols-[minmax(0,1fr)_auto]" : "sm:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_auto]"}`}>
               <input className="min-h-10 border border-[#d8dfd1] bg-[#f7f8f2] px-3 text-sm font-bold outline-none focus:border-[#28c950]" onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="YouTube URL optional" value={youtubeUrl} />
-              <input className="min-h-10 border border-[#d8dfd1] bg-[#f7f8f2] px-3 text-sm font-bold outline-none focus:border-[#28c950]" onChange={(event) => setCaption(event.target.value)} placeholder="Caption optional" value={caption} />
+              {!scoreLinkDraft ? <input className="min-h-10 border border-[#d8dfd1] bg-[#f7f8f2] px-3 text-sm font-bold outline-none focus:border-[#28c950]" onChange={(event) => setCaption(event.target.value)} placeholder="Caption optional" value={caption} /> : null}
               <button className="inline-flex min-h-10 items-center justify-center gap-2 bg-[#171916] px-4 text-sm font-black text-white hover:bg-[#28c950]" onClick={() => void createPost()} type="button">
                 <Send aria-hidden="true" size={16} />
                 Post
@@ -297,10 +411,10 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
           {posts.length > 0 ? posts.map((post) => (
             <article key={post.id} className="border-l-4 border-[#d8dfd1] bg-white p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-black text-[#171916]">{post.username}</p>
-                  <p className="text-xs font-bold uppercase text-[#66705f]">{new Date(post.createdAt).toLocaleDateString()}</p>
-                </div>
+                <p className="flex items-baseline gap-2 text-sm font-black text-[#171916]">
+                  <span>{post.username}</span>
+                  <span className="text-xs font-bold uppercase text-[#66705f]">{new Date(post.createdAt).toLocaleDateString("en-US")}</span>
+                </p>
                 <div className="flex gap-2">
                   {!readOnly && post.canArchive ? (
                     <button aria-label="Archive post" className="inline-flex h-8 w-8 items-center justify-center text-[#66705f] hover:text-[#28c950] disabled:opacity-55" disabled={status === "saving"} onClick={() => void archivePost(post)} title="Archive post" type="button">
@@ -325,6 +439,7 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
                 </div>
               </div>
               {post.body ? <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-[#3d4638]">{post.body}</p> : null}
+              {post.scoreLink ? <p className={`mt-2 font-mono text-sm font-black ${isFailedScoreLink(post.scoreLink) ? "text-[#7a8471] line-through" : "text-[#171916]"}`}>{scoreLinkText(post.scoreLink, post.scoreLink.showPlate, post.scoreLink.showJudgments)}</p> : null}
               {post.youtubeVideoId ? (
                 <div className="mt-3 overflow-hidden border border-[#d8dfd1] bg-[#11130f]">
                   <iframe
@@ -376,4 +491,27 @@ export function SongCommunityPanel({ user, song, initialState, selectedChartToke
       ) : null}
     </>
   );
+}
+
+function scoreLinkText(
+  scoreLink: Pick<CommunityScoreLinkDraft, "score" | "grade" | "plate" | "stageBreak" | "judgments">,
+  showPlate: boolean,
+  showJudgments: boolean,
+): string {
+  if (scoreLink.stageBreak) {
+    return "Stage Break";
+  }
+
+  const parts = [typeof scoreLink.score === "number" ? new Intl.NumberFormat("en-US").format(scoreLink.score) : "-", formatPerformanceGrade(scoreLink.grade)];
+  if (showPlate && scoreLink.plate) {
+    parts.push(scoreLink.plate.toUpperCase());
+  }
+  if (showJudgments && scoreLink.judgments) {
+    parts.push(...[scoreLink.judgments.perfect, scoreLink.judgments.great, scoreLink.judgments.good, scoreLink.judgments.bad, scoreLink.judgments.miss].map((value) => String(value ?? 0)));
+  }
+  return parts.join(" ");
+}
+
+function isFailedScoreLink(scoreLink: Pick<CommunityScoreLinkDraft, "grade" | "stageBreak">): boolean {
+  return scoreLink.stageBreak || isFailedPerformanceGrade(scoreLink.grade);
 }

@@ -85,7 +85,7 @@ export function AdminDashboard() {
                   ))}
                 </div>
                 <p className="mt-1 truncate text-sm font-semibold text-[#66705f]">{user.name} / {user.email}</p>
-                {user.mutedUntil ? <p className="mt-1 text-xs font-black uppercase text-[#9b2b1f]">Muted until {new Date(user.mutedUntil).toLocaleDateString()}</p> : null}
+                {user.mutedUntil ? <p className="mt-1 text-xs font-black uppercase text-[#9b2b1f]">Muted until {new Date(user.mutedUntil).toLocaleDateString("en-US")}</p> : null}
               </div>
               <button
                 className="inline-flex min-h-11 items-center justify-center gap-2 border border-[#171916] bg-[#171916] px-4 text-sm font-black text-white hover:bg-[#28c950] disabled:border-[#aeb8a5] disabled:bg-[#aeb8a5]"

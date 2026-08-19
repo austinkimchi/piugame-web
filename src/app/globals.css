@@ -239,6 +239,17 @@ button:disabled {
   transform: translateY(-2px);
 }
 
+/* iOS Safari zooms focused text inputs whose computed font size is below 16px.
+   Keep the input at 16px for Safari while rendering it at the prior visual size. */
+@media (max-width: 720px) {
+  .ios-search-input {
+    font-size: 16px;
+    transform: scale(0.875);
+    transform-origin: left center;
+    width: 114.286%;
+  }
+}
+
 @keyframes song-card-in {
   from {
     opacity: 0;
@@ -349,6 +360,16 @@ button:disabled {
   animation: skeleton-sheen 1150ms ease-in-out infinite;
 }
 
+.song-detail-meta-chip {
+  flex: var(--metadata-chip-grow) 1 0%;
+}
+
+@media (min-width: 1024px) {
+  .song-detail-meta-chip {
+    flex: 0 0 auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .song-card-enter,
   .song-image-enter,
@@ -392,7 +413,8 @@ button:disabled {
   }
 
   .notebook-modal .song-detail-shell h1 {
-    font-size: clamp(2rem, 11vw, 3.1rem);
+    font-size: clamp(1.85rem, 8vw, 2.2rem);
+    line-height: 0.96;
   }
 
   .notebook-modal .song-detail-shell p {
@@ -407,5 +429,20 @@ button:disabled {
 
   .notebook-resize-cue {
     display: none;
+  }
+}
+
+@media (min-width: 721px) and (max-width: 1023px) {
+  .notebook-modal .song-detail-shell {
+    display: block;
+    padding-top: 4.75rem;
+  }
+
+  .notebook-modal .song-detail-shell > div:first-child {
+    display: none;
+  }
+
+  .notebook-modal .song-detail-shell > div:last-child {
+    padding-top: 1.5rem;
   }
 }

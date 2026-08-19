@@ -6,13 +6,18 @@ import type { Collection, Document, Filter, WithId } from "mongodb";
 import { cache } from "react";
 
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
+import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, sortPiuSeries } from "@/lib/catalog-version";
 import type {
   CatalogFilterOptions,
   CatalogEditorPayload,
+  ChartCatalogHistoryEvent,
+  ChartVersionLink,
   LevelFilterMode,
   PiuCatalogVersion,
+  PiuSeriesId,
   PublicChart,
   PublicSong,
+  SongCatalogHistoryEvent,
   SongSearchResult,
   SongSortOption,
   SortDirection,
@@ -22,11 +27,8 @@ const PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 48;
 const LANDING_NEW_SONG_LIMIT = 12;
 const DB_NAME = process.env.SONG_CATALOG_DB ?? "piugame_sdk";
-const COLLECTIONS: Record<PiuCatalogVersion, string> = {
-  phoenix: process.env.PHOENIX_CATALOG_COLLECTION ?? "song_catalog",
-  phoenix2: process.env.PHOENIX2_CATALOG_COLLECTION ?? "song_catalog_2",
-};
-const MAIN_CATALOG_VERSION: PiuCatalogVersion = "phoenix2";
+const CATALOG_COLLECTION = process.env.CATALOG_COLLECTION ?? "catalog";
+const MAIN_CATALOG_VERSION: PiuSeriesId = DEFAULT_CATALOG_SERIES;
 const SERIES_ORDER = ["1st", "nx", "fiesta", "prime", "prime2", "xx", "phoenix", "phoenix2"];
 const AUDIO_UPLOAD_MAX_BYTES = 16 * 1024 * 1024;
 const AUDIO_UPLOAD_CONTENT_TYPES = new Map([
@@ -56,6 +58,11 @@ interface CatalogDocument extends Document {
   artist?: string;
   piuVersion?: string;
   catalogVersion?: string;
+  supportedVersions?: string[];
+  removedFromVersions?: string[];
+  history?: SongCatalogHistoryEvent[];
+  chartHistory?: ChartCatalogHistoryEvent[];
+  chartLinks?: ChartVersionLink[];
   images?: string[];
   previewUrl?: string | null;
   audioPreviewUrl?: string | null;
@@ -72,6 +79,7 @@ interface CatalogDocument extends Document {
   bpmRaw?: string | number | null;
   chartsFull?: PublicChart[];
   chartTokens?: string[];
+  chartTokensByVersion?: Partial<Record<PiuSeriesId, string[]>>;
   folder?: string;
   series?: string;
   tags?: string[];
@@ -109,6 +117,10 @@ function cleanList(values?: string[]): string[] {
 }
 
 function statsKey(value: string | null): string {
+  return cleanText(value).toLowerCase();
+}
+
+function titleLookupKey(value: string): string {
   return cleanText(value).toLowerCase();
 }
 
@@ -159,12 +171,27 @@ function levelSortValue(value: string): number {
 }
 
 function isCoOpToken(token: string): boolean {
-  return /^C(?:O-?OP|X\d+)?$/i.test(cleanText(token));
+  return /^C(?:O-?OP|[2-5])?$/i.test(cleanText(token));
 }
 
 function coOpPlayerCountFromToken(token: string): string | null {
-  const match = cleanText(token).match(/^CX([2-5])$/i);
+  const match = cleanText(token).match(/^C([2-5])$/i);
   return match ? match[1] : null;
+}
+
+function normalizeChartToken(token: unknown): string {
+  const normalized = cleanText(token).toUpperCase().replace(/\s+/g, "");
+  return normalized.replace(/^CX([2-5])$/, "C$1");
+}
+
+function chartTokenSearchRegex(query: string): RegExp {
+  const normalized = normalizeChartToken(query);
+  const coOpMatch = normalized.match(/^C([2-5])$/);
+  if (coOpMatch) {
+    return new RegExp(`^C(?:X)?${coOpMatch[1]}$`, "i");
+  }
+
+  return new RegExp(escapeRegex(query), "i");
 }
 
 function levelFromChartToken(token: string): string | null {
@@ -220,7 +247,7 @@ function chartPrefixFor(chart: string): string | null {
     return "D";
   }
   if (chart === "co-op") {
-    return "CX";
+    return "C";
   }
   return null;
 }
@@ -264,7 +291,7 @@ function levelRegexesForChart(level: string, chart: string | null): RegExp[] {
 
   if (chart === "co-op") {
     if (/^[2-5]$/.test(level)) {
-      regexes.push(new RegExp(`^CX${escapeRegex(level)}$`, "i"));
+      regexes.push(new RegExp(`^C(?:X)?${escapeRegex(level)}$`, "i"));
     }
     return regexes;
   }
@@ -280,11 +307,11 @@ function levelRegexesForChart(level: string, chart: string | null): RegExp[] {
   }
 
   if (/^[2-5]$/.test(level)) {
-    regexes.push(new RegExp(`^CX${escapeRegex(level)}$`, "i"));
+    regexes.push(new RegExp(`^C${escapeRegex(level)}$`, "i"));
   }
 
   if (level === "+") {
-    regexes.push(new RegExp("^(?!C(?:O-?OP|X\\d+)?$)\\D+(?!(?:[1-9]|1\\d|2[0-7])$).+$", "i"));
+    regexes.push(new RegExp("^(?!C(?:O-?OP|[2-5])?$)\\D+(?!(?:[1-9]|1\\d|2[0-7])$).+$", "i"));
   } else {
     regexes.push(new RegExp(`\\D${escapeRegex(level)}$`, "i"));
   }
@@ -292,13 +319,13 @@ function levelRegexesForChart(level: string, chart: string | null): RegExp[] {
   return regexes;
 }
 
-function levelChartClausesForAnd(levels: string[], charts: string[]): Filter<CatalogDocument>[] {
+function levelChartClausesForAnd(levels: string[], charts: string[], chartTokenField = "chartTokens"): Filter<CatalogDocument>[] {
   if (charts.length === 0) {
-    return levels.map((level) => ({ chartTokens: { $in: levelRegexesFor(level, []) } }));
+    return levels.map((level) => ({ [chartTokenField]: { $in: levelRegexesFor(level, []) } }));
   }
 
   return charts.flatMap((chart) =>
-    levels.map((level) => ({ chartTokens: { $in: levelRegexesForChart(level, chart) } })),
+    levels.map((level) => ({ [chartTokenField]: { $in: levelRegexesForChart(level, chart) } })),
   );
 }
 
@@ -366,6 +393,78 @@ function versionFromDocument(document: CatalogDocument, fallback: PiuCatalogVers
   return raw === "phoenix2" ? "phoenix2" : fallback;
 }
 
+function piuCatalogVersionFromSeries(version: PiuSeriesId): PiuCatalogVersion {
+  return version === "phoenix" ? "phoenix" : "phoenix2";
+}
+
+function catalogVersionsFromDocument(document: CatalogDocument, fallback: PiuSeriesId = MAIN_CATALOG_VERSION): PiuSeriesId[] {
+  const values = Array.isArray(document.supportedVersions) ? document.supportedVersions : [];
+  const normalized = values.map((value) => normalizePiuSeriesId(value, fallback)).filter(isPiuSeriesId);
+  if (normalized.length > 0) {
+    return sortPiuSeries(Array.from(new Set(normalized)));
+  }
+
+  const rawVersion = cleanText(document.piuVersion ?? document.catalogVersion);
+  return [rawVersion === "phoenix" ? "phoenix" : fallback];
+}
+
+function removedVersionsFromDocument(document: CatalogDocument): PiuSeriesId[] {
+  const values = Array.isArray(document.removedFromVersions) ? document.removedFromVersions : [];
+  return sortPiuSeries(Array.from(new Set(values.filter(isPiuSeriesId))));
+}
+
+function historyFromDocument(document: CatalogDocument): SongCatalogHistoryEvent[] {
+  if (!Array.isArray(document.history)) {
+    return [];
+  }
+
+  return document.history
+    .filter((event): event is SongCatalogHistoryEvent =>
+      Boolean(event && typeof event.date === "string" && typeof event.note === "string" && isPiuSeriesId(event.version)),
+    )
+    .slice(0, 40);
+}
+
+function chartLinksFromDocument(document: CatalogDocument): ChartVersionLink[] {
+  if (!Array.isArray(document.chartLinks)) {
+    return [];
+  }
+
+  return document.chartLinks
+    .filter((link): link is ChartVersionLink => Boolean(link && typeof link.id === "string" && link.tokens && typeof link.tokens === "object"))
+    .map((link) => ({
+      id: cleanText(link.id).slice(0, 80),
+      tokens: Object.fromEntries(
+        Object.entries(link.tokens)
+          .filter(([version, token]) => isPiuSeriesId(version) && Boolean(normalizeChartToken(token)))
+          .map(([version, token]) => [version, normalizeChartToken(token)]),
+      ) as Partial<Record<PiuSeriesId, string>>,
+    }))
+    .filter((link) => link.id && Object.keys(link.tokens).length > 0);
+}
+
+function chartHistoryFromDocument(document: CatalogDocument): ChartCatalogHistoryEvent[] {
+  if (!Array.isArray(document.chartHistory)) {
+    return [];
+  }
+
+  return document.chartHistory
+    .filter((event): event is ChartCatalogHistoryEvent =>
+      Boolean(event && typeof event.id === "string" && typeof event.date === "string" && typeof event.note === "string" && typeof event.chartId === "string" && typeof event.chartToken === "string" && isPiuSeriesId(event.version)),
+    )
+    .slice(0, 160);
+}
+
+function imageVersionFor(document: CatalogDocument, fallback: PiuCatalogVersion): PiuCatalogVersion {
+  const raw = cleanText(document.piuVersion ?? document.catalogVersion);
+  if (raw === "phoenix" || raw === "phoenix2") {
+    return raw;
+  }
+
+  const supportedVersions = catalogVersionsFromDocument(document);
+  return supportedVersions.includes("phoenix2") ? "phoenix2" : fallback;
+}
+
 function imageUrlFor(version: PiuCatalogVersion, filename: string | null): string | null {
   if (!filename) {
     return null;
@@ -376,14 +475,19 @@ function imageUrlFor(version: PiuCatalogVersion, filename: string | null): strin
   return `/assets/piu/${version}/${imageDir}/${safeFilename}`;
 }
 
-function chartSummary(document: CatalogDocument): string[] {
+function chartSummary(document: CatalogDocument, version?: PiuSeriesId): string[] {
+  const versionedTokens = version ? document.chartTokensByVersion?.[version] : undefined;
+  if (Array.isArray(versionedTokens) && versionedTokens.length > 0) {
+    return versionedTokens.map(normalizeChartToken).filter(Boolean);
+  }
+
   if (Array.isArray(document.chartTokens) && document.chartTokens.length > 0) {
-    return document.chartTokens.map(cleanText).filter(Boolean);
+    return document.chartTokens.map(normalizeChartToken).filter(Boolean);
   }
 
   if (Array.isArray(document.chartsFull)) {
     return document.chartsFull
-      .map((chart) => cleanText(chart.token || `${chart.mode}${chart.level}`))
+      .map((chart) => normalizeChartToken(chart.token || `${chart.mode}${chart.level}`))
       .filter(Boolean);
   }
 
@@ -483,10 +587,12 @@ function previewUrlFromDocument(document: CatalogDocument): string | null {
   return null;
 }
 
-function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersion: PiuCatalogVersion, stats?: CatalogStats): PublicSong {
+function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersion: PiuCatalogVersion, stats?: CatalogStats, chartVersion?: PiuSeriesId): PublicSong {
   const title = cleanText(document.songName ?? document.songKey ?? "Untitled Song");
   const artist = cleanText(document.artist ?? "Unknown Artist");
   const version = versionFromDocument(document, fallbackVersion);
+  const imageVersion = imageVersionFor(document, version);
+  const supportedVersions = catalogVersionsFromDocument(document, MAIN_CATALOG_VERSION);
   const image = Array.isArray(document.images) ? cleanText(document.images[0]) : "";
   const previewUrl = previewUrlFromDocument(document);
   const audioPath = cleanText(document.audioPath ?? document.audioPreview?.localPath) || null;
@@ -498,12 +604,18 @@ function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersi
     title,
     artist,
     version,
-    imageUrl: imageUrlFor(version, image || null),
+    supportedVersions,
+    removedFromVersions: removedVersionsFromDocument(document),
+    history: historyFromDocument(document),
+    chartHistory: chartHistoryFromDocument(document),
+    chartLinks: chartLinksFromDocument(document),
+    imageUrl: imageUrlFor(imageVersion, image || null),
     previewUrl,
     previewAvailable: Boolean(previewUrl),
     audioPath,
     bpm: bpmFromDocument(document),
-    chartSummary: chartSummary(document),
+    chartSummary: chartSummary(document, chartVersion),
+    chartTokensByVersion: document.chartTokensByVersion,
     folder,
     folderPosition: numericPosition(document.folderPosition),
     folderSongCount: folder && stats ? stats.folderCounts.get(statsKey(folder)) ?? null : null,
@@ -522,6 +634,9 @@ function catalogEditorPayloadFromSong(song: PublicSong): CatalogEditorPayload {
     series: song.series ?? "",
     tags: song.tags,
     chartTokens: song.chartSummary,
+    history: song.history,
+    chartHistory: song.chartHistory,
+    chartLinks: song.chartLinks,
   };
 }
 
@@ -532,6 +647,11 @@ function projection() {
     artist: 1,
     piuVersion: 1,
     catalogVersion: 1,
+    supportedVersions: 1,
+    removedFromVersions: 1,
+    history: { $slice: 40 },
+    chartHistory: { $slice: 160 },
+    chartLinks: 1,
     images: { $slice: 1 },
     previewUrl: 1,
     audioPreviewUrl: 1,
@@ -540,6 +660,7 @@ function projection() {
     bpm: 1,
     bpmRaw: 1,
     chartTokens: 1,
+    chartTokensByVersion: 1,
     chartsFull: 1,
     folder: 1,
     series: 1,
@@ -548,9 +669,10 @@ function projection() {
   };
 }
 
-async function collectionFor(version: PiuCatalogVersion): Promise<Collection<CatalogDocument>> {
+async function collectionFor(_version?: PiuSeriesId | PiuCatalogVersion): Promise<Collection<CatalogDocument>> {
+  void _version;
   const client = await getMongoClient();
-  return client.db(DB_NAME).collection<CatalogDocument>(COLLECTIONS[version]);
+  return client.db(DB_NAME).collection<CatalogDocument>(CATALOG_COLLECTION);
 }
 
 function countMap(groups: CountGroup[]): Map<string, number> {
@@ -564,7 +686,7 @@ function countMap(groups: CountGroup[]): Map<string, number> {
   return counts;
 }
 
-async function fallbackCatalogStats(version: PiuCatalogVersion): Promise<CatalogStats> {
+async function fallbackCatalogStats(version: PiuSeriesId): Promise<CatalogStats> {
   const songs = await fallbackSongs(version, 0, Number.MAX_SAFE_INTEGER);
 
   return {
@@ -585,7 +707,15 @@ function countValues(values: Array<string | null>): Map<string, number> {
   return counts;
 }
 
-export const getCatalogStats = cache(async (version: PiuCatalogVersion = MAIN_CATALOG_VERSION): Promise<CatalogStats> => {
+function versionSupportFilter(version: PiuSeriesId, removedFromVersion?: PiuSeriesId): Filter<CatalogDocument> {
+  if (removedFromVersion) {
+    return { removedFromVersions: removedFromVersion };
+  }
+
+  return { supportedVersions: version };
+}
+
+export const getCatalogStats = cache(async (version: PiuSeriesId = MAIN_CATALOG_VERSION, removedFromVersion?: PiuSeriesId): Promise<CatalogStats> => {
   if (!hasMongoConfig()) {
     return fallbackCatalogStats(version);
   }
@@ -597,6 +727,7 @@ export const getCatalogStats = cache(async (version: PiuCatalogVersion = MAIN_CA
       series: CountGroup[];
       total: Array<{ count: number }>;
     }>([
+      { $match: versionSupportFilter(version, removedFromVersion) },
       {
         $facet: {
           folders: [
@@ -666,6 +797,11 @@ function aggregateProjection() {
     artist: 1,
     piuVersion: 1,
     catalogVersion: 1,
+    supportedVersions: 1,
+    removedFromVersions: 1,
+    history: { $slice: ["$history", 40] },
+    chartHistory: { $slice: ["$chartHistory", 160] },
+    chartLinks: 1,
     images: { $slice: ["$images", 1] },
     previewUrl: 1,
     audioPreviewUrl: 1,
@@ -674,6 +810,7 @@ function aggregateProjection() {
     bpm: 1,
     bpmRaw: 1,
     chartTokens: 1,
+    chartTokensByVersion: 1,
     chartsFull: 1,
     folder: 1,
     series: 1,
@@ -716,7 +853,9 @@ function compareSongText(left: string, right: string): number {
   return left.localeCompare(right, undefined, { sensitivity: "base", numeric: true });
 }
 
-function sortFallbackSongs(songs: PublicSong[], sortBy: SongSortOption, sortDirection: SortDirection, favoriteSlugs?: Set<string>): PublicSong[] {
+type FavoriteSortCandidate = Pick<PublicSong, "slug" | "title" | "artist" | "folder" | "series">;
+
+function sortFavoriteCandidates<T extends FavoriteSortCandidate>(songs: T[], sortBy: SongSortOption, sortDirection: SortDirection, favoriteSlugs?: Set<string>): T[] {
   const direction = sortDirection === "asc" ? 1 : -1;
 
   return [...songs].sort((left, right) => {
@@ -743,8 +882,12 @@ function sortFallbackSongs(songs: PublicSong[], sortBy: SongSortOption, sortDire
   });
 }
 
+function sortFallbackSongs(songs: PublicSong[], sortBy: SongSortOption, sortDirection: SortDirection, favoriteSlugs?: Set<string>): PublicSong[] {
+  return sortFavoriteCandidates(songs, sortBy, sortDirection, favoriteSlugs);
+}
+
 async function findMongoSongs(
-  version: PiuCatalogVersion,
+  version: PiuSeriesId,
   filter: Filter<CatalogDocument>,
   offset: number,
   limit: number,
@@ -763,10 +906,61 @@ async function findMongoSongs(
     ])
     .toArray();
 
-  return documents.map((document) => publicSongFromDocument(document, version));
+  return documents.map((document) => publicSongFromDocument(document, piuCatalogVersionFromSeries(version), undefined, version));
 }
 
-async function fallbackSongs(version: PiuCatalogVersion, offset = 0, limit = PAGE_SIZE): Promise<PublicSong[]> {
+async function findMongoFavoriteSortedSongs(
+  version: PiuSeriesId,
+  filter: Filter<CatalogDocument>,
+  offset: number,
+  limit: number,
+  sortBy: SongSortOption,
+  sortDirection: SortDirection,
+  favoriteSlugs: Set<string>,
+): Promise<PublicSong[]> {
+  const collection = await collectionFor(version);
+  const candidates = await collection
+    .find(filter)
+    .project<WithId<CatalogDocument>>({ songName: 1, songKey: 1, artist: 1, piuVersion: 1, catalogVersion: 1, folder: 1, series: 1 })
+    .toArray();
+  const fallbackVersion = piuCatalogVersionFromSeries(version);
+  const orderedCandidates = sortFavoriteCandidates(
+    candidates.map((document) => {
+      const title = cleanText(document.songName ?? document.songKey ?? "Untitled Song");
+      const artist = cleanText(document.artist ?? "Unknown Artist");
+      const songVersion = versionFromDocument(document, fallbackVersion);
+      return {
+        id: document._id,
+        slug: `${slugify(title)}-${slugify(artist) || "unknown"}-${songVersion}`,
+        title,
+        artist,
+        folder: cleanText(document.folder) || null,
+        series: cleanText(document.series) || null,
+      };
+    }),
+    sortBy,
+    sortDirection,
+    favoriteSlugs,
+  );
+  const page = orderedCandidates.slice(offset, offset + limit);
+  if (page.length === 0) {
+    return [];
+  }
+
+  const documents = await collection.find({ _id: { $in: page.map((candidate) => candidate.id) } }).toArray();
+  const songsById = new Map(documents.map((document) => [document._id.toHexString(), publicSongFromDocument(document, fallbackVersion, undefined, version)]));
+
+  return page.flatMap((candidate) => {
+    const song = songsById.get(candidate.id.toHexString());
+    return song ? [song] : [];
+  });
+}
+
+async function fallbackSongs(version: PiuSeriesId, offset = 0, limit = PAGE_SIZE): Promise<PublicSong[]> {
+  if (version !== "phoenix2" && version !== "phoenix") {
+    return [];
+  }
+
   const dir =
     version === "phoenix2"
       ? path.join(process.cwd(), "public", "assets", "piu", "phoenix2", "song_img2")
@@ -783,6 +977,11 @@ async function fallbackSongs(version: PiuCatalogVersion, offset = 0, limit = PAG
       title: `${version === "phoenix2" ? "Phoenix 2" : "Phoenix"} Jacket ${offset + index + 1}`,
       artist: "PIUGAME catalog asset",
       version,
+      supportedVersions: [version],
+      removedFromVersions: [],
+      history: [],
+      chartHistory: [],
+      chartLinks: [],
       imageUrl: imageUrlFor(version, filename),
       previewUrl: null,
       previewAvailable: false,
@@ -801,14 +1000,14 @@ async function fallbackSongs(version: PiuCatalogVersion, offset = 0, limit = PAG
   }
 }
 
-export async function getLandingSongs(): Promise<PublicSong[]> {
+export async function getLandingSongs(version: PiuSeriesId = MAIN_CATALOG_VERSION): Promise<PublicSong[]> {
   if (!hasMongoConfig()) {
-    return fallbackSongs(MAIN_CATALOG_VERSION, 0, LANDING_NEW_SONG_LIMIT);
+    return fallbackSongs(version, 0, LANDING_NEW_SONG_LIMIT);
   }
 
   return findMongoSongs(
-    MAIN_CATALOG_VERSION,
-    { series: { $regex: "^Phoenix 2$", $options: "i" } },
+    version,
+    { supportedVersions: version },
     0,
     LANDING_NEW_SONG_LIMIT,
   );
@@ -821,12 +1020,15 @@ function buildSearchFilter(params: {
   levels?: string[];
   charts?: string[];
   levelMode?: LevelFilterMode;
+  supportedVersion?: PiuSeriesId;
+  removedFromVersion?: PiuSeriesId;
 }): Filter<CatalogDocument> {
   const clauses: Filter<CatalogDocument>[] = [];
   const query = cleanText(params.query);
-
+  const chartTokenField = params.removedFromVersion ? "chartTokens" : params.supportedVersion ? `chartTokensByVersion.${params.supportedVersion}` : "chartTokens";
   if (query.length > 0) {
     const escaped = escapeRegex(query);
+    const chartTokenQuery = chartTokenSearchRegex(query);
     clauses.push({
       $or: [
         { songName: { $regex: escaped, $options: "i" } },
@@ -835,9 +1037,15 @@ function buildSearchFilter(params: {
         { folder: { $regex: escaped, $options: "i" } },
         { series: { $regex: escaped, $options: "i" } },
         { tags: { $regex: escaped, $options: "i" } },
-        { chartTokens: { $regex: escaped, $options: "i" } },
+        { [chartTokenField]: { $regex: chartTokenQuery } },
       ],
     });
+  }
+
+  if (params.removedFromVersion) {
+    clauses.push({ removedFromVersions: params.removedFromVersion });
+  } else {
+    clauses.push({ supportedVersions: params.supportedVersion ?? MAIN_CATALOG_VERSION });
   }
 
   const folders = cleanList(params.folders);
@@ -853,15 +1061,15 @@ function buildSearchFilter(params: {
   const levels = cleanList(params.levels);
   const charts = cleanList(params.charts);
   if (levels.length > 0) {
-    const levelClauses = levelChartClausesForAnd(levels, charts);
-    clauses.push(params.levelMode === "and" ? { $and: levelClauses } : { chartTokens: { $in: levels.flatMap((level) => levelRegexesFor(level, charts)) } });
+    const levelClauses = levelChartClausesForAnd(levels, charts, chartTokenField);
+    clauses.push(params.levelMode === "and" ? { $and: levelClauses } : { [chartTokenField]: { $in: levels.flatMap((level) => levelRegexesFor(level, charts)) } });
   }
 
   if (charts.length > 0 && levels.length === 0) {
     const chartRegexes = charts.map(chartRegexFor).filter((regex): regex is RegExp => Boolean(regex));
 
     if (chartRegexes.length > 0) {
-      clauses.push(params.levelMode === "and" ? { $and: chartRegexes.map((regex) => ({ chartTokens: { $in: [regex] } })) } : { chartTokens: { $in: chartRegexes } });
+      clauses.push(params.levelMode === "and" ? { $and: chartRegexes.map((regex) => ({ [chartTokenField]: { $in: [regex] } })) } : { [chartTokenField]: { $in: chartRegexes } });
     }
   }
 
@@ -877,6 +1085,8 @@ function fallbackMatchesFilters(
     levels?: string[];
     charts?: string[];
     levelMode?: LevelFilterMode;
+    supportedVersion?: PiuSeriesId;
+    removedFromVersion?: PiuSeriesId;
   },
 ): boolean {
   const query = cleanText(filters.query).toLowerCase();
@@ -884,6 +1094,15 @@ function fallbackMatchesFilters(
   const series = cleanList(filters.series);
   const levels = cleanList(filters.levels);
   const charts = cleanList(filters.charts);
+  const supportedVersion = filters.supportedVersion ?? MAIN_CATALOG_VERSION;
+
+  if (filters.removedFromVersion) {
+    if (!song.removedFromVersions.includes(filters.removedFromVersion)) {
+      return false;
+    }
+  } else if (!song.supportedVersions.includes(supportedVersion)) {
+    return false;
+  }
 
   if (query.length > 0) {
     const haystack = `${song.title} ${song.artist} ${song.version} ${song.folder ?? ""} ${song.series ?? ""} ${song.chartSummary.join(" ")}`.toLowerCase();
@@ -929,10 +1148,12 @@ export async function searchSongs(params: {
   sortBy?: SongSortOption;
   sortDirection?: SortDirection;
   favoriteSlugs?: Set<string>;
+  supportedVersion?: PiuSeriesId;
+  removedFromVersion?: PiuSeriesId;
 }): Promise<SongSearchResult> {
   const limit = Math.min(Math.max(params.limit ?? PAGE_SIZE, 1), MAX_PAGE_SIZE);
   const offset = decodeCursor(params.cursor ?? null);
-  const version = MAIN_CATALOG_VERSION;
+  const version = params.supportedVersion ?? MAIN_CATALOG_VERSION;
   const sortBy = normalizeSortOption(params.sortBy);
   const sortDirection = normalizeSortDirection(params.sortDirection);
   const favoriteSlugs = params.favoriteSlugs;
@@ -959,11 +1180,11 @@ export async function searchSongs(params: {
     };
   }
 
-  const filter = buildSearchFilter(params);
+  const filter = buildSearchFilter({ ...params, supportedVersion: version });
   const collection = await collectionFor(version);
-  const [total, filterOptions] = await Promise.all([collection.countDocuments(filter), getCatalogFilterOptions(version, filter, params.charts)]);
+  const [total, filterOptions] = await Promise.all([collection.countDocuments(filter), getCatalogFilterOptions(version, filter, params.charts, params.removedFromVersion)]);
   const songs = favoritesFirst
-    ? sortFallbackSongs(total > 0 ? await findMongoSongs(version, filter, 0, total, sortBy, sortDirection) : [], sortBy, sortDirection, favoriteSlugs).slice(offset, offset + limit + 1)
+    ? await findMongoFavoriteSortedSongs(version, filter, offset, limit + 1, sortBy, sortDirection, favoriteSlugs!)
     : await findMongoSongs(version, filter, offset, limit + 1, sortBy, sortDirection);
 
   return {
@@ -975,9 +1196,10 @@ export async function searchSongs(params: {
 }
 
 export async function getCatalogFilterOptions(
-  version: PiuCatalogVersion = MAIN_CATALOG_VERSION,
+  version: PiuSeriesId = MAIN_CATALOG_VERSION,
   filter: Filter<CatalogDocument> = {},
   charts?: string[],
+  removedFromVersion?: PiuSeriesId,
 ): Promise<CatalogFilterOptions> {
   if (!hasMongoConfig()) {
     const songs = await fallbackSongs(version, 0, 250);
@@ -990,21 +1212,23 @@ export async function getCatalogFilterOptions(
   }
 
   const collection = await collectionFor(version);
+  const baseFilter = Object.keys(filter).length > 0 ? filter : versionSupportFilter(version, removedFromVersion);
+  const chartTokenField = `chartTokensByVersion.${version}`;
   const [folders, series, chartTokens] = await Promise.all([
-    collection.distinct("folder", filter),
-    collection.distinct("series", filter),
-    collection.distinct("chartTokens", filter),
+    collection.distinct("folder", baseFilter),
+    collection.distinct("series", baseFilter),
+    collection.distinct(chartTokenField, baseFilter),
   ]);
 
   return filterOptionsFromValues({
     folders: folders.map(cleanText),
     series: series.map(cleanText),
-    chartTokens: chartTokens.map(cleanText),
+    chartTokens: chartTokens.map(normalizeChartToken),
     charts,
   });
 }
 
-export async function getSongBySlug(slug: string): Promise<PublicSong | null> {
+export async function getSongBySlug(slug: string, chartVersion?: PiuSeriesId): Promise<PublicSong | null> {
   if (!hasMongoConfig()) {
     const stats = await getCatalogStats(MAIN_CATALOG_VERSION);
     const all = (await fallbackSongs(MAIN_CATALOG_VERSION, 0, 250)).map((song) => ({
@@ -1012,7 +1236,8 @@ export async function getSongBySlug(slug: string): Promise<PublicSong | null> {
       folderSongCount: song.folder ? stats.folderCounts.get(statsKey(song.folder)) ?? null : null,
       seriesSongCount: song.series ? stats.seriesCounts.get(statsKey(song.series)) ?? null : null,
     }));
-    return all.find((song) => song.slug === slug) ?? null;
+    const song = all.find((song) => song.slug === slug) ?? null;
+    return song && chartVersion ? { ...song, chartSummary: song.chartTokensByVersion?.[chartVersion] ?? song.chartSummary } : song;
   }
 
   const collection = await collectionFor(MAIN_CATALOG_VERSION);
@@ -1021,17 +1246,65 @@ export async function getSongBySlug(slug: string): Promise<PublicSong | null> {
     getCatalogStats(MAIN_CATALOG_VERSION),
   ]);
   const match = documents
-    .map((document) => publicSongFromDocument(document, MAIN_CATALOG_VERSION, stats))
+    .map((document) => publicSongFromDocument(document, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION), stats, chartVersion))
     .find((song) => song.slug === slug);
 
   return match ?? null;
+}
+
+export async function getSongsByTitles(
+  version: PiuCatalogVersion,
+  titles: string[],
+): Promise<Map<string, PublicSong>> {
+  const uniqueTitles = Array.from(new Set(titles.map(cleanText).filter(Boolean)));
+  const result = new Map<string, PublicSong>();
+  if (uniqueTitles.length === 0) {
+    return result;
+  }
+
+  if (!hasMongoConfig()) {
+    const fallback = await fallbackSongs(version, 0, 500);
+    for (const song of fallback) {
+      const key = titleLookupKey(song.title);
+      if (uniqueTitles.some((title) => titleLookupKey(title) === key) && !result.has(key)) {
+        result.set(key, song);
+      }
+    }
+    return result;
+  }
+
+  const collection = await collectionFor(version);
+  const documents = await collection
+    .find(
+      {
+        supportedVersions: version,
+        $or: uniqueTitles.flatMap((title) => {
+          const exactTitle = new RegExp(`^${escapeRegex(title)}$`, "i");
+          return [{ songName: exactTitle }, { songKey: exactTitle }];
+        }),
+      },
+      { projection: projection() },
+    )
+    .limit(Math.max(uniqueTitles.length * 2, uniqueTitles.length))
+    .toArray();
+
+  const wantedKeys = new Set(uniqueTitles.map(titleLookupKey));
+  for (const document of documents) {
+    const song = publicSongFromDocument(document, version, undefined, version);
+    const key = titleLookupKey(song.title);
+    if (wantedKeys.has(key) && !result.has(key)) {
+      result.set(key, song);
+    }
+  }
+
+  return result;
 }
 
 async function getCatalogDocumentBySlug(slug: string): Promise<WithId<CatalogDocument> | null> {
   const collection = await collectionFor(MAIN_CATALOG_VERSION);
   const documents = await collection.find({}, { projection: projection() }).limit(5000).toArray();
 
-  return documents.find((document) => publicSongFromDocument(document, MAIN_CATALOG_VERSION).slug === slug) ?? null;
+  return documents.find((document) => publicSongFromDocument(document, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION)).slug === slug) ?? null;
 }
 
 function cleanEditableList(values: unknown, maxItems: number): string[] {
@@ -1056,7 +1329,14 @@ function normalizeCatalogEditorPayload(input: Partial<CatalogEditorPayload>): Ca
   const folderPosition = editableFolderPosition(input.folderPosition);
   const series = cleanText(input.series).slice(0, 120);
   const tags = cleanEditableList(input.tags, 24).map((tag) => tag.slice(0, 60));
-  const chartTokens = cleanEditableList(input.chartTokens, 80).map((token) => token.toUpperCase().replace(/\s+/g, ""));
+  const chartTokens = cleanEditableList(input.chartTokens, 80).map(normalizeChartToken);
+  const history = Array.isArray(input.history) ? input.history.filter((event): event is SongCatalogHistoryEvent => Boolean(event && typeof event.date === "string" && typeof event.note === "string" && isPiuSeriesId(event.version))).slice(0, 80) : [];
+  const chartHistory = Array.isArray(input.chartHistory)
+    ? input.chartHistory.filter((event): event is ChartCatalogHistoryEvent => Boolean(event && typeof event.id === "string" && typeof event.date === "string" && typeof event.note === "string" && typeof event.chartId === "string" && typeof event.chartToken === "string" && isPiuSeriesId(event.version))).slice(0, 240)
+    : [];
+  const chartLinks = Array.isArray(input.chartLinks)
+    ? input.chartLinks.filter((link): link is ChartVersionLink => Boolean(link && typeof link.id === "string" && link.tokens && typeof link.tokens === "object")).slice(0, 120)
+    : [];
   const invalidChartTokens = chartTokens.filter((token) => !/^[A-Z0-9+-]{1,12}$/.test(token));
 
   if (title.length < 1) {
@@ -1077,6 +1357,9 @@ function normalizeCatalogEditorPayload(input: Partial<CatalogEditorPayload>): Ca
     series,
     tags,
     chartTokens,
+    history,
+    chartHistory,
+    chartLinks,
   };
 }
 
@@ -1101,7 +1384,7 @@ export async function getCatalogEditorPayload(slug: string): Promise<CatalogEdit
   return song ? catalogEditorPayloadFromSong(song) : null;
 }
 
-export async function updateCatalogSong(slug: string, input: Partial<CatalogEditorPayload>, audioFile?: File | null): Promise<PublicSong> {
+export async function updateCatalogSong(slug: string, input: Partial<CatalogEditorPayload>, audioFile?: File | null, chartVersion?: PiuSeriesId): Promise<PublicSong> {
   if (!hasMongoConfig()) {
     throw new Error("Catalog database is not configured.");
   }
@@ -1114,7 +1397,8 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
 
   const collection = await collectionFor(MAIN_CATALOG_VERSION);
   const chartsFull = updatedChartsFull(document.chartsFull, payload.chartTokens);
-  const $set: Partial<CatalogDocument> = {
+  const selectedChartVersion = chartVersion ?? versionFromDocument(document, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION));
+  const $set: Document = {
     songName: payload.title,
     artist: payload.artist,
     folder: payload.folder,
@@ -1122,6 +1406,10 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
     series: payload.series,
     tags: payload.tags,
     chartTokens: payload.chartTokens,
+    [`chartTokensByVersion.${selectedChartVersion}`]: payload.chartTokens,
+    history: payload.history,
+    chartHistory: payload.chartHistory,
+    chartLinks: payload.chartLinks,
   };
 
   if (chartsFull) {
@@ -1129,7 +1417,7 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
   }
 
   if (audioFile) {
-    const upload = await saveCatalogAudioUpload(versionFromDocument(document, MAIN_CATALOG_VERSION), payload.title, payload.artist, audioFile);
+    const upload = await saveCatalogAudioUpload(versionFromDocument(document, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION)), payload.title, payload.artist, audioFile);
     $set.audioPath = upload.audioPath;
     $set.audioPreview = {
       ...(document.audioPreview ?? {}),
@@ -1149,7 +1437,7 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
     throw new Error("Song not found after update.");
   }
 
-  return publicSongFromDocument(updated, MAIN_CATALOG_VERSION);
+  return publicSongFromDocument(updated, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION), undefined, selectedChartVersion);
 }
 
 export async function getSitemapSongs(limit = 5000): Promise<PublicSong[]> {
@@ -1158,7 +1446,7 @@ export async function getSitemapSongs(limit = 5000): Promise<PublicSong[]> {
   }
 
   try {
-    return findMongoSongs(MAIN_CATALOG_VERSION, {}, 0, limit, "series", "asc");
+    return findMongoSongs(MAIN_CATALOG_VERSION, { supportedVersions: MAIN_CATALOG_VERSION }, 0, limit, "series", "asc");
   } catch {
     return [];
   }
