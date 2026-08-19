@@ -22,6 +22,7 @@ interface SongCardProps {
   onPreviewStart: (song: PublicSong) => void;
   onPreviewStop: () => void;
   showSingleChartToken?: boolean;
+  showManualUploadState?: boolean;
 }
 
 export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, onOpen, onPreviewStart, onPreviewStop, showSingleChartToken = false }: SongCardProps) {

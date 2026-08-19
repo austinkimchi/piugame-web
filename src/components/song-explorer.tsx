@@ -72,6 +72,7 @@ const NOTEBOOK_RESIZE_HANDLE_SIZE = 40;
 const NOTEBOOK_SIZE_STORAGE_KEY = "mypiu-song-notebook-size:v2";
 const PREVIEW_FADE_IN_MS = 50;
 const PREVIEW_FADE_OUT_MS = 700;
+const DEV_ADMIN_SETTINGS_ENABLED = process.env.NODE_ENV === "development";
 const EMPTY_COMMUNITY_STATE: SongCommunityState = {
   saved: false,
   note: "",
@@ -140,6 +141,7 @@ export function SongExplorer({
   const lastSavedPreviewPreferencesRef = useRef<{ muted: boolean; volume: number } | null>(null);
   const [preferredPreviewMuted, setPreferredPreviewMuted] = useState(initialPreviewMuted);
   const [previewVolume, setPreviewVolume] = useState(() => clampPreviewVolume(initialPreviewVolume));
+  const [manualUploadsVisible, setManualUploadsVisible] = useState(false);
   const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const isRecentSearch = query.trim().toLowerCase() === "recent";
@@ -186,6 +188,7 @@ export function SongExplorer({
   );
   const previewMuted = preferredPreviewMuted;
   const previewEnabled = !previewMuted;
+  const showManualUploadState = DEV_ADMIN_SETTINGS_ENABLED && userIsAdmin && manualUploadsVisible;
 
   useEffect(() => {
     songsRef.current = songs;
@@ -957,11 +960,70 @@ export function SongExplorer({
 
   return (
     <MotionConfig reducedMotion="user">
-      {showLanding && !canFavorite ? (
-        <>
-          <GuestFeatureShowcase featureSong={featureSong ?? favoritedInitialSongs[0] ?? null} onExplore={scrollToSearch} />
-          {guestPerformanceSummary ? <HomePerformanceSummary {...guestPerformanceSummary} /> : null}
-        </>
+      {showLanding ? (
+        canFavorite ? (
+        <motion.section
+          ref={landingSectionRef}
+          className="mx-auto hidden max-w-7xl px-5 py-8 sm:block sm:px-8 lg:px-10"
+          initial={{ opacity: 0, y: 18 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-[#11130f]">New Songs</h2>
+              <p className="mt-1 text-sm font-medium text-[#66705f]">PHOENIX 2 released 07/2026</p>
+            </div>
+            <PreviewToggleButton
+              muted={previewMuted}
+              volume={previewVolume}
+              onVolumeChange={changePreviewVolume}
+              onToggle={togglePreviewMuted}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+            {favoritedInitialSongs.map((song, index) => (
+              <div key={`new-${song.slug}`} className={landingSongVisibilityClass(index)}>
+                <SongCard
+                  onOpen={openSongDetail}
+                  isPreviewActive={Boolean(song.previewUrl && activePreviewUrl === song.previewUrl)}
+                  previewEnabled={previewEnabled}
+                  onPreviewStart={playSongPreview}
+                  onPreviewStop={() => stopSongPreview(song.previewUrl)}
+                  sequence={index}
+                  showManualUploadState={showManualUploadState}
+                  song={song}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex justify-center">
+            <motion.button
+              className="inline-flex items-center gap-2 border border-[#171916] bg-[#171916] px-6 py-3 font-bold text-white transition hover:bg-[#343b30]"
+              type="button"
+              whileHover={{ y: -3, scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={scrollToSearch}
+            >
+              View More
+              <motion.span
+                animate={{ y: [0, 4, 0] }}
+                transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <ChevronDown aria-hidden="true" size={18} />
+              </motion.span>
+            </motion.button>
+          </div>
+        </motion.section>
+        ) : (
+          <>
+            <GuestFeatureShowcase featureSong={featureSong ?? favoritedInitialSongs[0] ?? null} onExplore={scrollToSearch} />
+            {guestPerformanceSummary ? <HomePerformanceSummary {...guestPerformanceSummary} /> : null}
+          </>
+        )
       ) : null}
 
       <motion.section
@@ -1059,7 +1121,7 @@ export function SongExplorer({
                   </button>
                 ) : null}
               </motion.label>
-              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[16.75rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem]">
+              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[19.5rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem_2.75rem]">
                 <label className={`relative h-full ${isRecentSearch ? "opacity-45" : ""}`}>
                   <span className="sr-only">Sort by</span>
                   <select
@@ -1129,6 +1191,12 @@ export function SongExplorer({
                     <span className="absolute right-1.5 top-1.5 h-2 w-2 bg-[#28c950]" />
                   ) : null}
                 </motion.button>
+                <PreviewToggleButton
+                  muted={previewMuted}
+                  volume={previewVolume}
+                  onVolumeChange={changePreviewVolume}
+                  onToggle={togglePreviewMuted}
+                />
               </div>
             </motion.div>
 
@@ -1290,24 +1358,23 @@ function PreviewToggleButton({
       <AnimatePresence>
         {volumeOpen ? (
           <motion.label
-            className="absolute right-[calc(100%+0.5rem)] top-1/2 flex h-11 w-36 -translate-y-1/2 items-center gap-2 border border-[#cfd7c8] bg-white px-3 shadow-[0_12px_28px_rgba(30,34,26,0.12)]"
-            initial={{ opacity: 0, x: 16, scaleX: 0.86 }}
-            animate={{ opacity: 1, x: 0, scaleX: 1 }}
-            exit={{ opacity: 0, x: 12, scaleX: 0.9 }}
-            style={{ originX: 1 }}
+            className="absolute bottom-[calc(100%+0.5rem)] left-1/2 flex h-36 w-11 -translate-x-1/2 items-center justify-center border border-[#cfd7c8] bg-white py-3 shadow-[0_12px_28px_rgba(30,34,26,0.12)]"
+            initial={{ opacity: 0, y: 14, scaleY: 0.86 }}
+            animate={{ opacity: 1, y: 0, scaleY: 1 }}
+            exit={{ opacity: 0, y: 10, scaleY: 0.9 }}
+            style={{ originY: 1 }}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
           >
             <span className="sr-only">Preview volume</span>
             <input
               aria-label="Preview volume"
-              className="preview-volume-slider min-w-0 flex-1"
+              className="preview-volume-slider preview-volume-slider-vertical"
               max={100}
               min={0}
               type="range"
               value={volumePercent}
               onChange={(event) => onVolumeChange(Number(event.target.value) / 100)}
             />
-            <span className="w-8 text-right text-[11px] font-black tabular-nums text-[#596153]">{volumePercent}</span>
           </motion.label>
         ) : null}
       </AnimatePresence>
@@ -1315,7 +1382,7 @@ function PreviewToggleButton({
       <motion.button
         aria-label={muted ? "Enable hover previews" : "Disable hover previews"}
         aria-pressed={!muted}
-        className="inline-flex size-11 shrink-0 items-center justify-center border border-[#cfd7c8] bg-white font-semibold text-[#343b30] transition hover:bg-[#eef1e8]"
+        className="inline-flex size-11 shrink-0 items-center justify-center border-l border-[#d9ded2] bg-white font-semibold text-[#343b30] transition hover:bg-[#eef1e8]"
         title={muted ? "Enable hover previews" : "Disable hover previews"}
         type="button"
         whileHover={{ y: -2, scale: 1.05 }}
