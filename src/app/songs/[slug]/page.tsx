@@ -19,9 +19,10 @@ interface SongPageProps {
   searchParams?: Promise<{ chart?: string | string[]; version?: string | string[] }>;
 }
 
-export async function generateMetadata({ params }: SongPageProps): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: SongPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const song = await getSongBySlug(slug);
+  const requestedVersion = normalizeRequestedVersion((await searchParams)?.version);
+  const song = await getSongBySlug(slug, requestedVersion);
 
   if (!song) {
     return {
@@ -87,7 +88,7 @@ export default async function SongPage({ params, searchParams }: SongPageProps) 
   const { slug } = await params;
   const user = await getCurrentUser();
   const requestedVersion = normalizeRequestedVersion((await searchParams)?.version);
-  const baseSong = await getSongBySlug(slug);
+  const baseSong = await getSongBySlug(slug, requestedVersion);
   if (!baseSong) {
     notFound();
   }
