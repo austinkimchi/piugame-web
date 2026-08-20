@@ -520,14 +520,47 @@ function bpmFromDocument(document: CatalogDocument): string | null {
   return cleanText(document.bpm ?? document.bpmRaw) || null;
 }
 
-function audioFileUrlForPath(localPath: string): string | null {
-  const cleanPath = cleanText(localPath).replaceAll("\\", "/");
-  if (!cleanPath) {
+function encodedPublicPath(pathname: string): string | null {
+  const segments = pathname
+    .split("/")
+    .filter(Boolean);
+
+  if (segments.length === 0 || segments.some((segment) => segment === "." || segment === "..")) {
     return null;
   }
 
-  const params = new URLSearchParams({ path: cleanPath });
-  return `/api/audio-file?${params.toString()}`;
+  return `/${segments.map(encodeURIComponent).join("/")}`;
+}
+
+function audioFileUrlForPath(localPath: string | null | undefined, version: PiuCatalogVersion): string | null {
+  const normalized = String(localPath ?? "")
+    .trim()
+    .replaceAll("\\", "/")
+    .replace(/^\/+/, "");
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith("data/audio_previews/")) {
+    const filename = normalized.slice("data/audio_previews/".length);
+    return encodedPublicPath(`assets/piu/${version}/audio_previews/${filename}`);
+  }
+
+  if (normalized.startsWith("public/")) {
+    return encodedPublicPath(normalized.slice("public/".length));
+  }
+
+  if (normalized.startsWith("assets/")) {
+    return encodedPublicPath(normalized);
+  }
+
+  // Admin uploads store paths relative to their catalog's preview directory.
+  if (normalized.startsWith("manual/")) {
+    return encodedPublicPath(`assets/piu/${version}/audio_previews/${normalized}`);
+  }
+
+  return null;
 }
 
 function audioUploadExtension(file: File): string {
@@ -565,12 +598,12 @@ async function saveCatalogAudioUpload(version: PiuCatalogVersion, title: string,
   const audioPath = `manual/${filename}`;
   return {
     audioPath,
-    publicUrl: `/api/audio-file?${new URLSearchParams({ path: audioPath }).toString()}`,
+    publicUrl: `/assets/piu/${version}/audio_previews/manual/${encodeURIComponent(filename)}`,
   };
 }
 
-function previewUrlFromDocument(document: CatalogDocument): string | null {
-  const localUrl = audioFileUrlForPath(document.audioPath ?? document.audioPreview?.localPath ?? "");
+function previewUrlFromDocument(document: CatalogDocument, version: PiuCatalogVersion): string | null {
+  const localUrl = audioFileUrlForPath(document.audioPath ?? document.audioPreview?.localPath, version);
   if (localUrl) {
     return localUrl;
   }
@@ -594,7 +627,7 @@ function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersi
   const imageVersion = imageVersionFor(document, version);
   const supportedVersions = catalogVersionsFromDocument(document, MAIN_CATALOG_VERSION);
   const image = Array.isArray(document.images) ? cleanText(document.images[0]) : "";
-  const previewUrl = previewUrlFromDocument(document);
+  const previewUrl = previewUrlFromDocument(document, imageVersion);
   const audioPath = cleanText(document.audioPath ?? document.audioPreview?.localPath) || null;
   const folder = cleanText(document.folder) || null;
   const series = cleanText(document.series) || null;
