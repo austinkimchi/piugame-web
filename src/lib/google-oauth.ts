@@ -89,11 +89,15 @@ async function verifyGoogleIdToken(idToken: string) {
   if (!body.sub || !body.email) {
     throw new Error("Google identity did not include an account id and email.");
   }
+  const emailVerified = body.email_verified === true || body.email_verified === "true";
+  if (!emailVerified) {
+    throw new Error("Google identity email was not verified.");
+  }
 
   return {
     googleId: body.sub,
     email: body.email,
-    emailVerified: body.email_verified === true || body.email_verified === "true",
+    emailVerified,
     name: body.name ?? body.email,
     imageUrl: body.picture ?? null,
   };

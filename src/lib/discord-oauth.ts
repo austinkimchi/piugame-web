@@ -84,13 +84,14 @@ export async function exchangeDiscordCode(args: { code: string; origin: string }
   if (!userResponse.ok || !userBody.id || !userBody.username) {
     throw new Error("Discord identity verification failed.");
   }
+  const emailVerified = userBody.verified === true;
 
   return {
     discordId: userBody.id,
     username: userBody.username,
     displayName: userBody.global_name || userBody.username,
-    email: userBody.email?.toLowerCase() ?? null,
-    emailVerified: userBody.verified === true,
+    email: emailVerified ? (userBody.email?.toLowerCase() ?? null) : null,
+    emailVerified,
     imageUrl: userBody.avatar ? `https://cdn.discordapp.com/avatars/${userBody.id}/${userBody.avatar}.png?size=128` : null,
   };
 }

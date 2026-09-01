@@ -463,6 +463,9 @@ export async function upsertGoogleUser(profile: {
   name: string;
   imageUrl: string | null;
 }): Promise<WithId<UserDocument>> {
+  if (!profile.emailVerified) {
+    throw new Error("Google identity email was not verified.");
+  }
   const { users } = await collections();
   const now = new Date();
   const email = profile.email.toLowerCase();
@@ -530,10 +533,11 @@ export async function upsertGoogleUser(profile: {
 export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: string): Promise<WithId<UserDocument>> {
   const { users } = await collections();
   const now = new Date();
+  const verifiedEmail = profile.emailVerified ? profile.email?.toLowerCase() ?? null : null;
   const providerIdentity: AuthProviderIdentity = {
     provider: "discord",
     providerAccountId: profile.discordId,
-    email: profile.email ?? undefined,
+    email: verifiedEmail ?? undefined,
     username: profile.username,
   };
   const linkedUserObjectId = linkToUserId ? objectIdFromString(linkToUserId) : null;
@@ -588,8 +592,8 @@ export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: 
     };
   }
 
-  const email = profile.email?.toLowerCase() ?? syntheticDiscordEmail(profile.discordId);
-  const existing = providerOwner ?? (profile.email ? await users.findOne({ email }) : null);
+  const email = verifiedEmail ?? syntheticDiscordEmail(profile.discordId);
+  const existing = providerOwner ?? (verifiedEmail ? await users.findOne({ email }) : null);
 
   if (!existing) {
     const inserted = await users.insertOne({
@@ -1493,7 +1497,7 @@ function publicRoles(document: WithId<UserDocument>): UserRole[] {
       roles.add("moderator");
     }
   }
-  if (adminEmailSet().has(document.email.toLowerCase())) {
+  if (document.emailVerified && adminEmailSet().has(document.email.toLowerCase())) {
     roles.add("admin");
     roles.add("moderator");
   }
