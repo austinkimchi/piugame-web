@@ -44,13 +44,10 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
         : "text-[13px] sm:text-sm";
   const isNew = song.series === "Phoenix 2";
   const favoriteBadgePositionClass = isNew
-    ? song.isPremium
-      ? "col-start-1 row-start-2"
-      : "col-start-2 row-start-2"
+    ? "col-start-2 row-start-2"
     : song.isPremium
       ? "col-start-1 row-start-1"
       : "col-start-2 row-start-1";
-  const premiumBadgePositionClass = isNew ? "col-start-2 row-start-2" : "col-start-2 row-start-1";
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (!onOpen || event.defaultPrevented || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
@@ -186,14 +183,24 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
                 </span>
               ) : null}
               {isNew ? (
-                <span className="song-new-badge col-start-2 row-start-1 inline-flex h-6 items-center bg-[#e3412f]/95 px-2 text-[11px] font-black uppercase text-white xl:col-auto xl:row-auto xl:h-8">
+                <span
+                  aria-label={song.isPremium ? "New in Phoenix 2, premium song" : undefined}
+                  className="song-new-badge relative col-start-2 row-start-1 inline-flex h-6 items-center bg-[#e3412f]/95 px-2 text-[11px] font-black uppercase text-white xl:col-auto xl:row-auto xl:h-8"
+                  role={song.isPremium ? "img" : undefined}
+                  title={song.isPremium ? "New in Phoenix 2, premium song" : undefined}
+                >
                   NEW
+                  {song.isPremium ? (
+                    <span aria-hidden="true" className="absolute -right-1 -top-1 inline-flex size-4 items-center justify-center bg-[#171916] text-[#ffca6d] shadow-[0_4px_10px_rgba(23,25,22,0.3)]">
+                      <Crown size={9} />
+                    </span>
+                  ) : null}
                 </span>
               ) : null}
-              {song.isPremium ? (
+              {song.isPremium && !isNew ? (
                 <span
                   aria-label="Premium song"
-                  className={`inline-flex size-6 items-center justify-center bg-[#171916]/95 text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)] md:size-8 xl:col-auto xl:row-auto ${premiumBadgePositionClass}`}
+                  className="col-start-2 row-start-1 inline-flex size-6 items-center justify-center bg-[#171916]/95 text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)] md:size-8 xl:col-auto xl:row-auto"
                   role="img"
                   title="Premium song"
                 >
