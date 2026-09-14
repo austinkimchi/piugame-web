@@ -14,6 +14,7 @@ import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-me
 import { startsNewSession } from "@/lib/performance-session";
 import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
+import { fetchPumbilityScore } from "@/lib/piu-pumbility";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 import type { PiuCatalogVersion } from "@/lib/types";
 
@@ -832,8 +833,7 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
 
   const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, decryptCredential(encryptedPassword));
-  const profileResultPromise = client
-    .getPlayerData(piuUsername)
+  const profileResultPromise = getPlayerDataWithPumbility(client, piuUsername)
     .then((profile) => ({ ok: true as const, profile }))
     .catch((error: unknown) => ({ ok: false as const, error }));
   const recentPlays = await client.getRecentPlays(piuUsername);
@@ -938,7 +938,7 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
   const password = decryptCredential(encryptedPassword);
   const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, password);
-  const profilePromise = client.getPlayerData(piuUsername);
+  const profilePromise = getPlayerDataWithPumbility(client, piuUsername);
   const recentPlaysPromise = client
     .getRecentPlays(piuUsername)
     .then((plays) => ({ ok: true as const, plays }))
@@ -953,6 +953,16 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
   const recentPlays = recentPlaysResult.ok ? recentPlaysResult.plays : [];
   await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays);
   await queueAllPlaysBackfill(userId, piuVersion);
+}
+
+async function getPlayerDataWithPumbility(client: PiuClient, username: string): Promise<PlayerData> {
+  const profile = await client.getPlayerData(username);
+  if (profile.pumbilityScore !== null) {
+    return profile;
+  }
+
+  const pumbilityScore = await fetchPumbilityScore(client, username);
+  return pumbilityScore === null ? profile : { ...profile, pumbilityScore };
 }
 
 async function storePerformanceSnapshot(
