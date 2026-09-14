@@ -56,6 +56,7 @@ export interface PublicSong {
   series: string | null;
   seriesSongCount: number | null;
   tags: string[];
+  isPremium: boolean;
   isFavorite?: boolean;
 }
 
