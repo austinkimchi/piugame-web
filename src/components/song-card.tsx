@@ -42,6 +42,15 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
       : song.title.length > LONG_TITLE_LENGTH
         ? "text-xs sm:text-[13px]"
         : "text-[13px] sm:text-sm";
+  const isNew = song.series === "Phoenix 2";
+  const favoriteBadgePositionClass = isNew
+    ? song.isPremium
+      ? "col-start-1 row-start-2"
+      : "col-start-2 row-start-2"
+    : song.isPremium
+      ? "col-start-1 row-start-1"
+      : "col-start-2 row-start-1";
+  const premiumBadgePositionClass = isNew ? "col-start-2 row-start-2" : "col-start-2 row-start-1";
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (!onOpen || event.defaultPrevented || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
@@ -147,7 +156,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
           {song.previewAvailable ? (
             <motion.button
               aria-label={isPreviewActive ? `Stop preview for ${song.title}` : previewEnabled ? `Play preview for ${song.title}` : `Song previews are muted for ${song.title}`}
-              className={`audio-pill absolute left-2 top-2 z-20 inline-flex size-6 md:size-8 items-center justify-center shadow-[0_10px_24px_rgba(30,34,26,0.18)] disabled:cursor-not-allowed ${
+              className={`audio-pill absolute left-2 top-2 z-20 inline-flex size-6 items-center justify-center shadow-[0_10px_24px_rgba(30,34,26,0.18)] disabled:cursor-not-allowed md:size-8 ${
                 isPreviewActive
                   ? "bg-[#28c950]/90 text-white"
                   : previewEnabled
@@ -164,37 +173,31 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
               <Radio size={13} />
             </motion.button>
           ) : null}
-          {song.isFavorite || song.isPremium || song.series === "Phoenix 2" ? (
+          {song.isFavorite || song.isPremium || isNew ? (
             <motion.div
-              className="pointer-events-none absolute right-2 top-2 z-20 flex flex-col items-end gap-1 xl:flex-row xl:items-center"
+              className="pointer-events-none absolute right-2 top-2 z-20 grid grid-cols-[auto_auto] justify-items-end gap-0.5 md:top-1 xl:top-2 xl:flex xl:items-center xl:gap-1"
               initial={{ opacity: 0, y: -8, rotate: 2 }}
               animate={{ opacity: 1, y: 0, rotate: 0 }}
               transition={{ delay: entryDelay + 0.16, type: "spring", stiffness: 420, damping: 22 }}
             >
               {song.isFavorite ? (
-                <span className="song-favorite-badge inline-flex h-6 min-w-6 items-center justify-center bg-[#fff4cf]/95 px-1 text-[#9b6412] shadow-[0_10px_24px_rgba(155,100,18,0.22)]">
+                <span className={`song-favorite-badge inline-flex size-6 items-center justify-center bg-[#fff4cf]/95 text-[#9b6412] shadow-[0_10px_24px_rgba(155,100,18,0.22)] md:size-8 xl:col-auto xl:row-auto ${favoriteBadgePositionClass}`}>
                   <Star aria-hidden="true" fill="currentColor" size={13} />
+                </span>
+              ) : null}
+              {isNew ? (
+                <span className="song-new-badge col-start-2 row-start-1 inline-flex h-6 items-center bg-[#e3412f]/95 px-2 text-[11px] font-black uppercase text-white xl:col-auto xl:row-auto xl:h-8">
+                  NEW
                 </span>
               ) : null}
               {song.isPremium ? (
                 <span
-                  aria-label={song.series === "Phoenix 2" ? "Premium song, new in Phoenix 2" : "Premium song"}
-                  className="relative inline-flex h-6 w-6 items-center justify-center gap-1 bg-[#171916]/95 px-0 text-[10px] font-black uppercase text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)] xl:w-auto xl:px-2"
+                  aria-label="Premium song"
+                  className={`inline-flex size-6 items-center justify-center bg-[#171916]/95 text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)] md:size-8 xl:col-auto xl:row-auto ${premiumBadgePositionClass}`}
                   role="img"
-                  title={song.series === "Phoenix 2" ? "Premium song, new in Phoenix 2" : "Premium song"}
+                  title="Premium song"
                 >
-                  <Crown aria-hidden="true" size={12} />
-                  {song.series === "Phoenix 2" ? (
-                    <span aria-hidden="true" className="absolute -right-1 -top-1 inline-flex size-3 items-center justify-center bg-[#e3412f] text-[8px] leading-none text-white">
-                      N
-                    </span>
-                  ) : null}
-                  <span className="hidden xl:inline">Premium</span>
-                </span>
-              ) : null}
-              {song.series === "Phoenix 2" ? (
-                <span className={`song-new-badge bg-[#e3412f]/95 px-2 py-1 text-[11px] font-black uppercase text-white ${song.isPremium ? "hidden" : ""}`}>
-                  NEW
+                  <Crown aria-hidden="true" size={13} />
                 </span>
               ) : null}
             </motion.div>
