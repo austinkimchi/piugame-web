@@ -11,6 +11,7 @@ import { SongCard } from "@/components/song-card";
 import { SongDetailView } from "@/components/song-detail-view";
 import type { PublicUser, SongCommunityState } from "@/lib/auth";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
+import { canLoadMoreSongs } from "@/lib/song-pagination";
 import type { CatalogFilterOptions, LevelFilterMode, PiuSeriesId, PublicSong, SongSortOption, SortDirection } from "@/lib/types";
 
 interface SearchResponse {
@@ -119,6 +120,7 @@ export function SongExplorer({
   const searchSectionRef = useRef<HTMLElement | null>(null);
   const songsRef = useRef(initialSongs);
   const filterPanelRef = useRef<HTMLElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const selectedFiltersRef = useRef<Record<FilterKey, string[]>>({
     ...DEFAULT_FILTERS,
     charts: [...DEFAULT_FILTERS.charts],
@@ -137,6 +139,9 @@ export function SongExplorer({
   const wasRecentSearchRef = useRef(false);
   const queryRef = useRef("");
   const appendSearchRef = useRef(false);
+  const lastAutoLoadedCursorRef = useRef<string | null>(null);
+  const searchAbortControllerRef = useRef<AbortController | null>(null);
+  const searchRequestIdRef = useRef(0);
   const lastSavedPreviewPreferencesRef = useRef<{ muted: boolean; volume: number } | null>(null);
   const [preferredPreviewMuted, setPreferredPreviewMuted] = useState(initialPreviewMuted);
   const [previewVolume, setPreviewVolume] = useState(() => clampPreviewVolume(initialPreviewVolume));
@@ -269,8 +274,18 @@ export function SongExplorer({
       if (cursor && appendSearchRef.current) {
         return;
       }
+
+      const requestId = searchRequestIdRef.current + 1;
+      searchRequestIdRef.current = requestId;
+      searchAbortControllerRef.current?.abort();
+      const controller = new AbortController();
+      searchAbortControllerRef.current = controller;
+
       if (cursor) {
         appendSearchRef.current = true;
+      } else {
+        appendSearchRef.current = false;
+        lastAutoLoadedCursorRef.current = null;
       }
       const isRecentQuery = searchQuery.trim().toLowerCase() === "recent";
       const requestFilters =
@@ -283,8 +298,14 @@ export function SongExplorer({
       setStatus("");
 
       try {
-        const response = await fetch(endpoint(searchQuery, cursor, requestFilters, mode, sort, direction, preferFavorites), { cache: "no-store" });
+        const response = await fetch(endpoint(searchQuery, cursor, requestFilters, mode, sort, direction, preferFavorites), {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         const body = (await response.json()) as SearchResponse;
+        if (requestId !== searchRequestIdRef.current) {
+          return;
+        }
         if (!response.ok) {
           setStatus(body.error ?? "Search failed.");
           return;
@@ -320,8 +341,16 @@ export function SongExplorer({
         setStatus(body.songs.length === 0 && !cursor && !recentUnchanged ? "No songs matched those filters." : "");
 
       } catch {
-        setStatus("Search failed. Try again in a moment.");
+        if (!controller.signal.aborted) {
+          setStatus("Search failed. Try again in a moment.");
+        }
       } finally {
+        if (searchAbortControllerRef.current === controller) {
+          searchAbortControllerRef.current = null;
+        }
+        if (requestId !== searchRequestIdRef.current) {
+          return;
+        }
         if (cursor) {
           appendSearchRef.current = false;
         }
@@ -330,6 +359,42 @@ export function SongExplorer({
     },
     [endpoint, filterOptions],
   );
+
+  const loadNextPage = useCallback(() => {
+    if (!canLoadMoreSongs({
+      appendInFlight: appendSearchRef.current,
+      loading: searchAbortControllerRef.current !== null,
+      nextCursor,
+    })) {
+      return;
+    }
+
+    void runSearch(queryRef.current, nextCursor);
+  }, [nextCursor, runSearch]);
+
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || !nextCursor || loadingMode !== null || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting || lastAutoLoadedCursorRef.current === nextCursor) {
+          return;
+        }
+
+        lastAutoLoadedCursorRef.current = nextCursor;
+        loadNextPage();
+      },
+      { rootMargin: "0px 0px 480px 0px" },
+    );
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [loadNextPage, loadingMode, nextCursor]);
+
+  useEffect(() => () => searchAbortControllerRef.current?.abort(), []);
 
   const submitSearch = useCallback((searchQuery = query) => {
     const submittedQuery = searchQuery.trim();
@@ -1207,6 +1272,8 @@ export function SongExplorer({
               </AnimatePresence>
             </div>
 
+            <div ref={loadMoreSentinelRef} aria-hidden="true" className="h-px" />
+
             <AnimatePresence>
               {nextCursor ? (
                 <motion.div
@@ -1221,7 +1288,7 @@ export function SongExplorer({
                     type="button"
                     whileHover={loadingMode !== null ? undefined : { y: -3, scale: 1.03 }}
                     whileTap={loadingMode !== null ? undefined : { scale: 0.97 }}
-                    onClick={() => void runSearch(query, nextCursor)}
+                    onClick={loadNextPage}
                   >
                     Load more
                   </motion.button>
