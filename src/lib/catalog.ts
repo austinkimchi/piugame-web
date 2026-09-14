@@ -633,7 +633,7 @@ function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersi
   const series = cleanText(document.series) || null;
 
   return {
-    slug: `${slugify(title)}-${slugify(artist) || "unknown"}-${version}`,
+    slug: catalogDocumentSlug(document, fallbackVersion),
     title,
     artist,
     version,
@@ -1273,16 +1273,12 @@ export async function getSongBySlug(slug: string, chartVersion?: PiuSeriesId): P
     return song && chartVersion ? { ...song, chartSummary: song.chartTokensByVersion?.[chartVersion] ?? song.chartSummary } : song;
   }
 
-  const collection = await collectionFor(MAIN_CATALOG_VERSION);
-  const [documents, stats] = await Promise.all([
-    collection.find({}, { projection: projection() }).limit(5000).toArray(),
+  const fallbackVersion = piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION);
+  const [document, stats] = await Promise.all([
+    getCatalogDocumentBySlug(slug),
     getCatalogStats(MAIN_CATALOG_VERSION),
   ]);
-  const match = documents
-    .map((document) => publicSongFromDocument(document, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION), stats, chartVersion))
-    .find((song) => song.slug === slug);
-
-  return match ?? null;
+  return document ? publicSongFromDocument(document, fallbackVersion, stats, chartVersion) : null;
 }
 
 export async function getSongsByTitles(
@@ -1335,9 +1331,32 @@ export async function getSongsByTitles(
 
 async function getCatalogDocumentBySlug(slug: string): Promise<WithId<CatalogDocument> | null> {
   const collection = await collectionFor(MAIN_CATALOG_VERSION);
-  const documents = await collection.find({}, { projection: projection() }).limit(5000).toArray();
+  const fallbackVersion = piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION);
+  const candidates = await collection
+    .find(
+      {},
+      {
+        projection: {
+          songName: 1,
+          songKey: 1,
+          artist: 1,
+          piuVersion: 1,
+          catalogVersion: 1,
+        },
+      },
+    )
+    .limit(5000)
+    .toArray();
+  const candidate = candidates.find((document) => catalogDocumentSlug(document, fallbackVersion) === slug);
 
-  return documents.find((document) => publicSongFromDocument(document, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION)).slug === slug) ?? null;
+  return candidate ? collection.findOne({ _id: candidate._id }, { projection: projection() }) : null;
+}
+
+function catalogDocumentSlug(document: CatalogDocument, fallbackVersion: PiuCatalogVersion): string {
+  const title = cleanText(document.songName ?? document.songKey ?? "Untitled Song");
+  const artist = cleanText(document.artist ?? "Unknown Artist");
+  const version = versionFromDocument(document, fallbackVersion);
+  return `${slugify(title)}-${slugify(artist) || "unknown"}-${version}`;
 }
 
 function cleanEditableList(values: unknown, maxItems: number): string[] {

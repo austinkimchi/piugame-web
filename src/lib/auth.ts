@@ -3,6 +3,7 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { ObjectId, type Collection, type WithId } from "mongodb";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
@@ -681,7 +682,7 @@ export async function getCurrentUserId(): Promise<string | null> {
   return session?.userId.toHexString() ?? null;
 }
 
-export async function getCurrentUser(): Promise<PublicUser | null> {
+export const getCurrentUser = cache(async (): Promise<PublicUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
   if (!token || !hasMongoConfig()) {
     return null;
@@ -700,7 +701,7 @@ export async function getCurrentUser(): Promise<PublicUser | null> {
 
   void sessions.updateOne({ _id: session._id }, { $set: { lastSeenAt: new Date() } });
   return publicUser(user);
-}
+});
 
 export async function linkPiuAccount(
   user: PublicUser,
