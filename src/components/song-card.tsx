@@ -180,6 +180,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
                 <span
                   aria-label={song.series === "Phoenix 2" ? "Premium song, new in Phoenix 2" : "Premium song"}
                   className="relative inline-flex h-6 w-6 items-center justify-center gap-1 bg-[#171916]/95 px-0 text-[10px] font-black uppercase text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)] xl:w-auto xl:px-2"
+                  role="img"
                   title={song.series === "Phoenix 2" ? "Premium song, new in Phoenix 2" : "Premium song"}
                 >
                   <Crown aria-hidden="true" size={12} />
