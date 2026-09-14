@@ -7,7 +7,7 @@ import { Activity, ArrowUpRight, BarChart3, Database, RefreshCw, ShieldCheck, Tr
 import { AccountBar } from "@/components/account-bar";
 import { PerformanceDashboardTables } from "@/components/performance-dashboard-tables";
 import { PerformancePageRefresh } from "@/components/performance-page-refresh";
-import { getCurrentUser, getCurrentUserId } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { getSongsByTitles } from "@/lib/catalog";
 import { getPerformanceDashboard, syncCurrentUserTopPlaysIfDue, type PerformanceDashboard } from "@/lib/performance";
 import { createPerformanceSyncToken } from "@/lib/performance-sync-token";
@@ -25,7 +25,8 @@ export const metadata: Metadata = {
 };
 
 export default async function PerformancePage() {
-  const [user, userId] = await Promise.all([getCurrentUser(), getCurrentUserId()]);
+  const user = await getCurrentUser();
+  const userId = user?.id ?? null;
   const dashboard = await getPerformanceDashboard(userId);
   if (userId && dashboard.mongoReady) {
     after(() => {
