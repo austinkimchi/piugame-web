@@ -300,9 +300,9 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
           <div className="hidden lg:block">{jacketImage}</div>
         </motion.div>
 
-      <motion.div className="pt-2! md:pt-12!" layout transition={{ layout: { type: "spring", stiffness: 180, damping: 26, mass: 0.9 } }}>
+      <motion.div className="min-w-0 pt-2! md:pt-12!" layout transition={{ layout: { type: "spring", stiffness: 180, damping: 26, mass: 0.9 } }}>
         <motion.div {...sectionMotion} className="mb-4 flex items-start justify-between gap-1.5 sm:gap-3">
-          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 sm:gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:flex-nowrap sm:gap-2">
             <span aria-label={seriesLabel} className="song-detail-meta-chip inline-flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap border border-[#cdd5c5] bg-white px-2 py-1.5 text-[11px] font-black uppercase text-[#596153] sm:gap-2 sm:px-3 sm:text-sm" style={{ "--metadata-chip-grow": Math.max(seriesLabel.length, 8) } as CSSProperties}>
               <Disc3 aria-hidden="true" className="size-3.5 shrink-0 sm:size-4" />
               <span>{seriesLabel}</span>
@@ -315,6 +315,11 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
               <span aria-label={bpmLabel} className="song-detail-meta-chip inline-flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap border border-[#cdd5c5] bg-white px-2 py-1.5 text-[11px] font-black uppercase text-[#596153] sm:gap-2 sm:px-3 sm:text-sm" style={{ "--metadata-chip-grow": Math.max(bpmLabel.length, 8) } as CSSProperties}>
                 <Music aria-hidden="true" className="size-3.5 shrink-0 sm:size-4" />
                 <span>{bpmLabel}</span>
+              </span>
+            ) : null}
+            {currentSong.isPremium ? (
+              <span aria-label="Premium song" className="inline-flex size-7 shrink-0 items-center justify-center border border-[#cdd5c5] bg-white text-[#9b6412] sm:size-[34px]" role="img" title="Premium song">
+                <Crown aria-hidden="true" className="size-3.5 sm:size-4" />
               </span>
             ) : null}
           </div>
@@ -366,16 +371,10 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
         >
           <div className="w-28 shrink-0 lg:hidden">{jacketImage}</div>
           <motion.div className="min-w-0 flex-1" layout transition={{ type: "spring", stiffness: 190, damping: 28, mass: 0.9 }}>
-            <motion.div className="flex flex-wrap items-start gap-3" layout transition={{ type: "spring", stiffness: 190, damping: 28, mass: 0.9 }}>
-              <motion.h1 className="text-5xl font-black leading-none tracking-normal text-[#11130f] sm:text-7xl" layout>
+            <motion.div className="flex items-start gap-3" layout transition={{ type: "spring", stiffness: 190, damping: 28, mass: 0.9 }}>
+              <motion.h1 className="min-w-0 break-words text-[28px] font-black leading-none tracking-normal text-[#11130f] sm:text-7xl" layout>
                 {currentSong.title}
               </motion.h1>
-              {currentSong.isPremium ? (
-                <span aria-label="Premium song" className="mt-1 inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap bg-[#171916] px-2.5 text-[11px] font-black uppercase text-[#ffca6d] sm:mt-2 sm:h-8 sm:px-3 sm:text-xs" title="Premium song">
-                  <Crown aria-hidden="true" size={14} />
-                  Premium
-                </span>
-              ) : null}
             </motion.div>
             <motion.p
               className="mt-4 text-2xl font-bold text-[#4f5849]"

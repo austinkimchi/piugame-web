@@ -364,6 +364,12 @@ button:disabled {
   flex: var(--metadata-chip-grow) 1 0%;
 }
 
+@media (max-width: 639px) {
+  .song-detail-meta-chip {
+    flex: 0 0 auto;
+  }
+}
+
 @media (min-width: 1024px) {
   .song-detail-meta-chip {
     flex: 0 0 auto;
