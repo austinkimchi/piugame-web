@@ -166,7 +166,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
           ) : null}
           {song.isFavorite || song.isPremium || song.series === "Phoenix 2" ? (
             <motion.div
-              className="absolute right-2 top-2 z-20 flex items-center gap-1"
+              className="pointer-events-none absolute right-2 top-2 z-20 flex items-center gap-1"
               initial={{ opacity: 0, y: -8, rotate: 2 }}
               animate={{ opacity: 1, y: 0, rotate: 0 }}
               transition={{ delay: entryDelay + 0.16, type: "spring", stiffness: 420, damping: 22 }}
