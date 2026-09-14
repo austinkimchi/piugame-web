@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Radio, Star } from "lucide-react";
+import { Crown, Radio, Star } from "lucide-react";
 import { motion } from "motion/react";
 import { type MouseEvent, useState } from "react";
 
@@ -164,7 +164,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
               <Radio size={13} />
             </motion.button>
           ) : null}
-          {song.isFavorite || song.series === "Phoenix 2" ? (
+          {song.isFavorite || song.isPremium || song.series === "Phoenix 2" ? (
             <motion.div
               className="absolute right-2 top-2 z-20 flex items-center gap-1"
               initial={{ opacity: 0, y: -8, rotate: 2 }}
@@ -174,6 +174,16 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
               {song.isFavorite ? (
                 <span className="song-favorite-badge inline-flex h-6 min-w-6 items-center justify-center bg-[#fff4cf]/95 px-1 text-[#9b6412] shadow-[0_10px_24px_rgba(155,100,18,0.22)]">
                   <Star aria-hidden="true" fill="currentColor" size={13} />
+                </span>
+              ) : null}
+              {song.isPremium ? (
+                <span
+                  aria-label="Premium song"
+                  className="inline-flex h-6 items-center gap-1 bg-[#171916]/95 px-2 text-[10px] font-black uppercase text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)]"
+                  title="Premium song"
+                >
+                  <Crown aria-hidden="true" size={12} />
+                  Premium
                 </span>
               ) : null}
               {song.series === "Phoenix 2" ? (

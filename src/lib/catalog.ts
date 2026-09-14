@@ -7,6 +7,7 @@ import { cache } from "react";
 
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, sortPiuSeries } from "@/lib/catalog-version";
+import { isPremiumSong } from "@/lib/premium-songs";
 import type {
   CatalogFilterOptions,
   CatalogEditorPayload,
@@ -655,6 +656,7 @@ function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersi
     series,
     seriesSongCount: series && stats ? stats.seriesCounts.get(statsKey(series)) ?? null : null,
     tags: Array.isArray(document.tags) ? document.tags.map(cleanText).filter(Boolean).slice(0, 12) : [],
+    isPremium: isPremiumSong(title),
   };
 }
 
@@ -1027,6 +1029,7 @@ async function fallbackSongs(version: PiuSeriesId, offset = 0, limit = PAGE_SIZE
       series: version === "phoenix2" ? "Phoenix 2" : "Phoenix",
       seriesSongCount: null,
       tags: [],
+      isPremium: false,
     }));
   } catch {
     return [];

@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ArrowLeft, Disc3, Folder, History, LoaderCircle, Maximize2, Minimize2, Music, Music2, Plus, Star, Tag } from "lucide-react";
+import { Activity, ArrowLeft, Crown, Disc3, Folder, History, LoaderCircle, Maximize2, Minimize2, Music, Music2, Plus, Star, Tag } from "lucide-react";
 import { MotionConfig, motion, useScroll, useSpring, useTransform } from "motion/react";
 import Image from "next/image";
 import Link from "next/link";
@@ -366,10 +366,16 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
         >
           <div className="w-28 shrink-0 lg:hidden">{jacketImage}</div>
           <motion.div className="min-w-0 flex-1" layout transition={{ type: "spring", stiffness: 190, damping: 28, mass: 0.9 }}>
-            <motion.div className="flex items-start gap-3" layout transition={{ type: "spring", stiffness: 190, damping: 28, mass: 0.9 }}>
+            <motion.div className="flex flex-wrap items-start gap-3" layout transition={{ type: "spring", stiffness: 190, damping: 28, mass: 0.9 }}>
               <motion.h1 className="text-5xl font-black leading-none tracking-normal text-[#11130f] sm:text-7xl" layout>
                 {currentSong.title}
               </motion.h1>
+              {currentSong.isPremium ? (
+                <span aria-label="Premium song" className="mt-1 inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap bg-[#171916] px-2.5 text-[11px] font-black uppercase text-[#ffca6d] sm:mt-2 sm:h-8 sm:px-3 sm:text-xs" title="Premium song">
+                  <Crown aria-hidden="true" size={14} />
+                  Premium
+                </span>
+              ) : null}
             </motion.div>
             <motion.p
               className="mt-4 text-2xl font-bold text-[#4f5849]"
