@@ -286,6 +286,7 @@ export function SongExplorer({
       } else {
         appendSearchRef.current = false;
         lastAutoLoadedCursorRef.current = null;
+        setNextCursor(null);
       }
       const isRecentQuery = searchQuery.trim().toLowerCase() === "recent";
       const requestFilters =
