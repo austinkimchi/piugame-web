@@ -166,7 +166,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
           ) : null}
           {song.isFavorite || song.isPremium || song.series === "Phoenix 2" ? (
             <motion.div
-              className="pointer-events-none absolute right-2 top-2 z-20 flex items-center gap-1"
+              className="pointer-events-none absolute right-2 top-2 z-20 flex flex-col items-end gap-1 sm:flex-row sm:items-center"
               initial={{ opacity: 0, y: -8, rotate: 2 }}
               animate={{ opacity: 1, y: 0, rotate: 0 }}
               transition={{ delay: entryDelay + 0.16, type: "spring", stiffness: 420, damping: 22 }}
@@ -179,11 +179,11 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
               {song.isPremium ? (
                 <span
                   aria-label="Premium song"
-                  className="inline-flex h-6 items-center gap-1 bg-[#171916]/95 px-2 text-[10px] font-black uppercase text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)]"
+                  className="inline-flex h-6 w-6 items-center justify-center gap-1 bg-[#171916]/95 px-0 text-[10px] font-black uppercase text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)] sm:w-auto sm:px-2"
                   title="Premium song"
                 >
                   <Crown aria-hidden="true" size={12} />
-                  Premium
+                  <span className="hidden sm:inline">Premium</span>
                 </span>
               ) : null}
               {song.series === "Phoenix 2" ? (
