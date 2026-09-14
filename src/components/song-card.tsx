@@ -166,7 +166,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
           ) : null}
           {song.isFavorite || song.isPremium || song.series === "Phoenix 2" ? (
             <motion.div
-              className="pointer-events-none absolute right-2 top-2 z-20 flex flex-col items-end gap-1 sm:flex-row sm:items-center"
+              className="pointer-events-none absolute right-2 top-2 z-20 flex flex-col items-end gap-1 xl:flex-row xl:items-center"
               initial={{ opacity: 0, y: -8, rotate: 2 }}
               animate={{ opacity: 1, y: 0, rotate: 0 }}
               transition={{ delay: entryDelay + 0.16, type: "spring", stiffness: 420, damping: 22 }}
@@ -179,20 +179,20 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
               {song.isPremium ? (
                 <span
                   aria-label={song.series === "Phoenix 2" ? "Premium song, new in Phoenix 2" : "Premium song"}
-                  className="inline-flex h-6 w-8 items-center justify-center gap-0.5 bg-[#171916]/95 px-0 text-[10px] font-black uppercase text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)] sm:w-auto sm:gap-1 sm:px-2"
+                  className="relative inline-flex h-6 w-6 items-center justify-center gap-1 bg-[#171916]/95 px-0 text-[10px] font-black uppercase text-[#ffca6d] shadow-[0_10px_24px_rgba(23,25,22,0.24)] xl:w-auto xl:px-2"
                   title={song.series === "Phoenix 2" ? "Premium song, new in Phoenix 2" : "Premium song"}
                 >
                   <Crown aria-hidden="true" size={12} />
                   {song.series === "Phoenix 2" ? (
-                    <span aria-hidden="true" className="inline-flex size-3 items-center justify-center bg-[#e3412f] text-[8px] leading-none text-white sm:hidden">
+                    <span aria-hidden="true" className="absolute -right-1 -top-1 inline-flex size-3 items-center justify-center bg-[#e3412f] text-[8px] leading-none text-white">
                       N
                     </span>
                   ) : null}
-                  <span className="hidden sm:inline">Premium</span>
+                  <span className="hidden xl:inline">Premium</span>
                 </span>
               ) : null}
               {song.series === "Phoenix 2" ? (
-                <span className={`song-new-badge bg-[#e3412f]/95 px-2 py-1 text-[11px] font-black uppercase text-white ${song.isPremium ? "hidden sm:inline-flex" : ""}`}>
+                <span className={`song-new-badge bg-[#e3412f]/95 px-2 py-1 text-[11px] font-black uppercase text-white ${song.isPremium ? "hidden" : ""}`}>
                   NEW
                 </span>
               ) : null}
