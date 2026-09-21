@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence } from "../src/lib/song-recommendation.ts";
+import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence } from "../src/lib/song-recommendation.ts";
 import type { ChartSelectionEvidence } from "../src/lib/chart-recommendation.ts";
 
 const userEvidence: ChartSelectionEvidence[] = [
@@ -103,6 +103,23 @@ test("maps suffixed and level 28 charts to the catalog plus-level filter", () =>
 
   assert.equal(suffixed[0]?.chartToken, "S20-");
   assert.equal(level28[0]?.chartToken, "S28");
+});
+
+test("removes stale population charts before selecting one chart per song", () => {
+  const songs = [{ title: "Rerated Pick", chartSummary: ["S18"] }];
+  const catalogCandidates = recommendationCandidatesFromCatalog(songs);
+  const populationCandidates = populationCandidatesInCatalog([
+    candidate("Rerated Pick", "17", 500, 490),
+    candidate("Rerated Pick", "18", 20, 15),
+  ], songs);
+  const ranked = rankChartRecommendations({
+    userEvidence,
+    preferredModes: ["S"],
+    candidates: [...catalogCandidates, ...populationCandidates],
+  });
+
+  assert.deepEqual(populationCandidates.map((item) => item.level), ["18"]);
+  assert.equal(ranked[0]?.chartToken, "S18");
 });
 
 function result(songName: string, level: string, bestScore: number): ChartSelectionEvidence {

@@ -15,7 +15,7 @@ import { performancePlayKey } from "@/lib/performance-play-key";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { startsNewSession } from "@/lib/performance-session";
 import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
-import { rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
+import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
@@ -637,9 +637,10 @@ export async function getPerformanceChartRecommendations(
   ]);
 
   const catalogCandidates = recommendationCandidatesFromCatalog(songs);
+  const currentPopulationCandidates = populationCandidatesInCatalog(candidates, songs);
 
   return rankChartRecommendations({
-    candidates: [...catalogCandidates, ...candidates],
+    candidates: [...catalogCandidates, ...currentPopulationCandidates],
     userEvidence,
     preferredModes,
     levels,

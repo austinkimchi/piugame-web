@@ -26,6 +26,21 @@ export function recommendationCandidatesFromCatalog(
   }));
 }
 
+export function populationCandidatesInCatalog(
+  candidates: PopulationChartEvidence[],
+  songs: Array<{ title: string; chartSummary: string[] }>,
+): PopulationChartEvidence[] {
+  const currentCharts = new Set(recommendationCandidatesFromCatalog(songs).flatMap((candidate) => {
+    const chartToken = catalogChartTokenFromPlay(candidate);
+    return chartToken ? [`${normalizeSongName(candidate.songName)}:${chartToken.toUpperCase()}`] : [];
+  }));
+
+  return candidates.filter((candidate) => {
+    const chartToken = catalogChartTokenFromPlay(candidate);
+    return chartToken !== null && currentCharts.has(`${normalizeSongName(candidate.songName)}:${chartToken.toUpperCase()}`);
+  });
+}
+
 export function rankChartRecommendations(args: {
   candidates: PopulationChartEvidence[];
   userEvidence: ChartSelectionEvidence[];
