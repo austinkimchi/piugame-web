@@ -1,18 +1,35 @@
-export function homeUpscoreMetric(args: {
-  lastSyncedAt: string | null;
-  recentNewScores: number;
+export interface HomeUpscoreMetric {
+  key: "today" | "week" | "month" | "all-time";
+  label: string;
+  value: number;
+}
+
+export function homeUpscoreMetrics(args: {
+  passedMaps: number | null;
+  upscoresThisMonth: number;
   upscoresThisWeek: number;
   upscoresToday: number;
-  now?: number;
-}): { label: string; value: number } {
-  const syncedAt = args.lastSyncedAt ? new Date(args.lastSyncedAt).getTime() : Number.NaN;
-  const age = (args.now ?? Date.now()) - syncedAt;
+}): HomeUpscoreMetric[] {
+  const metrics: HomeUpscoreMetric[] = [
+    { key: "today", label: "Upscores today", value: args.upscoresToday },
+    { key: "week", label: "Upscores this week", value: args.upscoresThisWeek },
+    { key: "month", label: "Upscores this month", value: args.upscoresThisMonth },
+    { key: "all-time", label: "All-time passed maps", value: args.passedMaps ?? 0 },
+  ];
+  return metrics.filter((metric) => metric.value > 0);
+}
 
-  if (Number.isFinite(age) && age >= 0 && age <= 60 * 60 * 1000) {
-    return { label: "Upscores today", value: args.upscoresToday };
+export function homeUpscoreMetric(args: Parameters<typeof homeUpscoreMetrics>[0]): HomeUpscoreMetric {
+  const metrics = homeUpscoreMetrics(args);
+
+  if (args.upscoresToday > 5) {
+    return metrics.find((metric) => metric.key === "today")!;
   }
-  if (Number.isFinite(age) && age >= 0 && age <= 24 * 60 * 60 * 1000) {
-    return { label: "Recent new scores", value: args.recentNewScores };
+  if (args.upscoresThisWeek > 0) {
+    return metrics.find((metric) => metric.key === "week")!;
   }
-  return { label: "Upscores this week", value: args.upscoresThisWeek };
+  if (args.upscoresThisMonth > 0) {
+    return metrics.find((metric) => metric.key === "month")!;
+  }
+  return metrics.find((metric) => metric.key === "all-time") ?? { key: "all-time", label: "All-time passed maps", value: args.passedMaps ?? 0 };
 }

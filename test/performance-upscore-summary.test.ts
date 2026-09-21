@@ -1,19 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { homeUpscoreMetric } from "../src/lib/performance-upscore-summary.ts";
+import { homeUpscoreMetric, homeUpscoreMetrics } from "../src/lib/performance-upscore-summary.ts";
 
-const now = Date.parse("2026-08-18T22:00:00.000Z");
-const base = { upscoresToday: 2, recentNewScores: 4, upscoresThisWeek: 7, now };
+const base = { passedMaps: 428, upscoresThisMonth: 21, upscoresThisWeek: 7, upscoresToday: 2 };
 
-test("uses today's upscores after a current sync", () => {
-  assert.deepEqual(homeUpscoreMetric({ ...base, lastSyncedAt: new Date(now - 60 * 60 * 1000).toISOString() }), { label: "Upscores today", value: 2 });
+test("uses today's upscores when there are more than five", () => {
+  assert.deepEqual(homeUpscoreMetric({ ...base, upscoresToday: 6 }), { key: "today", label: "Upscores today", value: 6 });
 });
 
-test("uses recent scores after a recent sync", () => {
-  assert.deepEqual(homeUpscoreMetric({ ...base, lastSyncedAt: new Date(now - 2 * 60 * 60 * 1000).toISOString() }), { label: "Recent new scores", value: 4 });
+test("falls back from a quiet day to the week, month, then all-time clears", () => {
+  assert.deepEqual(homeUpscoreMetric(base), { key: "week", label: "Upscores this week", value: 7 });
+  assert.deepEqual(homeUpscoreMetric({ ...base, upscoresThisWeek: 0 }), { key: "month", label: "Upscores this month", value: 21 });
+  assert.deepEqual(homeUpscoreMetric({ ...base, upscoresThisWeek: 0, upscoresThisMonth: 0 }), { key: "all-time", label: "All-time passed maps", value: 428 });
 });
 
-test("uses the weekly total when the sync is stale", () => {
-  assert.deepEqual(homeUpscoreMetric({ ...base, lastSyncedAt: new Date(now - 25 * 60 * 60 * 1000).toISOString() }), { label: "Upscores this week", value: 7 });
+test("only includes nonzero metrics in the click cycle", () => {
+  assert.deepEqual(homeUpscoreMetrics({ ...base, upscoresThisWeek: 0 }), [
+    { key: "today", label: "Upscores today", value: 2 },
+    { key: "month", label: "Upscores this month", value: 21 },
+    { key: "all-time", label: "All-time passed maps", value: 428 },
+  ]);
+});
+
+test("labels an entirely empty history as all-time passed maps", () => {
+  assert.deepEqual(homeUpscoreMetric({ passedMaps: 0, upscoresThisMonth: 0, upscoresThisWeek: 0, upscoresToday: 0 }), {
+    key: "all-time",
+    label: "All-time passed maps",
+    value: 0,
+  });
 });

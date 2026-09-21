@@ -49,12 +49,12 @@ export default async function Home() {
           averageBestScore={performance.totals.averageBestScore}
           averageBestScoreChange24Hours={performance.totals.averageBestScoreChange24Hours}
           canSync={Boolean(user.piuProfile && performance.mongoReady)}
-          lastSyncedAt={performance.profile?.lastSyncedAt ?? null}
+          passedMaps={performance.profile?.clearCount ?? null}
           pumbility={performance.profile?.pumbilityScore ?? null}
           pumbilityChange24Hours={performance.totals.pumbilityChange24Hours}
-          recentNewScores={performance.totals.recentNewScores}
           recentlyPlayed={performance.totals.recentlyPlayed}
           synced={Boolean(performance.profile?.lastSyncedAt)}
+          upscoresThisMonth={performance.totals.upscoresThisMonth}
           upscoresThisWeek={performance.totals.upscoresThisWeek}
           upscoresToday={performance.totals.upscoresToday}
         />
@@ -80,12 +80,12 @@ export default async function Home() {
                 averageBestScore: performance.totals.averageBestScore,
                 averageBestScoreChange24Hours: performance.totals.averageBestScoreChange24Hours,
                 canSync: false,
-                lastSyncedAt: performance.profile?.lastSyncedAt ?? null,
+                passedMaps: performance.profile?.clearCount ?? null,
                 pumbility: performance.profile?.pumbilityScore ?? null,
                 pumbilityChange24Hours: performance.totals.pumbilityChange24Hours,
-                recentNewScores: performance.totals.recentNewScores,
                 recentlyPlayed: performance.totals.recentlyPlayed,
                 synced: false,
+                upscoresThisMonth: performance.totals.upscoresThisMonth,
                 upscoresThisWeek: performance.totals.upscoresThisWeek,
                 upscoresToday: performance.totals.upscoresToday,
               }

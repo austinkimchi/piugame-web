@@ -39,12 +39,12 @@ interface SongExplorerProps {
     averageBestScore: number | null;
     averageBestScoreChange24Hours: number | null;
     canSync: boolean;
-    lastSyncedAt: string | null;
+    passedMaps: number | null;
     pumbility: number | null;
     pumbilityChange24Hours: number | null;
-    recentNewScores: number;
     recentlyPlayed: number;
     synced: boolean;
+    upscoresThisMonth: number;
     upscoresThisWeek: number;
     upscoresToday: number;
   };

@@ -153,6 +153,7 @@ export interface PerformanceDashboard {
     trackedPumbilityCharts: number;
     upscores: number;
     upscoresThisWeek: number;
+    upscoresThisMonth: number;
     upscoresToday: number;
     recentNewScores: number;
     averageBestScore: number | null;
@@ -403,9 +404,10 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
   const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const startOfWeek = new Date(startOfToday);
   startOfWeek.setUTCDate(startOfWeek.getUTCDate() - 6);
+  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const upscoreFilter = { userId, piuVersion, lastUpscoredAt: { $ne: null } };
-  const [profile, recentPlays, topCharts, trackedPlays, trackedCharts, trackedPumbilityCharts, upscoreCharts, upscoresThisWeek, upscoresToday, recentNewScores, averageScores, dailyBaseline, recentlyPlayed] = await Promise.all([
+  const [profile, recentPlays, topCharts, trackedPlays, trackedCharts, trackedPumbilityCharts, upscoreCharts, upscoresThisWeek, upscoresThisMonth, upscoresToday, recentNewScores, averageScores, dailyBaseline, recentlyPlayed] = await Promise.all([
     profiles.findOne({ userId, piuVersion }),
     plays.find({ userId, piuVersion }).sort(recentPlaySort()).limit(PERFORMANCE_RECENT_PLAYS_PAGE_SIZE).toArray(),
     chartStats.find(topChartsFilter(userId, piuVersion, "pumbility")).sort(topChartsSort("pumbility")).limit(PERFORMANCE_TOP_CHARTS_PAGE_SIZE).toArray(),
@@ -414,6 +416,7 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
     chartStats.countDocuments(topChartsFilter(userId, piuVersion, "pumbility")),
     chartStats.countDocuments(upscoreFilter),
     chartStats.countDocuments({ ...upscoreFilter, lastUpscoredAt: { $gte: startOfWeek } }),
+    chartStats.countDocuments({ ...upscoreFilter, lastUpscoredAt: { $gte: startOfMonth } }),
     chartStats.countDocuments({ ...upscoreFilter, lastUpscoredAt: { $gte: startOfToday } }),
     chartStats.countDocuments({ ...upscoreFilter, lastUpscoredAt: { $gte: twentyFourHoursAgo } }),
     chartStats
@@ -438,6 +441,7 @@ export async function getPerformanceDashboard(userIdInput: string | null): Promi
       trackedPumbilityCharts,
       upscores: upscoreCharts,
       upscoresThisWeek,
+      upscoresThisMonth,
       upscoresToday,
       recentNewScores,
       averageBestScore,
@@ -1529,6 +1533,7 @@ function emptyDashboard(mongoReady: boolean): PerformanceDashboard {
       trackedPumbilityCharts: 0,
       upscores: 0,
       upscoresThisWeek: 0,
+      upscoresThisMonth: 0,
       upscoresToday: 0,
       recentNewScores: 0,
       averageBestScore: null,

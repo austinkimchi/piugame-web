@@ -2,9 +2,9 @@
 
 import { BarChart3, Clock3, LockKeyhole, TrendingUp, Zap } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
-import { homeUpscoreMetric } from "@/lib/performance-upscore-summary";
+import { homeUpscoreMetric, homeUpscoreMetrics } from "@/lib/performance-upscore-summary";
 
 interface HomePerformanceSummaryProps {
   averageBestScore: number | null;
@@ -14,15 +14,24 @@ interface HomePerformanceSummaryProps {
   pumbilityChange24Hours: number | null;
   recentlyPlayed: number;
   synced: boolean;
-  lastSyncedAt: string | null;
-  recentNewScores: number;
+  passedMaps: number | null;
+  upscoresThisMonth: number;
   upscoresThisWeek: number;
   upscoresToday: number;
 }
 
-export function HomePerformanceSummary({ averageBestScore, averageBestScoreChange24Hours, canSync, lastSyncedAt, pumbility, pumbilityChange24Hours, recentNewScores, recentlyPlayed, synced, upscoresThisWeek, upscoresToday }: HomePerformanceSummaryProps) {
-  const upscoreMetric = homeUpscoreMetric({ lastSyncedAt, recentNewScores, upscoresThisWeek, upscoresToday });
+export function HomePerformanceSummary({ averageBestScore, averageBestScoreChange24Hours, canSync, passedMaps, pumbility, pumbilityChange24Hours, recentlyPlayed, synced, upscoresThisMonth, upscoresThisWeek, upscoresToday }: HomePerformanceSummaryProps) {
+  const upscoreArgs = useMemo(() => ({ passedMaps, upscoresThisMonth, upscoresThisWeek, upscoresToday }), [passedMaps, upscoresThisMonth, upscoresThisWeek, upscoresToday]);
+  const defaultUpscoreMetric = homeUpscoreMetric(upscoreArgs);
+  const upscoreMetrics = homeUpscoreMetrics(upscoreArgs);
+  const [selectedUpscoreKey, setSelectedUpscoreKey] = useState(defaultUpscoreMetric.key);
+  const upscoreMetric = upscoreMetrics.find((metric) => metric.key === selectedUpscoreKey) ?? defaultUpscoreMetric;
   const openRecentCatalog = () => window.dispatchEvent(new Event("piu:open-recent-catalog"));
+  const showNextUpscoreMetric = () => {
+    if (upscoreMetrics.length < 2) return;
+    const currentIndex = upscoreMetrics.findIndex((metric) => metric.key === upscoreMetric.key);
+    setSelectedUpscoreKey(upscoreMetrics[(currentIndex + 1) % upscoreMetrics.length].key);
+  };
 
   return (
     <section className="border-b border-[#d9ded2] bg-[#fbfcf7]" aria-label="Performance summary">
@@ -31,7 +40,7 @@ export function HomePerformanceSummary({ averageBestScore, averageBestScoreChang
           <div className={synced ? "grid grid-cols-1 divide-y divide-[#e3e7dd] sm:grid-cols-2 sm:divide-x sm:divide-y lg:grid-cols-4 lg:divide-y-0" : "pointer-events-none grid select-none grid-cols-1 blur-sm sm:grid-cols-2 lg:grid-cols-4"} aria-hidden={!synced}>
             <SummaryMetric detail={format24HourChange(pumbilityChange24Hours)} icon={<TrendingUp aria-hidden="true" size={17} />} label="Pumbility" value={formatNumber(pumbility)} />
             <SummaryMetric detail={format24HourChange(averageBestScoreChange24Hours)} icon={<BarChart3 aria-hidden="true" size={17} />} label="Average best" value={formatNumber(averageBestScore)} />
-            <SummaryMetric icon={<Zap aria-hidden="true" size={17} />} label={upscoreMetric.label} value={formatNumber(upscoreMetric.value)} />
+            <SummaryMetric onClick={upscoreMetrics.length > 1 ? showNextUpscoreMetric : undefined} icon={<Zap aria-hidden="true" size={17} />} label={upscoreMetric.label} value={formatNumber(upscoreMetric.value)} />
             <SummaryMetric onClick={openRecentCatalog} icon={<Clock3 aria-hidden="true" size={17} />} label="Recently played" value={formatNumber(recentlyPlayed)} />
           </div>
           {!synced ? (
