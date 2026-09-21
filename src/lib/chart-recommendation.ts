@@ -64,6 +64,13 @@ export function recommendChartToken({
     return highScores[0].chart.token;
   }
 
+  const latestAttempt = evidenceForSong
+    .filter(({ evidence }) => timestamp(evidence.latestPlayedAt) !== Number.MIN_SAFE_INTEGER)
+    .sort((left, right) => timestamp(right.evidence.latestPlayedAt) - timestamp(left.evidence.latestPlayedAt))[0];
+  if (latestAttempt) {
+    return latestAttempt.chart.token;
+  }
+
   const skillTargets = estimateSkillTargets(skillEvidence);
   const modeOrder = Array.from(new Set([
     ...preferredModes,

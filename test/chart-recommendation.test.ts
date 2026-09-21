@@ -57,12 +57,30 @@ test("uses the highest score when no play is recent", () => {
   );
 });
 
-test("does not guess without recent, high-score, or skill evidence", () => {
+test("prefers a previously attempted chart over an unplayed skill-level chart", () => {
+  assert.equal(
+    recommendChartToken({
+      songName: "We Love Your Step",
+      chartTokens: ["S18", "S20"],
+      songEvidence: [result("We Love Your Step", "Single", "18", null, "2026-08-01T12:00:00.000Z")],
+      skillEvidence: [
+        result("A", "Single", "20", 950_000),
+        result("B", "Single", "20", 940_000),
+        result("C", "Single", "20", 930_000),
+      ],
+      preferredModes: ["S"],
+      now: NOW,
+    }),
+    "S18",
+  );
+});
+
+test("does not guess without play history or skill evidence", () => {
   assert.equal(
     recommendChartToken({
       songName: "Target Song",
       chartTokens: ["S15", "S17"],
-      songEvidence: [result("Target Song", "Single", "15", 850_000, "2026-08-01T12:00:00.000Z")],
+      songEvidence: [],
       skillEvidence: [],
       now: NOW,
     }),
@@ -78,7 +96,7 @@ function result(
   songName: string,
   mode: string,
   level: string,
-  bestScore: number,
+  bestScore: number | null,
   latestPlayedAt: string | null = null,
 ): ChartSelectionEvidence {
   return {
