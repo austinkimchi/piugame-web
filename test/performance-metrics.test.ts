@@ -8,9 +8,10 @@ test("rounds a tracked average best score for display and snapshots", () => {
   assert.equal(roundedAverageBestScore(undefined), null);
 });
 
-test("only reports a metric change when both current and baseline snapshots exist", () => {
+test("only reports a non-zero metric change when both snapshots exist", () => {
   assert.equal(metricChangeSince(1_234, 1_200), 34);
   assert.equal(metricChangeSince(1_200, 1_234), -34);
+  assert.equal(metricChangeSince(1_200, 1_200), null);
   assert.equal(metricChangeSince(1_200, null), null);
   assert.equal(metricChangeSince(null, 1_200), null);
 });

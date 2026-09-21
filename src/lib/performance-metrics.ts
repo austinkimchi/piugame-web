@@ -7,5 +7,6 @@ export function metricChangeSince(current: number | null, baseline: number | nul
     return null;
   }
 
-  return current - baseline;
+  const change = current - baseline;
+  return change === 0 ? null : change;
 }
