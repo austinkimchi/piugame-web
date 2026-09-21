@@ -10,6 +10,7 @@ import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { performanceChartTokenCandidates, performanceChartTokenCandidatesFromPlay, performanceChartTokenKey } from "@/lib/performance-chart-key";
 import { piuTimestampToDate } from "@/lib/performance-format";
+import { PERFORMANCE_CHART_STATS_POPULATION_INDEX } from "@/lib/performance-indexes";
 import { performancePlayKey } from "@/lib/performance-play-key";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { startsNewSession } from "@/lib/performance-session";
@@ -312,6 +313,7 @@ async function ensurePerformanceIndexes(args: {
     args.plays.createIndex({ userId: 1, piuVersion: 1, chartToken: 1, playedAt: -1 }),
     args.chartStats.createIndex({ userId: 1, piuVersion: 1, chartToken: 1 }, { unique: true }),
     args.chartStats.createIndex({ userId: 1, piuVersion: 1, songName: 1 }),
+    args.chartStats.createIndex(PERFORMANCE_CHART_STATS_POPULATION_INDEX),
     args.chartStats.createIndex({ userId: 1, piuVersion: 1, bestScore: -1 }),
     args.chartStats.createIndex({ userId: 1, piuVersion: 1, topPlayRank: 1, bestScore: -1 }),
     args.chartStats.createIndex({ userId: 1, piuVersion: 1, updatedAt: -1 }),
