@@ -443,12 +443,11 @@ export function SongExplorer({
     function openRecommendations() {
       queryRef.current = "recommendation";
       setQuery("recommendation");
-      submitSearch("recommendation");
     }
 
     window.addEventListener("piu:open-recommendations", openRecommendations);
     return () => window.removeEventListener("piu:open-recommendations", openRecommendations);
-  }, [submitSearch]);
+  }, []);
 
   const updateSongFavorite = useCallback((songSlug: string, isFavorite: boolean) => {
     setFavoriteSlugs((current) => {

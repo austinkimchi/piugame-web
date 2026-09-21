@@ -20,6 +20,7 @@ export function rankChartRecommendations(args: {
   candidates: PopulationChartEvidence[];
   userEvidence: ChartSelectionEvidence[];
   preferredModes: ChartMode[];
+  levels?: string[];
   explorationSeed?: string;
   limit?: number;
 }): RankedChartRecommendation[] {
@@ -30,6 +31,7 @@ export function rankChartRecommendations(args: {
         .sort((left, right) => right[1].sampleSize - left[1].sampleSize)
         .map(([mode]) => mode);
   const playedSongs = new Set(args.userEvidence.map((evidence) => normalizeSongName(evidence.songName)));
+  const levels = new Set((args.levels ?? []).map((level) => level.trim()).filter(Boolean));
   const mergedCandidates = mergePopulationEvidence(args.candidates);
   const maxAttempts = Math.max(1, ...mergedCandidates.map((candidate) => candidate.attempts));
   const ranked: RankedChartRecommendation[] = [];
@@ -40,6 +42,7 @@ export function rankChartRecommendations(args: {
     const level = Number.parseInt(String(candidate.level ?? ""), 10);
     const target = mode ? targets.get(mode) : undefined;
     if (!chartToken || !mode || !modes.includes(mode) || !target || !Number.isFinite(level)) continue;
+    if (levels.size > 0 && !levels.has(String(level))) continue;
     if (playedSongs.has(normalizeSongName(candidate.songName))) continue;
 
     const levelDelta = level - target.level;

@@ -607,6 +607,7 @@ export async function getPerformanceChartRecommendations(
   piuVersion: PiuCatalogVersion,
   songs: Array<Pick<PublicSong, "title" | "chartSummary">>,
   preferredModes: ChartMode[],
+  levels: string[] = [],
   limit = 1000,
 ): Promise<RankedChartRecommendation[]> {
   const userId = objectIdFromString(userIdInput);
@@ -643,6 +644,7 @@ export async function getPerformanceChartRecommendations(
     candidates: [...catalogCandidates, ...candidates],
     userEvidence,
     preferredModes,
+    levels,
     explorationSeed: userId.toHexString(),
     limit,
   });

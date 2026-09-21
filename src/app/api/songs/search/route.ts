@@ -110,8 +110,6 @@ export async function GET(request: NextRequest) {
     const version = normalizePiuGameVersion(user.preferences.piuGameVersion);
     const preferredModes = chartModesFromFilters(chartFilters);
     const candidateSongs = await getRecommendationCandidateSongs(version);
-    const ranked = await getPerformanceChartRecommendations(user.id, version, candidateSongs, preferredModes.length > 0 ? preferredModes : ["S"]);
-    const candidatesByTitle = new Map(candidateSongs.map((song) => [songLookupKey(song.title), song]));
     const filters = {
       folders: parseList(request.nextUrl.searchParams, "folder"),
       series: parseList(request.nextUrl.searchParams, "series"),
@@ -119,6 +117,14 @@ export async function GET(request: NextRequest) {
       charts: chartFilters,
       levelMode: parseLevelMode(request.nextUrl.searchParams.get("levelMode")),
     };
+    const ranked = await getPerformanceChartRecommendations(
+      user.id,
+      version,
+      candidateSongs,
+      preferredModes.length > 0 ? preferredModes : ["S"],
+      filters.levels,
+    );
+    const candidatesByTitle = new Map(candidateSongs.map((song) => [songLookupKey(song.title), song]));
     const recommendations = ranked.flatMap((recommendation) => {
       const song = candidatesByTitle.get(songLookupKey(recommendation.songName));
       const chartToken = song?.chartSummary.find((chart) => chart.toUpperCase() === recommendation.chartToken.toUpperCase()) ?? null;

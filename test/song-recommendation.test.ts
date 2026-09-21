@@ -64,6 +64,21 @@ test("uses a stable exploration seed instead of alphabetical cold-start ordering
   assert.notDeepEqual(first.map((item) => item.songName), ["Alpha", "Bravo", "Charlie", "Delta"]);
 });
 
+test("applies level filters before choosing one chart per song", () => {
+  const ranked = rankChartRecommendations({
+    userEvidence,
+    preferredModes: ["S"],
+    levels: ["16"],
+    candidates: [
+      candidate("Multi-chart Pick", "16", 20, 15),
+      candidate("Multi-chart Pick", "17", 100, 90),
+    ],
+  });
+
+  assert.equal(ranked[0]?.songName, "Multi-chart Pick");
+  assert.equal(ranked[0]?.chartToken, "S16");
+});
+
 function result(songName: string, level: string, bestScore: number): ChartSelectionEvidence {
   return { songName, mode: "Single", level, bestScore, latestPlayedAt: null };
 }
