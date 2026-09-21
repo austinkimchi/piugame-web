@@ -1654,7 +1654,11 @@ function songDetailHref(song: PublicSong, version: PiuSeriesId, chartToken: stri
 function sameSongSequence(left: PublicSong[], right: PublicSong[]): boolean {
   return left.length === right.length && left.every((song, index) => {
     const other = right[index];
-    return song.slug === other?.slug && song.chartSummary.join("|") === other.chartSummary.join("|");
+    return song.slug === other?.slug
+      && song.chartSummary.join("|") === other.chartSummary.join("|")
+      && song.recentPlay?.chartToken === other.recentPlay?.chartToken
+      && song.recentPlay?.score === other.recentPlay?.score
+      && song.recentPlay?.grade === other.recentPlay?.grade;
   });
 }
 

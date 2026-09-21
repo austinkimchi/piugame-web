@@ -59,6 +59,11 @@ export interface PublicSong {
   isPremium: boolean;
   isFavorite?: boolean;
   recommendedChartToken?: string | null;
+  recentPlay?: {
+    chartToken: string;
+    score: number | null;
+    grade: string | null;
+  };
 }
 
 export interface CatalogEditorPayload {

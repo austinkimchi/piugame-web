@@ -6,6 +6,7 @@ import { Crown, Radio, Star } from "lucide-react";
 import { motion } from "motion/react";
 import { type MouseEvent, useState } from "react";
 
+import { formatPerformanceGrade, isFailedPerformanceGrade } from "@/lib/performance-format";
 import type { PublicSong } from "@/lib/types";
 
 const CHART_GRID_COLUMNS = 4;
@@ -30,11 +31,12 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
   const imageLoaded = !song.imageUrl || loadedImageUrl === song.imageUrl;
   const imageFailed = Boolean(song.imageUrl && failedImageUrl === song.imageUrl);
   const imageVisible = !song.imageUrl || imageFailed || imageLoaded;
+  const visibleCharts = song.recentPlay ? [song.recentPlay.chartToken] : song.chartSummary;
   const chartGridSlots = Math.max(
     MIN_CHART_GRID_SLOTS,
-    Math.ceil(song.chartSummary.length / CHART_GRID_COLUMNS) * CHART_GRID_COLUMNS,
+    Math.ceil(visibleCharts.length / CHART_GRID_COLUMNS) * CHART_GRID_COLUMNS,
   );
-  const emptyChartSlots = chartGridSlots - song.chartSummary.length;
+  const emptyChartSlots = chartGridSlots - visibleCharts.length;
   const titleSizeClass =
     song.title.length > EXTRA_LONG_TITLE_LENGTH
       ? "text-[11px] sm:text-xs"
@@ -149,7 +151,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
             animate={isPreviewActive ? { opacity: [0.16, 0.48, 0.16] } : { opacity: 0 }}
             transition={{ duration: 1.1, repeat: isPreviewActive ? Infinity : 0, ease: "easeInOut" }}
           />
-          {song.previewAvailable ? (
+          {song.previewAvailable && !song.recentPlay ? (
             <motion.button
               aria-label={isPreviewActive ? `Stop preview for ${song.title}` : previewEnabled ? `Play preview for ${song.title}` : `Song previews are muted for ${song.title}`}
               className={`audio-pill absolute left-2 top-2 z-20 inline-flex size-6 items-center justify-center shadow-[0_10px_24px_rgba(30,34,26,0.18)] disabled:cursor-not-allowed md:size-8 ${
@@ -169,7 +171,20 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
               <Radio size={13} />
             </motion.button>
           ) : null}
-          {song.isFavorite || song.isPremium || isNew ? (
+          {song.recentPlay ? (
+            <>
+              <span
+                className={`pointer-events-none absolute left-2 top-2 z-20 inline-flex h-6 items-center bg-white/95 px-2 text-[11px] font-black uppercase shadow-[0_8px_20px_rgba(23,25,22,0.2)] md:h-8 md:text-xs ${
+                  isFailedPerformanceGrade(song.recentPlay.grade) ? "text-[#b73529]" : "text-[#171916]"
+                }`}
+              >
+                {formatPerformanceGrade(song.recentPlay.grade)}
+              </span>
+              <span className="pointer-events-none absolute right-2 top-2 z-20 inline-flex h-6 items-center bg-[#171916]/95 px-2 font-mono text-[10px] font-black tabular-nums text-white shadow-[0_8px_20px_rgba(23,25,22,0.24)] md:h-8 md:text-xs">
+                {formatRecentScore(song.recentPlay.score)}
+              </span>
+            </>
+          ) : song.isFavorite || song.isPremium || isNew ? (
             <motion.div
               className="pointer-events-none absolute right-2 top-2 z-20 grid grid-cols-[auto_auto] justify-items-end gap-0.5 md:top-1 xl:top-2 xl:flex xl:items-center xl:gap-1"
               initial={{ opacity: 0, y: -8, rotate: 2 }}
@@ -208,16 +223,16 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
               ) : null}
             </motion.div>
           ) : null}
-          {song.chartSummary.length > 0 ? (
+          {visibleCharts.length > 0 ? (
             <>
               <span className="pointer-events-none absolute bottom-2 right-2 z-20 bg-[#f5f7f0]/90 px-1.5 py-1 text-[10px] font-black uppercase leading-none text-[#263020] shadow-[0_2px_8px_rgba(0,0,0,0.16)] sm:hidden">
-                {`${song.chartSummary.length} ${song.chartSummary.length === 1 ? "chart" : "charts"}`}
+                {song.recentPlay?.chartToken ?? `${visibleCharts.length} ${visibleCharts.length === 1 ? "chart" : "charts"}`}
               </span>
               <div className="pointer-events-none absolute bottom-2 right-2 z-20 hidden grid-cols-4 gap-1 sm:grid">
                 {Array.from({ length: emptyChartSlots }, (_, index) => (
                   <span key={`empty-${index}`} aria-hidden="true" className="min-h-6 min-w-8" />
                 ))}
-                {song.chartSummary.map((chart, index) => (
+                {visibleCharts.map((chart, index) => (
                   <motion.button
                     key={`${chart}-${index}`}
                     className="song-chart-chip pointer-events-auto flex min-h-6 min-w-8 items-center justify-center border border-white/60 bg-[#f5f7f0]/75 px-[0px] text-[11px] font-bold text-[#263020] shadow-[0_2px_8px_rgba(0,0,0,0.16)] transition hover:border-[#28c950] hover:bg-white focus:outline-none focus-visible:border-[#28c950] focus-visible:ring-2 focus-visible:ring-[#28c950]/35"
@@ -251,4 +266,8 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
 
 function supportsPreviewHover(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(hover: hover)").matches;
+}
+
+function formatRecentScore(score: number | null): string {
+  return typeof score === "number" && Number.isFinite(score) ? new Intl.NumberFormat("en-US").format(score) : "-";
 }
