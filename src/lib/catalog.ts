@@ -656,7 +656,7 @@ function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersi
     series,
     seriesSongCount: series && stats ? stats.seriesCounts.get(statsKey(series)) ?? null : null,
     tags: Array.isArray(document.tags) ? document.tags.map(cleanText).filter(Boolean).slice(0, 12) : [],
-    isPremium: isPremiumSong(title),
+    isPremium: isPremiumSong(title, chartVersion ?? fallbackVersion),
   };
 }
 
