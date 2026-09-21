@@ -14,7 +14,7 @@ import { performancePlayKey } from "@/lib/performance-play-key";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { startsNewSession } from "@/lib/performance-session";
 import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
-import { rankChartRecommendations, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
+import { rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
@@ -634,11 +634,7 @@ export async function getPerformanceChartRecommendations(
     ]).toArray(),
   ]);
 
-  const catalogCandidates: PopulationChartEvidence[] = songs.flatMap((song) => song.chartSummary.flatMap((chartToken) => {
-    const match = /^([SD])(\d{1,2})$/i.exec(chartToken.trim());
-    if (!match) return [];
-    return [{ songName: song.title, mode: match[1], level: match[2], attempts: 0, clears: 0 }];
-  }));
+  const catalogCandidates = recommendationCandidatesFromCatalog(songs);
 
   return rankChartRecommendations({
     candidates: [...catalogCandidates, ...candidates],

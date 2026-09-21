@@ -16,6 +16,16 @@ export interface RankedChartRecommendation {
   targetLevel: number;
 }
 
+export function recommendationCandidatesFromCatalog(
+  songs: Array<{ title: string; chartSummary: string[] }>,
+): PopulationChartEvidence[] {
+  return songs.flatMap((song) => song.chartSummary.flatMap((chartToken) => {
+    const match = /^([SD])(\d{1,2}[+-]?)$/i.exec(chartToken.trim());
+    if (!match) return [];
+    return [{ songName: song.title, mode: match[1], level: match[2], attempts: 0, clears: 0 }];
+  }));
+}
+
 export function rankChartRecommendations(args: {
   candidates: PopulationChartEvidence[];
   userEvidence: ChartSelectionEvidence[];
@@ -39,10 +49,11 @@ export function rankChartRecommendations(args: {
   for (const candidate of mergedCandidates) {
     const chartToken = catalogChartTokenFromPlay(candidate);
     const mode = chartToken?.[0] as ChartMode | undefined;
-    const level = Number.parseInt(String(candidate.level ?? ""), 10);
+    const rawLevel = String(candidate.level ?? "").trim();
+    const level = Number.parseInt(rawLevel, 10);
     const target = mode ? targets.get(mode) : undefined;
     if (!chartToken || !mode || !modes.includes(mode) || !target || !Number.isFinite(level)) continue;
-    if (levels.size > 0 && !levels.has(String(level))) continue;
+    if (!matchesLevelFilter(rawLevel, levels)) continue;
     if (playedSongs.has(normalizeSongName(candidate.songName))) continue;
 
     const levelDelta = level - target.level;
@@ -65,6 +76,15 @@ export function rankChartRecommendations(args: {
     seenSongs.add(key);
     return true;
   }).slice(0, Math.max(1, args.limit ?? 200));
+}
+
+function matchesLevelFilter(rawLevel: string, levels: Set<string>): boolean {
+  if (levels.size === 0 || levels.has(rawLevel)) return true;
+  const numericLevel = Number.parseInt(rawLevel, 10);
+  const catalogLevel = /^\d{1,2}$/.test(rawLevel) && numericLevel >= 1 && numericLevel <= 27
+    ? String(numericLevel)
+    : "+";
+  return levels.has(catalogLevel);
 }
 
 function mergePopulationEvidence(candidates: PopulationChartEvidence[]): PopulationChartEvidence[] {

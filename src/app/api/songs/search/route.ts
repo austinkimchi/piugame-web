@@ -8,6 +8,7 @@ import { chartModesFromFilters } from "@/lib/chart-recommendation";
 import { addChartRecommendationsToSongs, getPerformanceChartRecommendations, getPerformanceRecentPlays } from "@/lib/performance";
 import { catalogChartTokenFromPlay } from "@/lib/performance-chart-key";
 import { normalizePiuGameVersion, performanceVersionForCatalog } from "@/lib/piu-version";
+import { songMatchesChartFilters } from "@/lib/song-chart-filters";
 import type { LevelFilterMode, PiuSeriesId, SongSortOption, SortDirection } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -195,18 +196,15 @@ function chartTokenForRecentPlay(
 }
 
 function matchesSpecialFeedFilters(
-  song: { folder: string | null; series: string | null },
+  song: { chartSummary: string[]; folder: string | null; series: string | null },
   chartToken: string,
   filters: { folders: string[]; series: string[]; levels: string[]; charts: string[]; levelMode: LevelFilterMode },
 ): boolean {
   const sameText = (values: string[], candidate: string | null) => values.length === 0 || values.some((value) => value.localeCompare(candidate ?? "", undefined, { sensitivity: "accent" }) === 0);
   if (!sameText(filters.folders, song.folder) || !sameText(filters.series, song.series)) return false;
-  const token = chartToken.trim().toUpperCase();
-  const chart = token.startsWith("S") ? "singles" : token.startsWith("D") ? "doubles" : token.startsWith("C") ? "co-op" : "";
-  const level = token.match(/\d+$/)?.[0] ?? "";
-  const matchesChart = filters.charts.length === 0 || filters.charts.includes(chart);
-  const matchesLevel = filters.levels.length === 0 || (filters.levelMode === "and" ? filters.levels.every((value) => value === level) : filters.levels.some((value) => value === level));
-  return matchesChart && matchesLevel;
+  const songMatches = songMatchesChartFilters(song, filters.levels, filters.charts, filters.levelMode);
+  const selectedTokenMatches = songMatchesChartFilters({ chartSummary: [chartToken] }, filters.levels, filters.charts, "or");
+  return songMatches && selectedTokenMatches;
 }
 
 function songLookupKey(value: string): string {

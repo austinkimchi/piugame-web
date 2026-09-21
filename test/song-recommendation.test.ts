@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { rankChartRecommendations, type PopulationChartEvidence } from "../src/lib/song-recommendation.ts";
+import { rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence } from "../src/lib/song-recommendation.ts";
 import type { ChartSelectionEvidence } from "../src/lib/chart-recommendation.ts";
 
 const userEvidence: ChartSelectionEvidence[] = [
@@ -77,6 +77,32 @@ test("applies level filters before choosing one chart per song", () => {
 
   assert.equal(ranked[0]?.songName, "Multi-chart Pick");
   assert.equal(ranked[0]?.chartToken, "S16");
+});
+
+test("preserves suffixed charts in the catalog cold-start pool", () => {
+  const candidates = recommendationCandidatesFromCatalog([
+    { title: "Suffix Pick", chartSummary: ["S20-", "D18+", "C2"] },
+  ]);
+
+  assert.deepEqual(candidates.map((item) => `${item.mode}${item.level}`), ["S20-", "D18+"]);
+});
+
+test("maps suffixed and level 28 charts to the catalog plus-level filter", () => {
+  const suffixed = rankChartRecommendations({
+    userEvidence: userEvidence.map((evidence) => ({ ...evidence, level: "20" })),
+    preferredModes: ["S"],
+    levels: ["+"],
+    candidates: [candidate("Minus Pick", "20-", 0, 0)],
+  });
+  const level28 = rankChartRecommendations({
+    userEvidence: userEvidence.map((evidence) => ({ ...evidence, level: "27" })),
+    preferredModes: ["S"],
+    levels: ["+"],
+    candidates: [candidate("Level 28 Pick", "28", 0, 0)],
+  });
+
+  assert.equal(suffixed[0]?.chartToken, "S20-");
+  assert.equal(level28[0]?.chartToken, "S28");
 });
 
 function result(songName: string, level: string, bestScore: number): ChartSelectionEvidence {
