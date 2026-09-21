@@ -149,6 +149,8 @@ export function SongExplorer({
   const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const isRecentSearch = query.trim().toLowerCase() === "recent";
+  const isRecommendationSearch = query.trim().toLowerCase() === "recommendation";
+  const isRankedFeedSearch = isRecentSearch || isRecommendationSearch;
   const searchPlaceholder = `Search ${piuSeriesMetadata(catalogVersion).label.toUpperCase()}'s title, artists, folder, tag, series, or chart.`;
   const [selectedFilters, setSelectedFilters] = useState<Record<FilterKey, string[]>>({
     ...DEFAULT_FILTERS,
@@ -290,6 +292,8 @@ export function SongExplorer({
         setNextCursor(null);
       }
       const isRecentQuery = searchQuery.trim().toLowerCase() === "recent";
+      const isRecommendationQuery = searchQuery.trim().toLowerCase() === "recommendation";
+      const isSpecialFeedQuery = isRecentQuery || isRecommendationQuery;
       const requestFilters =
         isRecentQuery && filters.charts.length === 1 && filters.charts[0] === "singles"
           ? { ...filters, charts: [] }
@@ -328,7 +332,7 @@ export function SongExplorer({
         if (!cursor && !recentUnchanged) {
           setResultBatch((current) => current + 1);
           setCompatibleFilterOptions(
-            isRecentQuery
+            isSpecialFeedQuery
               ? filterOptions
               : {
                   ...body.filterOptions,
@@ -434,6 +438,16 @@ export function SongExplorer({
     window.addEventListener("piu:open-recent-catalog", openRecentCatalog);
     return () => window.removeEventListener("piu:open-recent-catalog", openRecentCatalog);
   }, [submitSearch]);
+
+  useEffect(() => {
+    function openRecommendations() {
+      queryRef.current = "recommendation";
+      setQuery("recommendation");
+    }
+
+    window.addEventListener("piu:open-recommendations", openRecommendations);
+    return () => window.removeEventListener("piu:open-recommendations", openRecommendations);
+  }, []);
 
   const updateSongFavorite = useCallback((songSlug: string, isFavorite: boolean) => {
     setFavoriteSlugs((current) => {
@@ -1127,12 +1141,12 @@ export function SongExplorer({
                 ) : null}
               </motion.label>
               <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[19.5rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem]">
-                <label className={`relative h-full ${isRecentSearch ? "opacity-45" : ""}`}>
+                <label className={`relative h-full ${isRankedFeedSearch ? "opacity-45" : ""}`}>
                   <span className="sr-only">Sort by</span>
                   <select
                     className="h-full min-h-11 w-full appearance-none bg-transparent py-2 pl-3 pr-9 text-sm font-black uppercase text-[#171916] outline-none"
-                    disabled={isRecentSearch}
-                    title={isRecentSearch ? "Recent results are ordered by play time" : "Sort by"}
+                    disabled={isRankedFeedSearch}
+                    title={isRecentSearch ? "Recent results are ordered by play time" : isRecommendationSearch ? "Recommendations are ordered by relevance" : "Sort by"}
                     value={sortBy}
                     onChange={(event) => changeSortBy(toSongSortOption(event.target.value))}
                   >
@@ -1151,12 +1165,13 @@ export function SongExplorer({
                 <motion.button
                   aria-label={favoritesFirst ? "Show favorites first" : "Keep favorites in regular order"}
                   aria-pressed={favoritesFirst}
-                  className={`flex h-full min-h-11 items-center justify-center border-l border-[#d9ded2] transition hover:bg-[#eef1e8] ${
+                  className={`flex h-full min-h-11 items-center justify-center border-l border-[#d9ded2] transition hover:bg-[#eef1e8] disabled:opacity-45 ${
                     favoritesFirst ? "bg-[#fff4cf] text-[#c78215]" : "text-[#171916]"
                   }`}
+                  disabled={isRankedFeedSearch}
                   title={canFavorite ? "Show favorites first" : "Sign in to sort favorites first"}
                   type="button"
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={isRankedFeedSearch ? undefined : { scale: 0.9 }}
                   onClick={toggleFavoritesFirst}
                 >
                   <Star aria-hidden="true" fill={favoritesFirst ? "currentColor" : "none"} size={18} />
@@ -1164,10 +1179,11 @@ export function SongExplorer({
                 <motion.button
                   aria-label={sortDirection === "asc" ? "Sort ascending" : "Sort descending"}
                   aria-pressed={sortDirection === "desc"}
-                  className="flex h-full min-h-11 items-center justify-center border-l border-[#d9ded2] text-[#171916] transition hover:bg-[#eef1e8]"
+                  className="flex h-full min-h-11 items-center justify-center border-l border-[#d9ded2] text-[#171916] transition hover:bg-[#eef1e8] disabled:opacity-45"
+                  disabled={isRankedFeedSearch}
                   title={sortDirection === "asc" ? "Sort ascending" : "Sort descending"}
                   type="button"
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={isRankedFeedSearch ? undefined : { scale: 0.9 }}
                   onClick={toggleSortDirection}
                 >
                   <AnimatePresence mode="wait" initial={false}>
@@ -1658,7 +1674,8 @@ function sameSongSequence(left: PublicSong[], right: PublicSong[]): boolean {
       && song.chartSummary.join("|") === other.chartSummary.join("|")
       && song.recentPlay?.chartToken === other.recentPlay?.chartToken
       && song.recentPlay?.score === other.recentPlay?.score
-      && song.recentPlay?.grade === other.recentPlay?.grade;
+      && song.recentPlay?.grade === other.recentPlay?.grade
+      && song.recommendation?.chartToken === other.recommendation?.chartToken;
   });
 }
 

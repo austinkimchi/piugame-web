@@ -1,13 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { checkRateLimit } from "@/lib/rate-limit";
-import { getSongsByTitles, searchSongs } from "@/lib/catalog";
+import { getRecommendationCandidateSongs, getSongsByTitles, searchSongs } from "@/lib/catalog";
 import { getAllFavoriteSongSlugs, getCurrentUser, getFavoriteSongSlugSet } from "@/lib/auth";
 import { isPiuSeriesId } from "@/lib/catalog-version";
 import { chartModesFromFilters } from "@/lib/chart-recommendation";
-import { addChartRecommendationsToSongs, getPerformanceRecentPlays } from "@/lib/performance";
+import { addChartRecommendationsToSongs, getPerformanceChartRecommendations, getPerformanceRecentPlays } from "@/lib/performance";
 import { catalogChartTokenFromPlay } from "@/lib/performance-chart-key";
 import { normalizePiuGameVersion, performanceVersionForCatalog } from "@/lib/piu-version";
+import { songMatchesChartFilters } from "@/lib/song-chart-filters";
 import type { LevelFilterMode, PiuSeriesId, SongSortOption, SortDirection } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   const favoritesFirst = parseBoolean(request.nextUrl.searchParams.get("favoritesFirst"));
   const favoriteSlugsForSort = favoritesFirst ? await getAllFavoriteSongSlugs(user) : undefined;
+  const chartFilters = parseList(request.nextUrl.searchParams, "chart");
   if (query.toLowerCase() === "recent") {
     if (!user) {
       return NextResponse.json({ error: "Sign in required to view recent songs." }, { status: 401 });
@@ -78,7 +80,7 @@ export async function GET(request: NextRequest) {
       .flatMap((play) => {
         const song = songsByTitle.get(songLookupKey(play.songName));
         const chartToken = song ? chartTokenForRecentPlay(song.chartSummary, play) : null;
-        if (!song || !chartToken || !matchesRecentFilters(song, chartToken, filters)) return [];
+        if (!song || !chartToken || !matchesSpecialFeedFilters(song, chartToken, filters)) return [];
         return [{
           ...song,
           recommendedChartToken: chartToken,
@@ -99,7 +101,53 @@ export async function GET(request: NextRequest) {
       filterOptions: { folders: [], series: [], levels: [], charts: [] },
     }, { headers: { "Cache-Control": "private, no-store" } });
   }
-  const chartFilters = parseList(request.nextUrl.searchParams, "chart");
+  if (query.toLowerCase() === "recommendation") {
+    if (!user) {
+      return NextResponse.json({ error: "Sign in required to view recommendations." }, { status: 401 });
+    }
+
+    const offset = Math.max(0, Number.parseInt(request.nextUrl.searchParams.get("cursor") ?? "0", 10) || 0);
+    const recommendationLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 35) : 24;
+    const version = normalizePiuGameVersion(user.preferences.piuGameVersion);
+    const preferredModes = chartModesFromFilters(chartFilters);
+    const candidateSongs = await getRecommendationCandidateSongs(version);
+    const filters = {
+      folders: parseList(request.nextUrl.searchParams, "folder"),
+      series: parseList(request.nextUrl.searchParams, "series"),
+      levels: parseList(request.nextUrl.searchParams, "level"),
+      charts: chartFilters,
+      levelMode: parseLevelMode(request.nextUrl.searchParams.get("levelMode")),
+    };
+    const ranked = await getPerformanceChartRecommendations(
+      user.id,
+      version,
+      candidateSongs,
+      preferredModes.length > 0 ? preferredModes : ["S"],
+      filters.levels,
+    );
+    const candidatesByTitle = new Map(candidateSongs.map((song) => [songLookupKey(song.title), song]));
+    const recommendations = ranked.flatMap((recommendation) => {
+      const song = candidatesByTitle.get(songLookupKey(recommendation.songName));
+      const chartToken = song?.chartSummary.find((chart) => chart.toUpperCase() === recommendation.chartToken.toUpperCase()) ?? null;
+      if (!song || !chartToken || !matchesSpecialFeedFilters(song, chartToken, filters)) return [];
+      return [{ title: song.title, chartToken }];
+    });
+    const pageRecommendations = recommendations.slice(offset, offset + recommendationLimit);
+    const songsByTitle = await getSongsByTitles(version, pageRecommendations.map((recommendation) => recommendation.title));
+    const page = pageRecommendations.flatMap((recommendation) => {
+      const song = songsByTitle.get(songLookupKey(recommendation.title));
+      if (!song) return [];
+      return [{ ...song, recommendedChartToken: recommendation.chartToken, recommendation: { chartToken: recommendation.chartToken } }];
+    });
+    const favoriteSlugs = await getFavoriteSongSlugSet(user, page.map((song) => song.slug));
+
+    return NextResponse.json({
+      songs: page.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
+      nextCursor: offset + pageRecommendations.length < recommendations.length ? String(offset + pageRecommendations.length) : null,
+      total: recommendations.length,
+      filterOptions: { folders: [], series: [], levels: [], charts: [] },
+    }, { headers: { "Cache-Control": "private, no-store" } });
+  }
   const supportedVersion = parseSeriesId(request.nextUrl.searchParams.get("supportedVersion"));
   const removedFromVersion = parseSeriesId(request.nextUrl.searchParams.get("removedFromVersion"));
   const result = await searchSongs({
@@ -147,19 +195,16 @@ function chartTokenForRecentPlay(
   return chartSummary.find((chart) => chart.toUpperCase() === token) ?? null;
 }
 
-function matchesRecentFilters(
-  song: { folder: string | null; series: string | null },
+function matchesSpecialFeedFilters(
+  song: { chartSummary: string[]; folder: string | null; series: string | null },
   chartToken: string,
   filters: { folders: string[]; series: string[]; levels: string[]; charts: string[]; levelMode: LevelFilterMode },
 ): boolean {
   const sameText = (values: string[], candidate: string | null) => values.length === 0 || values.some((value) => value.localeCompare(candidate ?? "", undefined, { sensitivity: "accent" }) === 0);
   if (!sameText(filters.folders, song.folder) || !sameText(filters.series, song.series)) return false;
-  const token = chartToken.trim().toUpperCase();
-  const chart = token.startsWith("S") ? "singles" : token.startsWith("D") ? "doubles" : token.startsWith("C") ? "co-op" : "";
-  const level = token.match(/\d+$/)?.[0] ?? "";
-  const matchesChart = filters.charts.length === 0 || filters.charts.includes(chart);
-  const matchesLevel = filters.levels.length === 0 || (filters.levelMode === "and" ? filters.levels.every((value) => value === level) : filters.levels.some((value) => value === level));
-  return matchesChart && matchesLevel;
+  const songMatches = songMatchesChartFilters(song, filters.levels, filters.charts, filters.levelMode);
+  const selectedTokenMatches = songMatchesChartFilters({ chartSummary: [chartToken] }, filters.levels, filters.charts, "or");
+  return songMatches && selectedTokenMatches;
 }
 
 function songLookupKey(value: string): string {

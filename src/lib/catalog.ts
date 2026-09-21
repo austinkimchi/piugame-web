@@ -8,6 +8,7 @@ import { cache } from "react";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, sortPiuSeries } from "@/lib/catalog-version";
 import { isPremiumSong } from "@/lib/premium-songs";
+import { songMatchesChartFilters } from "@/lib/song-chart-filters";
 import type {
   CatalogFilterOptions,
   CatalogEditorPayload,
@@ -328,44 +329,6 @@ function levelChartClausesForAnd(levels: string[], charts: string[], chartTokenF
   return charts.flatMap((chart) =>
     levels.map((level) => ({ [chartTokenField]: { $in: levelRegexesForChart(level, chart) } })),
   );
-}
-
-function tokenMatchesLevelAndChart(token: string, level: string, charts: string[]): boolean {
-  if (charts.length > 0) {
-    return charts.some((chart) => tokenMatchesLevelForChart(token, level, chart));
-  }
-
-  return tokenMatchesLevelForChart(token, level, null);
-}
-
-function tokenMatchesLevelForChart(token: string, level: string, chart: string | null): boolean {
-  if (chart === "co-op") {
-    return level === coOpPlayerCountFromToken(token);
-  }
-
-  if (chart && chart !== chartTypeFromToken(token)) {
-    return false;
-  }
-
-  return level === levelFromChartToken(token);
-}
-
-function songMatchesLevelFilters(song: PublicSong, levels: string[], charts: string[], levelMode: LevelFilterMode | undefined): boolean {
-  if (levels.length === 0) {
-    return true;
-  }
-
-  if (levelMode === "and") {
-    if (charts.length > 0) {
-      return charts.every((chart) =>
-        levels.every((level) => song.chartSummary.some((token) => tokenMatchesLevelForChart(token, level, chart))),
-      );
-    }
-
-    return levels.every((level) => song.chartSummary.some((token) => tokenMatchesLevelAndChart(token, level, charts)));
-  }
-
-  return levels.some((level) => song.chartSummary.some((token) => tokenMatchesLevelAndChart(token, level, charts)));
 }
 
 function sortLevels(levels: string[]): string[] {
@@ -1155,17 +1118,7 @@ function fallbackMatchesFilters(
     return false;
   }
 
-  if (!songMatchesLevelFilters(song, levels, charts, filters.levelMode)) {
-    return false;
-  }
-
-  if (
-    charts.length > 0 &&
-    levels.length === 0 &&
-    !charts[filters.levelMode === "and" ? "every" : "some"]((chart) =>
-      song.chartSummary.some((token) => chart === chartTypeFromToken(token)),
-    )
-  ) {
+  if (!songMatchesChartFilters(song, levels, charts, filters.levelMode)) {
     return false;
   }
 
@@ -1330,6 +1283,26 @@ export async function getSongsByTitles(
   }
 
   return result;
+}
+
+export type RecommendationCandidateSong = Pick<PublicSong, "title" | "chartSummary" | "folder" | "series">;
+
+export async function getRecommendationCandidateSongs(version: PiuCatalogVersion): Promise<RecommendationCandidateSong[]> {
+  if (!hasMongoConfig()) {
+    return (await fallbackSongs(version, 0, 500)).map(({ title, chartSummary, folder, series }) => ({ title, chartSummary, folder, series }));
+  }
+
+  const collection = await collectionFor(version);
+  const documents = await collection.find(
+    { supportedVersions: version },
+    { projection: { songName: 1, songKey: 1, chartTokens: 1, chartTokensByVersion: 1, folder: 1, series: 1 } },
+  ).limit(5000).toArray();
+  return documents.map((document) => ({
+    title: cleanText(document.songName ?? document.songKey ?? "Untitled Song"),
+    chartSummary: chartSummary(document, version),
+    folder: cleanText(document.folder) || null,
+    series: cleanText(document.series) || null,
+  }));
 }
 
 async function getCatalogDocumentBySlug(slug: string): Promise<WithId<CatalogDocument> | null> {
