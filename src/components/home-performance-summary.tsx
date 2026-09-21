@@ -27,6 +27,7 @@ export function HomePerformanceSummary({ averageBestScore, averageBestScoreChang
   const [selectedUpscoreKey, setSelectedUpscoreKey] = useState(defaultUpscoreMetric.key);
   const upscoreMetric = upscoreMetrics.find((metric) => metric.key === selectedUpscoreKey) ?? defaultUpscoreMetric;
   const openRecentCatalog = () => window.dispatchEvent(new Event("piu:open-recent-catalog"));
+  const openRecommendations = () => window.dispatchEvent(new Event("piu:open-recommendations"));
   const showNextUpscoreMetric = () => {
     if (upscoreMetrics.length < 2) return;
     const currentIndex = upscoreMetrics.findIndex((metric) => metric.key === upscoreMetric.key);
@@ -39,7 +40,7 @@ export function HomePerformanceSummary({ averageBestScore, averageBestScoreChang
         <div className="relative overflow-hidden border border-[#d9ded2] bg-white shadow-[0_14px_36px_rgba(29,35,24,0.05)]">
           <div className={synced ? "grid grid-cols-1 divide-y divide-[#e3e7dd] sm:grid-cols-2 sm:divide-x sm:divide-y lg:grid-cols-4 lg:divide-y-0" : "pointer-events-none grid select-none grid-cols-1 blur-sm sm:grid-cols-2 lg:grid-cols-4"} aria-hidden={!synced}>
             <SummaryMetric detail={format24HourChange(pumbilityChange24Hours)} icon={<TrendingUp aria-hidden="true" size={17} />} label="Pumbility" value={formatNumber(pumbility)} />
-            <SummaryMetric detail={format24HourChange(averageBestScoreChange24Hours)} icon={<BarChart3 aria-hidden="true" size={17} />} label="Average best" value={formatNumber(averageBestScore)} />
+            <SummaryMetric onClick={openRecommendations} detail={format24HourChange(averageBestScoreChange24Hours)} icon={<BarChart3 aria-hidden="true" size={17} />} label="Average best" value={formatNumber(averageBestScore)} />
             <SummaryMetric onClick={upscoreMetrics.length > 1 ? showNextUpscoreMetric : undefined} icon={<Zap aria-hidden="true" size={17} />} label={upscoreMetric.label} value={formatNumber(upscoreMetric.value)} />
             <SummaryMetric onClick={openRecentCatalog} icon={<Clock3 aria-hidden="true" size={17} />} label="Recently played" value={formatNumber(recentlyPlayed)} />
           </div>

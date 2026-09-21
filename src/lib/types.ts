@@ -64,6 +64,9 @@ export interface PublicSong {
     score: number | null;
     grade: string | null;
   };
+  recommendation?: {
+    chartToken: string;
+  };
 }
 
 export interface CatalogEditorPayload {

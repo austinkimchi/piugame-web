@@ -19,9 +19,8 @@ interface RecommendChartArgs {
   now?: Date;
 }
 
-export const CHART_RECOMMENDATION_HIGH_SCORE = 900_000;
 const RECENT_PLAY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const SKILL_FRONTIER_SIZE = 5;
+const SKILL_PERCENTILE = 0.7;
 
 export function recommendChartToken({
   songName,
@@ -52,16 +51,18 @@ export function recommendChartToken({
     return recent.chart.token;
   }
 
-  const highScores = evidenceForSong.filter(({ evidence }) => (evidence.bestScore ?? -1) >= CHART_RECOMMENDATION_HIGH_SCORE);
-  if (highScores.length > 0) {
-    highScores.sort((left, right) => {
+  const passedCharts = evidenceForSong.filter(({ evidence }) => evidence.bestScore !== null);
+  const preferredPassedCharts = passedCharts.filter(({ chart }) => preferredModes.includes(chart.mode));
+  const relevantPassedCharts = preferredPassedCharts.length > 0 ? preferredPassedCharts : passedCharts;
+  if (relevantPassedCharts.length > 0) {
+    relevantPassedCharts.sort((left, right) => {
       return (
-        (right.evidence.bestScore ?? -1) - (left.evidence.bestScore ?? -1) ||
         right.chart.level - left.chart.level ||
-        timestamp(right.evidence.latestPlayedAt) - timestamp(left.evidence.latestPlayedAt)
+        timestamp(right.evidence.latestPlayedAt) - timestamp(left.evidence.latestPlayedAt) ||
+        (right.evidence.bestScore ?? -1) - (left.evidence.bestScore ?? -1)
       );
     });
-    return highScores[0].chart.token;
+    return relevantPassedCharts[0].chart.token;
   }
 
   const latestAttempt = evidenceForSong
@@ -104,11 +105,11 @@ export function chartModesFromFilters(filters: string[]): ChartMode[] {
   })));
 }
 
-function estimateSkillTargets(evidence: ChartSelectionEvidence[]): Map<ChartMode, { level: number; sampleSize: number }> {
+export function estimateSkillTargets(evidence: ChartSelectionEvidence[]): Map<ChartMode, { level: number; sampleSize: number }> {
   const levelsByMode = new Map<ChartMode, number[]>();
 
   for (const result of evidence) {
-    if ((result.bestScore ?? -1) < CHART_RECOMMENDATION_HIGH_SCORE) continue;
+    if (result.bestScore === null) continue;
     const token = catalogChartTokenFromPlay(result);
     const chart = token ? parseChartToken(token) : null;
     if (!chart || chart.mode === "C") continue;
@@ -119,9 +120,8 @@ function estimateSkillTargets(evidence: ChartSelectionEvidence[]): Map<ChartMode
 
   const targets = new Map<ChartMode, { level: number; sampleSize: number }>();
   for (const [mode, levels] of levelsByMode) {
-    const frontier = levels.sort((left, right) => right - left).slice(0, SKILL_FRONTIER_SIZE).sort((left, right) => left - right);
-    const middle = Math.floor(frontier.length / 2);
-    const level = frontier.length % 2 === 0 ? (frontier[middle - 1] + frontier[middle]) / 2 : frontier[middle];
+    const sorted = levels.sort((left, right) => left - right);
+    const level = sorted[Math.floor((sorted.length - 1) * SKILL_PERCENTILE)];
     targets.set(mode, { level, sampleSize: levels.length });
   }
 

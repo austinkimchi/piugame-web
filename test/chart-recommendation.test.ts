@@ -41,7 +41,7 @@ test("a play from the last day takes precedence over score and skill guesses", (
   );
 });
 
-test("uses the highest score when no play is recent", () => {
+test("uses the hardest passed chart when no play is recent", () => {
   assert.equal(
     recommendChartToken({
       songName: "Target Song",
@@ -53,7 +53,46 @@ test("uses the highest score when no play is recent", () => {
       skillEvidence: [],
       now: NOW,
     }),
-    "S15",
+    "S17",
+  );
+});
+
+test("prefers the hardest passed chart on the song over a higher score on an easier chart", () => {
+  assert.equal(
+    recommendChartToken({
+      songName: "Big Daddy",
+      chartTokens: ["S16", "S19"],
+      songEvidence: [
+        result("Big Daddy", "Single", "16", 990_000, "2026-08-01T12:00:00.000Z"),
+        result("Big Daddy", "Single", "19", 891_000, "2026-08-02T12:00:00.000Z"),
+      ],
+      skillEvidence: [],
+      preferredModes: ["S"],
+      now: NOW,
+    }),
+    "S19",
+  );
+});
+
+test("uses the normal skill range instead of a handful of hardest clears", () => {
+  assert.equal(
+    recommendChartToken({
+      songName: "Tropicanic",
+      chartTokens: ["S16", "S19"],
+      songEvidence: [],
+      skillEvidence: [
+        result("A", "Single", "16", 950_000),
+        result("B", "Single", "16", 940_000),
+        result("C", "Single", "17", 930_000),
+        result("D", "Single", "17", 920_000),
+        result("E", "Single", "17", 910_000),
+        result("F", "Single", "18", 905_000),
+        result("G", "Single", "18", 901_000),
+      ],
+      preferredModes: ["S"],
+      now: NOW,
+    }),
+    "S16",
   );
 });
 

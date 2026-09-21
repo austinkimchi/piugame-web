@@ -1332,6 +1332,26 @@ export async function getSongsByTitles(
   return result;
 }
 
+export type RecommendationCandidateSong = Pick<PublicSong, "title" | "chartSummary" | "folder" | "series">;
+
+export async function getRecommendationCandidateSongs(version: PiuCatalogVersion): Promise<RecommendationCandidateSong[]> {
+  if (!hasMongoConfig()) {
+    return (await fallbackSongs(version, 0, 500)).map(({ title, chartSummary, folder, series }) => ({ title, chartSummary, folder, series }));
+  }
+
+  const collection = await collectionFor(version);
+  const documents = await collection.find(
+    { supportedVersions: version },
+    { projection: { songName: 1, songKey: 1, chartTokens: 1, chartTokensByVersion: 1, folder: 1, series: 1 } },
+  ).limit(5000).toArray();
+  return documents.map((document) => ({
+    title: cleanText(document.songName ?? document.songKey ?? "Untitled Song"),
+    chartSummary: chartSummary(document, version),
+    folder: cleanText(document.folder) || null,
+    series: cleanText(document.series) || null,
+  }));
+}
+
 async function getCatalogDocumentBySlug(slug: string): Promise<WithId<CatalogDocument> | null> {
   const collection = await collectionFor(MAIN_CATALOG_VERSION);
   const fallbackVersion = piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION);

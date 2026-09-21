@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { ObjectId, type Collection, type Filter, type Sort, type WithId } from "mongodb";
 import { PiuClient, type BestPlay, type PlayerData, type RecentPlay, type TopPlay } from "@austinkimchi/piugame-sdk";
 
-import { CHART_RECOMMENDATION_HIGH_SCORE, recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
+import { recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
@@ -14,6 +14,7 @@ import { performancePlayKey } from "@/lib/performance-play-key";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { startsNewSession } from "@/lib/performance-session";
 import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
+import { rankChartRecommendations, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
@@ -577,7 +578,7 @@ export async function addChartRecommendationsToSongs(
   } as const;
   const [songEvidence, skillEvidence] = await Promise.all([
     chartStats.find({ userId, piuVersion, songName: { $in: songNames } }, { projection }).toArray(),
-    chartStats.find({ userId, piuVersion, bestScore: { $gte: CHART_RECOMMENDATION_HIGH_SCORE } }, { projection }).toArray(),
+    chartStats.find({ userId, piuVersion, bestScore: { $exists: true, $ne: null } }, { projection }).toArray(),
   ]);
   const evidenceBySong = new Map<string, ChartSelectionEvidence[]>();
   for (const evidence of songEvidence) {
@@ -599,6 +600,52 @@ export async function addChartRecommendationsToSongs(
       now,
     }),
   }));
+}
+
+export async function getPerformanceChartRecommendations(
+  userIdInput: string | null,
+  piuVersion: PiuCatalogVersion,
+  songs: Array<Pick<PublicSong, "title" | "chartSummary">>,
+  preferredModes: ChartMode[],
+  limit = 1000,
+): Promise<RankedChartRecommendation[]> {
+  const userId = objectIdFromString(userIdInput);
+  if (!userId || !hasMongoConfig()) return [];
+
+  const { chartStats } = await collections();
+  const [userEvidence, candidates] = await Promise.all([
+    chartStats.find(
+      { userId, piuVersion },
+      { projection: { _id: 0, songName: 1, mode: 1, level: 1, bestScore: 1, latestPlayedAt: 1 } },
+    ).toArray(),
+    chartStats.aggregate<PopulationChartEvidence>([
+      { $match: { piuVersion } },
+      {
+        $group: {
+          _id: { songName: "$songName", mode: "$mode", level: "$level" },
+          attempts: { $sum: 1 },
+          clears: { $sum: { $cond: [{ $isNumber: "$bestScore" }, 1, 0] } },
+        },
+      },
+      { $sort: { attempts: -1 } },
+      { $limit: 1200 },
+      { $project: { _id: 0, songName: "$_id.songName", mode: "$_id.mode", level: "$_id.level", attempts: 1, clears: 1 } },
+    ]).toArray(),
+  ]);
+
+  const catalogCandidates: PopulationChartEvidence[] = songs.flatMap((song) => song.chartSummary.flatMap((chartToken) => {
+    const match = /^([SD])(\d{1,2})$/i.exec(chartToken.trim());
+    if (!match) return [];
+    return [{ songName: song.title, mode: match[1], level: match[2], attempts: 0, clears: 0 }];
+  }));
+
+  return rankChartRecommendations({
+    candidates: [...catalogCandidates, ...candidates],
+    userEvidence,
+    preferredModes,
+    explorationSeed: userId.toHexString(),
+    limit,
+  });
 }
 
 export async function getSongChartPerformance(
