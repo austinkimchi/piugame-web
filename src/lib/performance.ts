@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { ObjectId, type Collection, type Filter, type Sort, type WithId } from "mongodb";
 import { PiuClient, type BestPlay, type PlayerData, type RecentPlay, type TopPlay } from "@austinkimchi/piugame-sdk";
 
+import { CHART_RECOMMENDATION_HIGH_SCORE, recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
@@ -16,7 +17,7 @@ import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, ty
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
-import type { PiuCatalogVersion } from "@/lib/types";
+import type { PiuCatalogVersion, PublicSong } from "@/lib/types";
 
 const COMMUNITY_DB_NAME = process.env.COMMUNITY_DB_NAME ?? "piugame_web";
 const USERS_COLLECTION = process.env.COMMUNITY_USERS_COLLECTION ?? "users";
@@ -308,6 +309,7 @@ async function ensurePerformanceIndexes(args: {
     args.plays.createIndex({ userId: 1, piuVersion: 1, playedAt: -1, ingestedAt: -1 }),
     args.plays.createIndex({ userId: 1, piuVersion: 1, chartToken: 1, playedAt: -1 }),
     args.chartStats.createIndex({ userId: 1, piuVersion: 1, chartToken: 1 }, { unique: true }),
+    args.chartStats.createIndex({ userId: 1, piuVersion: 1, songName: 1 }),
     args.chartStats.createIndex({ userId: 1, piuVersion: 1, bestScore: -1 }),
     args.chartStats.createIndex({ userId: 1, piuVersion: 1, topPlayRank: 1, bestScore: -1 }),
     args.chartStats.createIndex({ userId: 1, piuVersion: 1, updatedAt: -1 }),
@@ -546,6 +548,53 @@ export async function getPerformanceRecentPlays(
     nextOffset: offset + recentPlays.length < total ? offset + recentPlays.length : null,
     total,
   };
+}
+
+export async function addChartRecommendationsToSongs(
+  userIdInput: string | null,
+  piuVersion: PiuCatalogVersion,
+  songs: PublicSong[],
+  preferredModes: ChartMode[] = [],
+): Promise<PublicSong[]> {
+  const userId = objectIdFromString(userIdInput);
+  if (!userId || !hasMongoConfig() || songs.length === 0) {
+    return songs;
+  }
+
+  const songNames = Array.from(new Set(songs.map((song) => song.title)));
+  const { chartStats } = await collections();
+  const projection = {
+    _id: 0,
+    songName: 1,
+    mode: 1,
+    level: 1,
+    bestScore: 1,
+    latestPlayedAt: 1,
+  } as const;
+  const [songEvidence, skillEvidence] = await Promise.all([
+    chartStats.find({ userId, piuVersion, songName: { $in: songNames } }, { projection }).toArray(),
+    chartStats.find({ userId, piuVersion, bestScore: { $gte: CHART_RECOMMENDATION_HIGH_SCORE } }, { projection }).toArray(),
+  ]);
+  const evidenceBySong = new Map<string, ChartSelectionEvidence[]>();
+  for (const evidence of songEvidence) {
+    const key = songLookupKey(evidence.songName);
+    const existing = evidenceBySong.get(key) ?? [];
+    existing.push(evidence);
+    evidenceBySong.set(key, existing);
+  }
+  const now = new Date();
+
+  return songs.map((song) => ({
+    ...song,
+    recommendedChartToken: recommendChartToken({
+      songName: song.title,
+      chartTokens: song.chartSummary,
+      songEvidence: evidenceBySong.get(songLookupKey(song.title)) ?? [],
+      skillEvidence,
+      preferredModes,
+      now,
+    }),
+  }));
 }
 
 export async function getSongChartPerformance(

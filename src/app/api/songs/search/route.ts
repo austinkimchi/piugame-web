@@ -4,9 +4,10 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { getSongsByTitles, searchSongs } from "@/lib/catalog";
 import { getAllFavoriteSongSlugs, getCurrentUser, getFavoriteSongSlugSet } from "@/lib/auth";
 import { isPiuSeriesId } from "@/lib/catalog-version";
-import { getPerformanceRecentPlays } from "@/lib/performance";
+import { chartModesFromFilters } from "@/lib/chart-recommendation";
+import { addChartRecommendationsToSongs, getPerformanceRecentPlays } from "@/lib/performance";
 import { catalogChartTokenFromPlay } from "@/lib/performance-chart-key";
-import { normalizePiuGameVersion } from "@/lib/piu-version";
+import { normalizePiuGameVersion, performanceVersionForCatalog } from "@/lib/piu-version";
 import type { LevelFilterMode, PiuSeriesId, SongSortOption, SortDirection } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -78,7 +79,7 @@ export async function GET(request: NextRequest) {
         const song = songsByTitle.get(songLookupKey(play.songName));
         const chartToken = song ? chartTokenForRecentPlay(song.chartSummary, play) : null;
         if (!song || !chartToken || !matchesRecentFilters(song, chartToken, filters)) return [];
-        return [{ ...song, chartSummary: [chartToken] }];
+        return [{ ...song, chartSummary: [chartToken], recommendedChartToken: chartToken }];
       });
     const recentFavoriteSlugs = favoriteSlugsForSort ?? await getFavoriteSongSlugSet(user, songs.map((song) => song.slug));
     const orderedSongs = favoriteSlugsForSort?.size ? [...songs].sort((left, right) => Number(recentFavoriteSlugs.has(right.slug)) - Number(recentFavoriteSlugs.has(left.slug))) : songs;
@@ -90,6 +91,9 @@ export async function GET(request: NextRequest) {
       filterOptions: { folders: [], series: [], levels: [], charts: [] },
     }, { headers: { "Cache-Control": "private, no-store" } });
   }
+  const chartFilters = parseList(request.nextUrl.searchParams, "chart");
+  const supportedVersion = parseSeriesId(request.nextUrl.searchParams.get("supportedVersion"));
+  const removedFromVersion = parseSeriesId(request.nextUrl.searchParams.get("removedFromVersion"));
   const result = await searchSongs({
     query,
     cursor: request.nextUrl.searchParams.get("cursor"),
@@ -97,18 +101,25 @@ export async function GET(request: NextRequest) {
     folders: parseList(request.nextUrl.searchParams, "folder"),
     series: parseList(request.nextUrl.searchParams, "series"),
     levels: parseList(request.nextUrl.searchParams, "level"),
-    charts: parseList(request.nextUrl.searchParams, "chart"),
+    charts: chartFilters,
     levelMode: parseLevelMode(request.nextUrl.searchParams.get("levelMode")),
     sortBy: parseSortOption(request.nextUrl.searchParams.get("sortBy")),
     sortDirection: parseSortDirection(request.nextUrl.searchParams.get("sortDirection")),
     favoriteSlugs: favoriteSlugsForSort,
-    supportedVersion: parseSeriesId(request.nextUrl.searchParams.get("supportedVersion")),
-    removedFromVersion: parseSeriesId(request.nextUrl.searchParams.get("removedFromVersion")),
+    supportedVersion,
+    removedFromVersion,
   });
   const favoriteSlugs = favoriteSlugsForSort ?? (await getFavoriteSongSlugSet(user, result.songs.map((song) => song.slug)));
+  const performanceVersion = performanceVersionForCatalog(supportedVersion ?? "phoenix2", removedFromVersion);
+  const recommendedSongs = await addChartRecommendationsToSongs(
+    user?.id ?? null,
+    performanceVersion,
+    result.songs,
+    chartModesFromFilters(chartFilters),
+  );
   const resultWithFavorites = {
     ...result,
-    songs: result.songs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
+    songs: recommendedSongs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
   };
 
   return NextResponse.json(resultWithFavorites, {

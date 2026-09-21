@@ -6,7 +6,7 @@ import { SongExplorer } from "@/components/song-explorer";
 import { getAllFavoriteSongSlugs, getCurrentUser, getFavoriteSongSlugSet, isAdmin } from "@/lib/auth";
 import { getSongBySlug, searchSongs } from "@/lib/catalog";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
-import { getPerformanceDashboard } from "@/lib/performance";
+import { addChartRecommendationsToSongs, getPerformanceDashboard } from "@/lib/performance";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 
 export const runtime = "nodejs";
@@ -33,7 +33,7 @@ export default async function Home() {
     getSongBySlug(FEATURED_SHOWCASE_SONG_SLUG),
     getPerformanceDashboard(user?.id ?? null),
   ]);
-  const songs = catalogSearch.songs;
+  const songs = await addChartRecommendationsToSongs(user?.id ?? null, catalogVersion, catalogSearch.songs, ["S"]);
   const filterOptions = catalogSearch.filterOptions;
   const favoriteSlugs = await getFavoriteSongSlugSet(user, songs.map((song) => song.slug));
   const songsWithFavorites = songs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) }));

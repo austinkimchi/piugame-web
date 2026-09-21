@@ -1,4 +1,4 @@
-import type { PiuCatalogVersion } from "@/lib/types";
+import type { PiuCatalogVersion, PiuSeriesId } from "@/lib/types";
 
 export const DEFAULT_PIU_GAME_VERSION: PiuCatalogVersion = "phoenix";
 
@@ -8,4 +8,8 @@ export function normalizePiuGameVersion(value: unknown): PiuCatalogVersion {
 
 export function isPiuGameVersion(value: unknown): value is PiuCatalogVersion {
   return value === "phoenix" || value === "phoenix2";
+}
+
+export function performanceVersionForCatalog(catalogVersion: PiuSeriesId, removedFromVersion?: PiuSeriesId): PiuCatalogVersion {
+  return catalogVersion === "phoenix" || removedFromVersion === "phoenix2" ? "phoenix" : "phoenix2";
 }

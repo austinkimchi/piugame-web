@@ -12,6 +12,7 @@ import { SongDetailView } from "@/components/song-detail-view";
 import type { PublicUser, SongCommunityState } from "@/lib/auth";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
 import { canLoadMoreSongs } from "@/lib/song-pagination";
+import { performanceVersionForCatalog } from "@/lib/piu-version";
 import type { CatalogFilterOptions, LevelFilterMode, PiuSeriesId, PublicSong, SongSortOption, SortDirection } from "@/lib/types";
 
 interface SearchResponse {
@@ -478,7 +479,7 @@ export function SongExplorer({
 
   const openSongDetail = useCallback((song: PublicSong, chartToken?: string) => {
     setOpenSong(song);
-    setOpenSongChartToken(chartToken ?? null);
+    setOpenSongChartToken(chartToken ?? song.recommendedChartToken ?? null);
   }, []);
 
   const handleCatalogSongSaved = useCallback(
@@ -1598,14 +1599,6 @@ function SongDetailNotebook({
       ) : null}
     </AnimatePresence>
   );
-}
-
-function performanceVersionForCatalog(catalogVersion: PiuSeriesId, removedFromVersion?: PiuSeriesId): "phoenix" | "phoenix2" {
-  if (catalogVersion === "phoenix" || removedFromVersion === "phoenix2") {
-    return "phoenix";
-  }
-
-  return "phoenix2";
 }
 
 function readStoredNotebookSize(): { width: number; height: number } | null {

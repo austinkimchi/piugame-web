@@ -58,6 +58,7 @@ export interface PublicSong {
   tags: string[];
   isPremium: boolean;
   isFavorite?: boolean;
+  recommendedChartToken?: string | null;
 }
 
 export interface CatalogEditorPayload {

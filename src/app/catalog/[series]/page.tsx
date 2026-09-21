@@ -6,6 +6,8 @@ import { SongExplorer } from "@/components/song-explorer";
 import { getCurrentUser, getFavoriteSongSlugSet, isAdmin } from "@/lib/auth";
 import { getCatalogFilterOptions, searchSongs } from "@/lib/catalog";
 import { DEFAULT_CATALOG_SERIES, piuSeriesFromSlug, REMOVED_FROM_PHOENIX2_SLUG } from "@/lib/catalog-version";
+import { addChartRecommendationsToSongs } from "@/lib/performance";
+import { performanceVersionForCatalog } from "@/lib/piu-version";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,8 +38,10 @@ export default async function CatalogSeriesPage({ params }: CatalogSeriesPagePro
     getCatalogFilterOptions(supportedVersion, {}, undefined, removedFromVersion),
     getCurrentUser(),
   ]);
-  const favoriteSlugs = await getFavoriteSongSlugSet(user, result.songs.map((song) => song.slug));
-  const songsWithFavorites = result.songs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) }));
+  const performanceVersion = performanceVersionForCatalog(supportedVersion, removedFromVersion);
+  const recommendedSongs = await addChartRecommendationsToSongs(user?.id ?? null, performanceVersion, result.songs, ["S"]);
+  const favoriteSlugs = await getFavoriteSongSlugSet(user, recommendedSongs.map((song) => song.slug));
+  const songsWithFavorites = recommendedSongs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) }));
   return (
     <main className="min-h-screen bg-[#f7f8f2] text-[#171916]">
       <HomeHero accountSlot={<AccountBar />} />
