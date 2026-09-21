@@ -21,11 +21,10 @@ interface SongCardProps {
   onOpen?: (song: PublicSong, chartToken?: string) => void;
   onPreviewStart: (song: PublicSong) => void;
   onPreviewStop: () => void;
-  showSingleChartToken?: boolean;
   showManualUploadState?: boolean;
 }
 
-export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, onOpen, onPreviewStart, onPreviewStop, showSingleChartToken = false }: SongCardProps) {
+export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, onOpen, onPreviewStart, onPreviewStop }: SongCardProps) {
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const imageLoaded = !song.imageUrl || loadedImageUrl === song.imageUrl;
@@ -212,7 +211,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
           {song.chartSummary.length > 0 ? (
             <>
               <span className="pointer-events-none absolute bottom-2 right-2 z-20 bg-[#f5f7f0]/90 px-1.5 py-1 text-[10px] font-black uppercase leading-none text-[#263020] shadow-[0_2px_8px_rgba(0,0,0,0.16)] sm:hidden">
-                {showSingleChartToken && song.chartSummary.length === 1 ? song.chartSummary[0] : `${song.chartSummary.length} ${song.chartSummary.length === 1 ? "chart" : "charts"}`}
+                {`${song.chartSummary.length} ${song.chartSummary.length === 1 ? "chart" : "charts"}`}
               </span>
               <div className="pointer-events-none absolute bottom-2 right-2 z-20 hidden grid-cols-4 gap-1 sm:grid">
                 {Array.from({ length: emptyChartSlots }, (_, index) => (

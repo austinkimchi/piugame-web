@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
         const song = songsByTitle.get(songLookupKey(play.songName));
         const chartToken = song ? chartTokenForRecentPlay(song.chartSummary, play) : null;
         if (!song || !chartToken || !matchesRecentFilters(song, chartToken, filters)) return [];
-        return [{ ...song, chartSummary: [chartToken], recommendedChartToken: chartToken }];
+        return [{ ...song, recommendedChartToken: chartToken }];
       });
     const recentFavoriteSlugs = favoriteSlugsForSort ?? await getFavoriteSongSlugSet(user, songs.map((song) => song.slug));
     const orderedSongs = favoriteSlugsForSort?.size ? [...songs].sort((left, right) => Number(recentFavoriteSlugs.has(right.slug)) - Number(recentFavoriteSlugs.has(left.slug))) : songs;

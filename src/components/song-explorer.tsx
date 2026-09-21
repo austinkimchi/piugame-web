@@ -1250,7 +1250,6 @@ export function SongExplorer({
                     onPreviewStart={playSongPreview}
                     onPreviewStop={() => stopSongPreview(song.previewUrl)}
                     sequence={index}
-                    showSingleChartToken={isRecentSearch}
                     song={song}
                   />
                 ))}
