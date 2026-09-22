@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { emitPerformanceRefreshState } from "@/lib/performance-refresh-events";
+import { runPerformanceRefresh } from "@/lib/performance-refresh-events";
 
 let startedForPageLoad = false;
 
@@ -14,16 +14,13 @@ export function HomePerformanceRefresh({ enabled }: { enabled: boolean }) {
 
     startedForPageLoad = true;
     async function refreshPerformance() {
-      emitPerformanceRefreshState("syncing");
-      try {
+      await runPerformanceRefresh(async () => {
         await fetch("/api/performance/sync?response=json&background=true", {
           method: "POST",
           headers: { Accept: "application/json" },
           cache: "no-store",
         });
-      } finally {
-        emitPerformanceRefreshState("idle");
-      }
+      }, { wait: true });
     }
 
     void refreshPerformance().catch(() => undefined);

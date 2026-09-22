@@ -13,8 +13,8 @@ import {
   type BrowserExtensionSyncResult,
 } from "@/lib/browser-extension-sync";
 import {
-  emitPerformanceRefreshState,
   getPerformanceRefreshState,
+  runPerformanceRefresh,
   subscribePerformanceRefreshState,
 } from "@/lib/performance-refresh-events";
 
@@ -66,58 +66,72 @@ export function BrowserExtensionSyncControl() {
 
   async function syncFromBrowser() {
     if (!extensionSupported || busy) return;
-    setSyncing(true);
-    setSyncSlow(false);
-    setResult(null);
-    setServerMessage(null);
-    emitPerformanceRefreshState("syncing");
     try {
-      const nextResult = await requestExtensionSync(() => {
-        if (mountedRef.current) setSyncSlow(true);
+      const attempt = await runPerformanceRefresh(async () => {
+        setSyncing(true);
+        setSyncSlow(false);
+        setResult(null);
+        setServerMessage(null);
+        try {
+          const nextResult = await requestExtensionSync(() => {
+            if (mountedRef.current) setSyncSlow(true);
+          });
+          if (!mountedRef.current) return;
+          setResult(nextResult);
+          if (nextResult.ok) router.refresh();
+        } finally {
+          if (mountedRef.current) {
+            setSyncing(false);
+            setSyncSlow(false);
+          }
+        }
       });
-      if (!mountedRef.current) return;
-      setResult(nextResult);
-      if (nextResult.ok) {
-        router.refresh();
+      if (!attempt.started && mountedRef.current) {
+        setServerMessage("Another performance refresh is already running.");
       }
-    } finally {
+    } catch {
       if (mountedRef.current) {
         setSyncing(false);
         setSyncSlow(false);
+        setServerMessage("Browser sync failed.");
       }
-      emitPerformanceRefreshState("idle");
     }
   }
 
   async function refreshOnServer() {
     if (busy) return;
-    setServerSyncing(true);
-    setResult(null);
-    setServerMessage(null);
-    emitPerformanceRefreshState("syncing");
     try {
-      const response = await fetch("/api/performance/sync?response=json", {
-        method: "POST",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
+      const attempt = await runPerformanceRefresh(async () => {
+        setServerSyncing(true);
+        setResult(null);
+        setServerMessage(null);
+        try {
+          const response = await fetch("/api/performance/sync?response=json", {
+            method: "POST",
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+          });
+          const body = (await response.json().catch(() => null)) as { error?: unknown; throttled?: unknown } | null;
+          if (!mountedRef.current) return;
+          if (!response.ok) {
+            setServerMessage(typeof body?.error === "string" && body.error.trim() ? body.error.trim() : "Server refresh failed.");
+            return;
+          }
+          setServerMessage(serverSyncSuccessMessage(body?.throttled === true));
+          router.refresh();
+        } catch {
+          if (mountedRef.current) setServerMessage("Server refresh failed.");
+        } finally {
+          if (mountedRef.current) setServerSyncing(false);
+        }
       });
-      const body = (await response.json().catch(() => null)) as { error?: unknown; throttled?: unknown } | null;
-      if (!mountedRef.current) return;
-      if (!response.ok) {
-        setServerMessage(typeof body?.error === "string" && body.error.trim() ? body.error.trim() : "Server refresh failed.");
-        return;
+      if (!attempt.started && mountedRef.current) {
+        setServerMessage("Another performance refresh is already running.");
       }
-      setServerMessage(serverSyncSuccessMessage(body?.throttled === true));
-      router.refresh();
     } catch {
       if (mountedRef.current) {
         setServerMessage("Server refresh failed.");
       }
-    } finally {
-      if (mountedRef.current) {
-        setServerSyncing(false);
-      }
-      emitPerformanceRefreshState("idle");
     }
   }
 

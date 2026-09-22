@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { after } from "next/server";
 import { Activity, ArrowUpRight, BarChart3, Database, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
 
 import { AccountBar } from "@/components/account-bar";
@@ -10,7 +9,7 @@ import { PerformanceDashboardTables } from "@/components/performance-dashboard-t
 import { PerformancePageRefresh } from "@/components/performance-page-refresh";
 import { getCurrentUser } from "@/lib/auth";
 import { getSongsByTitles } from "@/lib/catalog";
-import { getPerformanceDashboard, syncCurrentUserTopPlaysIfDue, type PerformanceDashboard } from "@/lib/performance";
+import { getPerformanceDashboard, type PerformanceDashboard } from "@/lib/performance";
 import { createPerformanceSyncToken } from "@/lib/performance-sync-token";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 
@@ -29,11 +28,6 @@ export default async function PerformancePage() {
   const user = await getCurrentUser();
   const userId = user?.id ?? null;
   const dashboard = await getPerformanceDashboard(userId);
-  if (userId && dashboard.mongoReady) {
-    after(() => {
-      void syncCurrentUserTopPlaysIfDue(userId).catch(() => undefined);
-    });
-  }
   const catalogSongsByTitle = await getSongsByTitles(
     normalizePiuGameVersion(user?.preferences.piuGameVersion),
     [...dashboard.topCharts.map((chart) => chart.songName), ...dashboard.recentPlays.map((play) => play.songName)],

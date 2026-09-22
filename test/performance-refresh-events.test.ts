@@ -2,31 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  emitPerformanceRefreshState,
   getPerformanceRefreshState,
-  subscribePerformanceRefreshState,
+  runPerformanceRefresh,
 } from "../src/lib/performance-refresh-events.ts";
 
-test("keeps the shared refresh state busy until overlapping work finishes", () => {
-  let notifications = 0;
-  const unsubscribe = subscribePerformanceRefreshState(() => {
-    notifications += 1;
+test("rejects an overlapping interactive refresh until the active work finishes", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const first = runPerformanceRefresh(async () => {
+    await gate;
+    return "finished";
   });
 
-  try {
-    assert.equal(getPerformanceRefreshState(), "idle");
-    emitPerformanceRefreshState("syncing");
-    emitPerformanceRefreshState("syncing");
-    assert.equal(getPerformanceRefreshState(), "syncing");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(getPerformanceRefreshState(), "syncing");
+  assert.deepEqual(await runPerformanceRefresh(async () => "overlap"), { started: false });
 
-    emitPerformanceRefreshState("idle");
-    assert.equal(getPerformanceRefreshState(), "syncing");
-    emitPerformanceRefreshState("idle");
-    assert.equal(getPerformanceRefreshState(), "idle");
-    assert.equal(notifications, 2);
-  } finally {
-    unsubscribe();
-    emitPerformanceRefreshState("idle");
-    emitPerformanceRefreshState("idle");
-  }
+  release();
+  assert.deepEqual(await first, { started: true, value: "finished" });
+  assert.equal(getPerformanceRefreshState(), "idle");
 });
