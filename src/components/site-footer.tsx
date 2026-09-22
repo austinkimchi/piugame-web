@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, GitFork, History, Mail, MessageSquare, Send, X } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, GitFork, History, Mail, MessageSquare, Send, ShieldCheck, X } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { type FormEvent, useMemo, useState } from "react";
 
@@ -87,6 +88,11 @@ export function SiteFooter({ showAdminDashboardLink = false }: { showAdminDashbo
               <GitFork aria-hidden="true" size={17} />
               austinkimchi/piugame-sdk
             </a>
+            <span aria-hidden="true" className="text-[#a0aa98]">/</span>
+            <Link className="inline-flex items-center gap-2 text-[#3d4638] hover:text-[#28c950]" href="/privacy">
+              <ShieldCheck aria-hidden="true" size={17} />
+              Privacy
+            </Link>
             <span aria-hidden="true" className="text-[#a0aa98]">/</span>
             <span>&copy; {year} Austin Kim</span>
           </div>

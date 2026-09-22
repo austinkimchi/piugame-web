@@ -58,6 +58,47 @@ export class MobileSyncValidationError extends Error {
 }
 
 const FORBIDDEN_KEYS = new Set(["password", "credentials", "cookie", "cookies", "html", "rawhtml", "mb_password"]);
+const ROOT_FIELDS = new Set([
+  "schemaVersion",
+  "idempotencyKey",
+  "installationId",
+  "source",
+  "appVersion",
+  "piuVersion",
+  "generatedAt",
+  "profile",
+  "recentPlays",
+]);
+const PROFILE_FIELDS = new Set([
+  "username",
+  "displayName",
+  "titleName",
+  "gameId",
+  "pumpTag",
+  "avatarUrl",
+  "pumbilityScore",
+  "pp",
+  "rating",
+  "playCount",
+  "clearCount",
+  "totalCharts",
+  "progressPercent",
+  "plateCounts",
+  "recentArcade",
+  "lastAccess",
+]);
+const RECENT_PLAY_FIELDS = new Set([
+  "songName",
+  "mode",
+  "level",
+  "score",
+  "grade",
+  "plate",
+  "stageBreak",
+  "judgments",
+  "playedAt",
+]);
+const JUDGMENT_FIELDS = new Set(["perfect", "great", "good", "bad", "miss"]);
 const INSTALLATION_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 const ASSET_CODE_PATTERN = /^[a-z0-9_+-]{1,24}$/;
 const PIU_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?\s*\(GMT([+-])(\d{1,2})(?::?(\d{2}))?\)$/i;
@@ -66,6 +107,7 @@ const ISO_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(
 export function parseMobilePerformanceImport(value: unknown, now = new Date()): MobilePerformanceImport {
   assertNoForbiddenKeys(value);
   const root = record(value, "payload");
+  assertOnlyKeys(root, ROOT_FIELDS, "payload");
   if (root.schemaVersion !== 1) {
     throw new MobileSyncValidationError("Unsupported schema version.", "schemaVersion");
   }
@@ -77,6 +119,7 @@ export function parseMobilePerformanceImport(value: unknown, now = new Date()): 
   }
 
   const profile = record(root.profile, "profile");
+  assertOnlyKeys(profile, PROFILE_FIELDS, "profile");
   const recentPlays = array(root.recentPlays, "recentPlays", 100).map((play, index) =>
     parseRecentPlay(play, index, generatedAtDate),
   );
@@ -114,6 +157,7 @@ export function parseMobilePerformanceImport(value: unknown, now = new Date()): 
 function parseRecentPlay(value: unknown, index: number, generatedAt: Date): MobileRecentPlay {
   const path = `recentPlays[${index}]`;
   const play = record(value, path);
+  assertOnlyKeys(play, RECENT_PLAY_FIELDS, path);
   const playedAt = text(play.playedAt, `${path}.playedAt`, 1, 80);
   const playedAtDate = parsePlayTimestamp(playedAt);
   if (!playedAtDate || playedAtDate.getTime() > generatedAt.getTime() + 10 * 60 * 1000) {
@@ -138,6 +182,7 @@ function judgments(value: unknown, path: string): MobileRecentPlay["judgments"] 
     return { perfect: null, great: null, good: null, bad: null, miss: null };
   }
   const input = record(value, `${path}.judgments`);
+  assertOnlyKeys(input, JUDGMENT_FIELDS, `${path}.judgments`);
   return {
     perfect: optionalInteger(input.perfect, `${path}.judgments.perfect`, 0, 100_000),
     great: optionalInteger(input.great, `${path}.judgments.great`, 0, 100_000),
@@ -177,6 +222,14 @@ function assertNoForbiddenKeys(value: unknown, depth = 0): void {
       throw new MobileSyncValidationError("Credentials, cookies, and raw HTML are forbidden.", key);
     }
     assertNoForbiddenKeys(child, depth + 1);
+  }
+}
+
+function assertOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>, field: string): void {
+  const unexpected = Object.keys(value).find((key) => !allowed.has(key));
+  if (unexpected) {
+    const path = field === "payload" ? unexpected : `${field}.${unexpected}`;
+    throw new MobileSyncValidationError("Unexpected field.", path);
   }
 }
 

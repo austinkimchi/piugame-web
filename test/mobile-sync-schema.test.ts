@@ -54,6 +54,20 @@ test("rejects PIUGAME credentials and raw HTML anywhere in the payload", () => {
     () => parseMobilePerformanceImport(withHtml, NOW),
     (error: unknown) => error instanceof MobileSyncValidationError && error.field === "rawHtml",
   );
+
+  const withPiuPassword = validPayload();
+  withPiuPassword.profile.piuPassword = "do-not-upload";
+  assert.throws(
+    () => parseMobilePerformanceImport(withPiuPassword, NOW),
+    (error: unknown) => error instanceof MobileSyncValidationError && error.field === "profile.piuPassword",
+  );
+
+  const withSessionCookie = validPayload();
+  withSessionCookie.sessionCookie = "do-not-upload";
+  assert.throws(
+    () => parseMobilePerformanceImport(withSessionCookie, NOW),
+    (error: unknown) => error instanceof MobileSyncValidationError && error.field === "sessionCookie",
+  );
 });
 
 test("rejects unsupported versions, invalid charts, and future timestamps", () => {
