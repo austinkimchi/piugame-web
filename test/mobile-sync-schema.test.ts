@@ -56,7 +56,7 @@ test("rejects PIUGAME credentials and raw HTML anywhere in the payload", () => {
   );
 });
 
-test("rejects unsupported versions, invalid charts, and future snapshots", () => {
+test("rejects unsupported versions, invalid charts, and future timestamps", () => {
   const wrongSchema = validPayload();
   wrongSchema.schemaVersion = 2;
   assert.throws(() => parseMobilePerformanceImport(wrongSchema, NOW), MobileSyncValidationError);
@@ -68,6 +68,14 @@ test("rejects unsupported versions, invalid charts, and future snapshots", () =>
   const future = validPayload();
   future.generatedAt = "2026-09-22T02:11:00.000Z";
   assert.throws(() => parseMobilePerformanceImport(future, NOW), MobileSyncValidationError);
+
+  const futurePlay = validPayload();
+  futurePlay.recentPlays[0].playedAt = "2099-01-01T00:00:00Z";
+  assert.throws(() => parseMobilePerformanceImport(futurePlay, NOW), MobileSyncValidationError);
+
+  const impossiblePlay = validPayload();
+  impossiblePlay.recentPlays[0].playedAt = "2026-02-30 10:55:00 (GMT+9)";
+  assert.throws(() => parseMobilePerformanceImport(impossiblePlay, NOW), MobileSyncValidationError);
 });
 
 interface TestPayload extends Record<string, unknown> {

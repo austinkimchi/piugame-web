@@ -52,6 +52,7 @@ interface MinimalUserDocument {
     displayName?: string;
     avatarUrl?: string | null;
     lastProfileFetchedAt?: Date;
+    lastMobileSnapshotGeneratedAt?: Date;
     encryptedPassword?: CryptoPayloadV1;
   };
 }
@@ -78,6 +79,7 @@ interface PerformanceProfileDocument {
   syncStatus: SyncStatus;
   syncError: string | null;
   lastSyncedAt: Date | null;
+  lastSnapshotGeneratedAt?: Date | null;
   allPlaysSyncStatus?: AllPlaysSyncStatus | null;
   allPlaysSyncError?: string | null;
   allPlaysSyncedAt?: Date | null;
@@ -990,21 +992,39 @@ export async function importMobilePerformanceSnapshot(
     playedAt: play.playedAt,
   }));
 
-  const result = await storePerformanceSnapshot(userId, input.piuVersion, profile, recentPlays);
+  const generatedAt = new Date(input.generatedAt);
+  const result = await storePerformanceSnapshot(userId, input.piuVersion, profile, recentPlays, {
+    observedAt: generatedAt,
+    displayName: input.profile.displayName,
+    pumpTag: input.profile.pumpTag,
+  });
   const now = new Date();
-  await users.updateOne(
-    { _id: userId },
-    {
-      $set: {
-        "preferences.piuGameVersion": input.piuVersion,
-        "piuLink.displayName": input.profile.displayName,
-        "piuLink.avatarUrl": input.profile.avatarUrl,
-        "piuLink.lastProfileFetchedAt": now,
-        updatedAt: now,
+  if (result.profileUpdated) {
+    await users.updateOne(
+      {
+        _id: userId,
+        $or: [
+          { "piuLink.lastMobileSnapshotGeneratedAt": { $exists: false } },
+          { "piuLink.lastMobileSnapshotGeneratedAt": null },
+          { "piuLink.lastMobileSnapshotGeneratedAt": { $lte: generatedAt } },
+        ],
       },
-    },
-  );
-  return result;
+      {
+        $set: {
+          "preferences.piuGameVersion": input.piuVersion,
+          "piuLink.displayName": input.profile.displayName,
+          "piuLink.avatarUrl": input.profile.avatarUrl,
+          "piuLink.lastProfileFetchedAt": now,
+          "piuLink.lastMobileSnapshotGeneratedAt": generatedAt,
+          updatedAt: now,
+        },
+      },
+    );
+  }
+  return {
+    importedRecentPlays: result.importedRecentPlays,
+    duplicateRecentPlays: result.duplicateRecentPlays,
+  };
 }
 
 /**
@@ -1165,47 +1185,71 @@ async function storePerformanceSnapshot(
   piuVersion: PiuCatalogVersion,
   profile: PlayerData,
   recentPlays: RecentPlay[],
-): Promise<MobilePerformanceImportResult> {
+  options: {
+    observedAt?: Date;
+    displayName?: string;
+    pumpTag?: string | null;
+  } = {},
+): Promise<MobilePerformanceImportResult & { profileUpdated: boolean }> {
   const { profiles, plays, chartStats, metricSnapshots } = await collections();
   const now = new Date();
+  const observedAt = options.observedAt ?? now;
   const piuUsername = profile.username.trim();
   const nextRefreshAt = new Date(now.getTime() + Math.max(5, PERFORMANCE_REFRESH_MINUTES) * 60 * 1000);
+  const profileFields = {
+    piuUsername,
+    displayName: options.displayName?.trim() || profile.gameIdTag?.trim() || profile.gameId?.trim() || piuUsername,
+    titleName: profile.titleName,
+    gameId: profile.gameId,
+    pumpTag: options.pumpTag === undefined ? profile.gameIdTag : options.pumpTag,
+    avatarUrl: profile.avatarUrl,
+    pumbilityScore: profile.pumbilityScore,
+    pp: profile.pp,
+    rating: profile.rating,
+    playCount: profile.playCount,
+    clearCount: profile.clear.cleared,
+    totalCharts: profile.clear.total,
+    progressPercent: profile.progressPercent,
+    plateCounts: profile.plateCounts,
+    recentArcade: profile.recentArcade,
+    lastAccess: profile.lastAccess,
+    syncStatus: "synced" as const,
+    syncError: null,
+    lastSyncedAt: now,
+    lastSnapshotGeneratedAt: observedAt,
+    nextRefreshAt,
+    syncLeaseUntil: null,
+    updatedAt: now,
+  };
 
-  await profiles.updateOne(
+  const insertedProfile = await profiles.updateOne(
     { userId, piuVersion },
     {
-      $set: {
-        piuUsername,
-        displayName: profile.gameIdTag?.trim() || profile.gameId?.trim() || piuUsername,
-        titleName: profile.titleName,
-        gameId: profile.gameId,
-        pumpTag: profile.gameIdTag,
-        avatarUrl: profile.avatarUrl,
-        pumbilityScore: profile.pumbilityScore,
-        pp: profile.pp,
-        rating: profile.rating,
-        playCount: profile.playCount,
-        clearCount: profile.clear.cleared,
-        totalCharts: profile.clear.total,
-        progressPercent: profile.progressPercent,
-        plateCounts: profile.plateCounts,
-        recentArcade: profile.recentArcade,
-        lastAccess: profile.lastAccess,
-        syncStatus: "synced",
-        syncError: null,
-        lastSyncedAt: now,
-        nextRefreshAt,
-        syncLeaseUntil: null,
-        updatedAt: now,
-      },
       $setOnInsert: {
         userId,
         piuVersion,
+        ...profileFields,
         createdAt: now,
       },
     },
     { upsert: true },
   );
+  let profileUpdated = insertedProfile.upsertedCount > 0;
+  if (!profileUpdated) {
+    const updatedProfile = await profiles.updateOne(
+      {
+        userId,
+        piuVersion,
+        $or: [
+          { lastSnapshotGeneratedAt: { $exists: false } },
+          { lastSnapshotGeneratedAt: null },
+          { lastSnapshotGeneratedAt: { $lte: observedAt } },
+        ],
+      },
+      { $set: profileFields },
+    );
+    profileUpdated = updatedProfile.matchedCount > 0;
+  }
 
   let importedRecentPlays = 0;
   let duplicateRecentPlays = 0;
@@ -1224,20 +1268,22 @@ async function storePerformanceSnapshot(
     }
   }
 
-  const averageScores = await chartStats
-    .aggregate<{ averageBestScore: number }>([
-      { $match: { userId, piuVersion, bestScore: { $type: "number" } } },
-      { $group: { _id: null, averageBestScore: { $avg: "$bestScore" } } },
-    ])
-    .toArray();
-  await metricSnapshots.insertOne({
-    userId,
-    piuVersion,
-    capturedAt: now,
-    pumbilityScore: profile.pumbilityScore,
-    averageBestScore: roundedAverageBestScore(averageScores[0]?.averageBestScore),
-  });
-  return { importedRecentPlays, duplicateRecentPlays };
+  if (profileUpdated) {
+    const averageScores = await chartStats
+      .aggregate<{ averageBestScore: number }>([
+        { $match: { userId, piuVersion, bestScore: { $type: "number" } } },
+        { $group: { _id: null, averageBestScore: { $avg: "$bestScore" } } },
+      ])
+      .toArray();
+    await metricSnapshots.insertOne({
+      userId,
+      piuVersion,
+      capturedAt: observedAt,
+      pumbilityScore: profile.pumbilityScore,
+      averageBestScore: roundedAverageBestScore(averageScores[0]?.averageBestScore),
+    });
+  }
+  return { importedRecentPlays, duplicateRecentPlays, profileUpdated };
 }
 
 async function queueAllPlaysBackfill(userId: ObjectId, piuVersion: PiuCatalogVersion): Promise<void> {

@@ -60,7 +60,8 @@ export class MobileSyncValidationError extends Error {
 const FORBIDDEN_KEYS = new Set(["password", "credentials", "cookie", "cookies", "html", "rawhtml", "mb_password"]);
 const INSTALLATION_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 const ASSET_CODE_PATTERN = /^[a-z0-9_+-]{1,24}$/;
-const PIU_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?\s*\(GMT[+-]\d{1,2}(?::?\d{2})?\)$/i;
+const PIU_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?\s*\(GMT([+-])(\d{1,2})(?::?(\d{2}))?\)$/i;
+const ISO_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/i;
 
 export function parseMobilePerformanceImport(value: unknown, now = new Date()): MobilePerformanceImport {
   assertNoForbiddenKeys(value);
@@ -70,12 +71,15 @@ export function parseMobilePerformanceImport(value: unknown, now = new Date()): 
   }
 
   const generatedAt = timestamp(root.generatedAt, "generatedAt");
-  if (new Date(generatedAt).getTime() > now.getTime() + 10 * 60 * 1000) {
+  const generatedAtDate = new Date(generatedAt);
+  if (generatedAtDate.getTime() > now.getTime() + 10 * 60 * 1000) {
     throw new MobileSyncValidationError("generatedAt is too far in the future.", "generatedAt");
   }
 
   const profile = record(root.profile, "profile");
-  const recentPlays = array(root.recentPlays, "recentPlays", 100).map((play, index) => parseRecentPlay(play, index));
+  const recentPlays = array(root.recentPlays, "recentPlays", 100).map((play, index) =>
+    parseRecentPlay(play, index, generatedAtDate),
+  );
 
   return {
     schemaVersion: 1,
@@ -107,11 +111,12 @@ export function parseMobilePerformanceImport(value: unknown, now = new Date()): 
   };
 }
 
-function parseRecentPlay(value: unknown, index: number): MobileRecentPlay {
+function parseRecentPlay(value: unknown, index: number, generatedAt: Date): MobileRecentPlay {
   const path = `recentPlays[${index}]`;
   const play = record(value, path);
   const playedAt = text(play.playedAt, `${path}.playedAt`, 1, 80);
-  if (!PIU_TIMESTAMP_PATTERN.test(playedAt) && Number.isNaN(Date.parse(playedAt))) {
+  const playedAtDate = parsePlayTimestamp(playedAt);
+  if (!playedAtDate || playedAtDate.getTime() > generatedAt.getTime() + 10 * 60 * 1000) {
     throw new MobileSyncValidationError("Invalid play timestamp.", `${path}.playedAt`);
   }
 
@@ -260,9 +265,75 @@ function timestamp(value: unknown, field: string): string {
   if (typeof value !== "string") {
     throw new MobileSyncValidationError("Expected a timestamp.", field);
   }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const date = parseISOTimestamp(value);
+  if (!date) {
     throw new MobileSyncValidationError("Invalid timestamp.", field);
   }
   return date.toISOString();
+}
+
+function parsePlayTimestamp(value: string): Date | null {
+  const piuMatch = PIU_TIMESTAMP_PATTERN.exec(value);
+  if (piuMatch) {
+    const [, year, month, day, hour, minute, second = "0", sign, offsetHour, offsetMinute = "0"] = piuMatch;
+    return dateFromParts({ year, month, day, hour, minute, second, milliseconds: "0", sign, offsetHour, offsetMinute });
+  }
+  return parseISOTimestamp(value);
+}
+
+function parseISOTimestamp(value: string): Date | null {
+  const match = ISO_TIMESTAMP_PATTERN.exec(value);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second, fraction = "0", zone, sign = "+", offsetHour = "0", offsetMinute = "0"] = match;
+  return dateFromParts({
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    milliseconds: fraction.padEnd(3, "0"),
+    sign: zone.toUpperCase() === "Z" ? "+" : sign,
+    offsetHour: zone.toUpperCase() === "Z" ? "0" : offsetHour,
+    offsetMinute: zone.toUpperCase() === "Z" ? "0" : offsetMinute,
+  });
+}
+
+function dateFromParts(parts: {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second: string;
+  milliseconds: string;
+  sign: string;
+  offsetHour: string;
+  offsetMinute: string;
+}): Date | null {
+  const year = Number(parts.year);
+  const month = Number(parts.month);
+  const day = Number(parts.day);
+  const hour = Number(parts.hour);
+  const minute = Number(parts.minute);
+  const second = Number(parts.second);
+  const milliseconds = Number(parts.milliseconds);
+  const offsetHour = Number(parts.offsetHour);
+  const offsetMinute = Number(parts.offsetMinute);
+  const wallTime = Date.UTC(year, month - 1, day, hour, minute, second, milliseconds);
+  const wallDate = new Date(wallTime);
+  if (
+    wallDate.getUTCFullYear() !== year ||
+    wallDate.getUTCMonth() !== month - 1 ||
+    wallDate.getUTCDate() !== day ||
+    wallDate.getUTCHours() !== hour ||
+    wallDate.getUTCMinutes() !== minute ||
+    wallDate.getUTCSeconds() !== second ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    return null;
+  }
+  const offset = (offsetHour * 60 + offsetMinute) * (parts.sign === "+" ? 1 : -1);
+  return new Date(wallTime - offset * 60 * 1000);
 }
