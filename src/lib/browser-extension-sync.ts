@@ -20,6 +20,7 @@ const ALLOWED_RECOVERY_ORIGINS = new Set([
   "https://www.piugame.com",
   "https://phoenix.piugame.com",
 ]);
+const CORRELATED_SYNC_MINIMUM_VERSION = [0, 2, 1];
 
 export function parseExtensionReady(value: unknown): BrowserExtensionReady | null {
   if (!isRecord(value) || typeof value.version !== "string" || !isManifestVersion(value.version)) {
@@ -28,8 +29,19 @@ export function parseExtensionReady(value: unknown): BrowserExtensionReady | nul
   return { version: value.version };
 }
 
-export function parseExtensionSyncResult(value: unknown): BrowserExtensionSyncResult | null {
-  if (!isRecord(value) || typeof value.ok !== "boolean") {
+export function extensionSupportsCorrelatedSync(version: string): boolean {
+  if (!isManifestVersion(version)) return false;
+  const parts = version.split(".").map(Number);
+  for (let index = 0; index < CORRELATED_SYNC_MINIMUM_VERSION.length; index += 1) {
+    const part = parts[index] ?? 0;
+    const minimum = CORRELATED_SYNC_MINIMUM_VERSION[index];
+    if (part !== minimum) return part > minimum;
+  }
+  return true;
+}
+
+export function parseExtensionSyncResult(value: unknown, requestId: string): BrowserExtensionSyncResult | null {
+  if (!isRecord(value) || value.requestId !== requestId || typeof value.ok !== "boolean") {
     return null;
   }
   if (value.ok) {
@@ -54,6 +66,12 @@ export function parseExtensionSyncResult(value: unknown): BrowserExtensionSyncRe
     error: typeof value.error === "string" && value.error.trim() ? value.error.trim() : "Browser sync failed.",
     recovery,
   };
+}
+
+export function serverSyncSuccessMessage(throttled: boolean): string {
+  return throttled
+    ? "A server refresh was recently requested. Retry in a few seconds if data is still stale."
+    : "Server refresh complete.";
 }
 
 export function browserSyncSuccessMessage(result: Extract<BrowserExtensionSyncResult, { ok: true }>): string {

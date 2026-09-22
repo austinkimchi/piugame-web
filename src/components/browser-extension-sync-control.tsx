@@ -6,8 +6,10 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   browserSyncSuccessMessage,
+  extensionSupportsCorrelatedSync,
   parseExtensionReady,
   parseExtensionSyncResult,
+  serverSyncSuccessMessage,
   type BrowserExtensionSyncResult,
 } from "@/lib/browser-extension-sync";
 import {
@@ -37,6 +39,7 @@ export function BrowserExtensionSyncControl() {
     getPerformanceRefreshState,
     getPerformanceRefreshState,
   );
+  const extensionSupported = extension.kind === "ready" && extensionSupportsCorrelatedSync(extension.version);
   const busy = syncing || serverSyncing || sharedRefreshState === "syncing";
 
   useEffect(() => {
@@ -61,7 +64,7 @@ export function BrowserExtensionSyncControl() {
   }, []);
 
   async function syncFromBrowser() {
-    if (extension.kind !== "ready" || busy) return;
+    if (!extensionSupported || busy) return;
     setSyncing(true);
     setResult(null);
     setServerMessage(null);
@@ -99,7 +102,7 @@ export function BrowserExtensionSyncControl() {
         setServerMessage(typeof body?.error === "string" && body.error.trim() ? body.error.trim() : "Server refresh failed.");
         return;
       }
-      setServerMessage(body?.throttled === true ? "Server refresh is already up to date." : "Server refresh complete.");
+      setServerMessage(serverSyncSuccessMessage(body?.throttled === true));
       router.refresh();
     } catch {
       if (mountedRef.current) {
@@ -117,7 +120,7 @@ export function BrowserExtensionSyncControl() {
     <div>
       <button
         className="inline-flex h-11 w-full items-center justify-center gap-2 bg-[#28c950] px-4 text-sm font-black text-[#071109] transition hover:bg-[#35d867] disabled:cursor-not-allowed disabled:bg-[#d9ded2] disabled:text-[#66705e]"
-        disabled={extension.kind !== "ready" || busy}
+        disabled={!extensionSupported || busy}
         onClick={() => void syncFromBrowser()}
         type="button"
       >
@@ -153,6 +156,7 @@ export function BrowserExtensionSyncControl() {
 
 function requestExtensionSync(): Promise<BrowserExtensionSyncResult> {
   return new Promise((resolve) => {
+    const requestId = crypto.randomUUID();
     let settled = false;
     const finish = (result: BrowserExtensionSyncResult) => {
       if (settled) return;
@@ -162,7 +166,7 @@ function requestExtensionSync(): Promise<BrowserExtensionSyncResult> {
       resolve(result);
     };
     const onResult = (event: Event) => {
-      const result = parseExtensionSyncResult((event as CustomEvent<unknown>).detail);
+      const result = parseExtensionSyncResult((event as CustomEvent<unknown>).detail, requestId);
       if (result) finish(result);
     };
     const timer = window.setTimeout(() => {
@@ -170,7 +174,7 @@ function requestExtensionSync(): Promise<BrowserExtensionSyncResult> {
     }, SYNC_TIMEOUT_MS);
 
     window.addEventListener("mypiu:extension-sync-result", onResult);
-    window.dispatchEvent(new Event("mypiu:request-extension-sync"));
+    window.dispatchEvent(new CustomEvent("mypiu:request-extension-sync", { detail: { requestId } }));
   });
 }
 
@@ -190,5 +194,6 @@ function statusText(
   if (serverMessage) return serverMessage;
   if (extension.kind === "checking") return "Checking for MyPIU Sync...";
   if (extension.kind === "missing") return "MyPIU Sync extension not detected.";
+  if (!extensionSupportsCorrelatedSync(extension.version)) return "Update MyPIU Sync to version 0.2.1 or newer.";
   return `MyPIU Sync ${extension.version} is ready.`;
 }
