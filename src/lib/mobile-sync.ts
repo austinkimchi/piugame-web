@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { ObjectId, MongoServerError, type Collection } from "mongodb";
 
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
@@ -37,6 +37,7 @@ interface MobileSyncReceiptDocument {
   piuVersion: MobilePerformanceImport["piuVersion"];
   generatedAt: Date;
   status: "processing" | "completed";
+  processingToken: string;
   result: Omit<MobileSyncResult, "duplicateRequest"> | null;
   createdAt: Date;
   processingExpiresAt: Date;
@@ -86,6 +87,7 @@ export async function importIdempotentMobilePerformance(
   const userId = objectId(userIdInput);
   const { receipts } = await mobileSyncCollections();
   const now = new Date();
+  const processingToken = randomUUID();
   const payloadHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
   const receipt: MobileSyncReceiptDocument = {
     userId,
@@ -97,6 +99,7 @@ export async function importIdempotentMobilePerformance(
     piuVersion: input.piuVersion,
     generatedAt: new Date(input.generatedAt),
     status: "processing",
+    processingToken,
     result: null,
     createdAt: now,
     processingExpiresAt: new Date(now.getTime() + PROCESSING_LEASE_MS),
@@ -129,6 +132,7 @@ export async function importIdempotentMobilePerformance(
             piuVersion: input.piuVersion,
             generatedAt: new Date(input.generatedAt),
             createdAt: now,
+            processingToken,
             processingExpiresAt: new Date(now.getTime() + PROCESSING_LEASE_MS),
             expiresAt: new Date(now.getTime() + IDEMPOTENCY_RETENTION_MS),
           },
@@ -152,13 +156,16 @@ export async function importIdempotentMobilePerformance(
       ...imported,
       syncCursor: receiptId.toHexString(),
     };
-    await receipts.updateOne(
-      { _id: receiptId, status: "processing" },
+    const completed = await receipts.updateOne(
+      { _id: receiptId, status: "processing", processingToken },
       { $set: { status: "completed", result, completedAt: new Date() } },
     );
+    if (completed.modifiedCount !== 1) {
+      throw new MobileSyncInProgressError("The import lease was reclaimed before completion.");
+    }
     return { ...result, duplicateRequest: false };
   } catch (error) {
-    await receipts.deleteOne({ _id: receiptId, status: "processing" }).catch(() => undefined);
+    await receipts.deleteOne({ _id: receiptId, status: "processing", processingToken }).catch(() => undefined);
     throw error;
   }
 }

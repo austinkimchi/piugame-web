@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { ObjectId, type Collection, type Filter, type Sort, type WithId } from "mongodb";
+import { MongoServerError, ObjectId, type Collection, type Filter, type Sort, type WithId } from "mongodb";
 import { PiuClient, type BestPlay, type PlayerData, type RecentPlay, type TopPlay } from "@austinkimchi/piugame-sdk";
 
 import { recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
@@ -118,6 +118,7 @@ interface PerformanceChartStatDocument extends PerformanceChartStatSummary {
   piuVersion: PiuCatalogVersion;
   chartToken: string;
   piuUsername: string;
+  revision?: number;
 }
 
 interface PerformanceMetricSnapshotDocument {
@@ -1481,29 +1482,64 @@ async function updateChartStat(
   play: PerformancePlayEventDocument,
   now: Date,
 ): Promise<void> {
-  const existing = await chartStats.findOne({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken });
-  const summary = applyRecentPlaySummary(existing, play, play.playedAt, now);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const existing = await chartStats.findOne({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken });
+    const existingSummary = existing
+      ? withoutChartStatIdentity(existing)
+      : null;
+    const summary = applyRecentPlaySummary(existingSummary, play, play.playedAt, now);
 
-  if (!existing) {
-    await chartStats.insertOne({
-      userId: play.userId,
-      piuVersion: play.piuVersion,
-      chartToken: play.chartToken,
-      piuUsername: play.piuUsername,
-      ...summary,
-    });
-    return;
+    if (!existing) {
+      try {
+        await chartStats.insertOne({
+          userId: play.userId,
+          piuVersion: play.piuVersion,
+          chartToken: play.chartToken,
+          piuUsername: play.piuUsername,
+          revision: 1,
+          ...summary,
+        });
+        return;
+      } catch (error) {
+        if (error instanceof MongoServerError && error.code === 11000) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    const revisionFilter = existing.revision === undefined
+      ? { revision: { $exists: false as const } }
+      : { revision: existing.revision };
+    const updated = await chartStats.updateOne(
+      { _id: existing._id, ...revisionFilter },
+      {
+        $set: {
+          piuUsername: play.piuUsername,
+          ...summary,
+        },
+        $inc: { revision: 1 },
+      },
+    );
+    if (updated.modifiedCount === 1) {
+      return;
+    }
   }
 
-  await chartStats.updateOne(
-    { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
-    {
-      $set: {
-        piuUsername: play.piuUsername,
-        ...summary,
-      },
-    },
-  );
+  throw new Error(`Could not update chart summary after concurrent writes: ${play.chartToken}`);
+}
+
+function withoutChartStatIdentity(
+  chart: WithId<PerformanceChartStatDocument>,
+): PerformanceChartStatSummary {
+  const summary = { ...chart };
+  Reflect.deleteProperty(summary, "_id");
+  Reflect.deleteProperty(summary, "userId");
+  Reflect.deleteProperty(summary, "piuVersion");
+  Reflect.deleteProperty(summary, "chartToken");
+  Reflect.deleteProperty(summary, "piuUsername");
+  Reflect.deleteProperty(summary, "revision");
+  return summary;
 }
 
 async function markSyncFailed(userId: ObjectId, piuVersion: PiuCatalogVersion, error: unknown): Promise<void> {
