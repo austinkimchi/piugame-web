@@ -86,14 +86,8 @@ export default async function PerformancePage() {
               </div>
               <p className="mt-4 text-sm font-medium leading-6 text-[#56604e]">{statusDetail(user, dashboard)}</p>
               {dashboard.canSync ? (
-                <div className="mt-5 space-y-3">
+                <div className="mt-5">
                   <BrowserExtensionSyncControl />
-                  <form action="/api/performance/sync" method="post">
-                    <button className="inline-flex h-10 w-full items-center justify-center gap-2 border border-[#cdd5c5] bg-white px-4 text-xs font-black text-[#56604e] transition hover:border-[#171916] hover:text-[#171916]" type="submit">
-                      <RefreshCw aria-hidden="true" size={15} />
-                      Refresh on server
-                    </button>
-                  </form>
                 </div>
               ) : (
                 <Link className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 bg-[#171916] px-4 text-sm font-black text-white transition hover:bg-[#2f352b]" href="/">

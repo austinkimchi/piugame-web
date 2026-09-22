@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Laptop, LoaderCircle } from "lucide-react";
+import { ExternalLink, Laptop, LoaderCircle, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
@@ -29,13 +29,15 @@ export function BrowserExtensionSyncControl() {
   const mountedRef = useRef(true);
   const [extension, setExtension] = useState<ExtensionState>({ kind: "checking" });
   const [syncing, setSyncing] = useState(false);
+  const [serverSyncing, setServerSyncing] = useState(false);
   const [result, setResult] = useState<BrowserExtensionSyncResult | null>(null);
+  const [serverMessage, setServerMessage] = useState<string | null>(null);
   const sharedRefreshState = useSyncExternalStore(
     subscribePerformanceRefreshState,
     getPerformanceRefreshState,
     getPerformanceRefreshState,
   );
-  const busy = syncing || sharedRefreshState === "syncing";
+  const busy = syncing || serverSyncing || sharedRefreshState === "syncing";
 
   useEffect(() => {
     mountedRef.current = true;
@@ -62,6 +64,7 @@ export function BrowserExtensionSyncControl() {
     if (extension.kind !== "ready" || busy) return;
     setSyncing(true);
     setResult(null);
+    setServerMessage(null);
     emitPerformanceRefreshState("syncing");
     try {
       const nextResult = await requestExtensionSync();
@@ -73,6 +76,38 @@ export function BrowserExtensionSyncControl() {
     } finally {
       if (mountedRef.current) {
         setSyncing(false);
+      }
+      emitPerformanceRefreshState("idle");
+    }
+  }
+
+  async function refreshOnServer() {
+    if (busy) return;
+    setServerSyncing(true);
+    setResult(null);
+    setServerMessage(null);
+    emitPerformanceRefreshState("syncing");
+    try {
+      const response = await fetch("/api/performance/sync?response=json", {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      const body = (await response.json().catch(() => null)) as { error?: unknown; throttled?: unknown } | null;
+      if (!mountedRef.current) return;
+      if (!response.ok) {
+        setServerMessage(typeof body?.error === "string" && body.error.trim() ? body.error.trim() : "Server refresh failed.");
+        return;
+      }
+      setServerMessage(body?.throttled === true ? "Server refresh is already up to date." : "Server refresh complete.");
+      router.refresh();
+    } catch {
+      if (mountedRef.current) {
+        setServerMessage("Server refresh failed.");
+      }
+    } finally {
+      if (mountedRef.current) {
+        setServerSyncing(false);
       }
       emitPerformanceRefreshState("idle");
     }
@@ -90,7 +125,7 @@ export function BrowserExtensionSyncControl() {
         {syncing ? "Syncing on this device" : sharedRefreshState === "syncing" ? "Refresh in progress" : "Sync from this browser"}
       </button>
       <p aria-live="polite" className="mt-2 text-xs font-bold leading-5 text-[#66705e]">
-        {statusText(extension, syncing, sharedRefreshState === "syncing", result)}
+        {statusText(extension, syncing, serverSyncing, sharedRefreshState === "syncing", result, serverMessage)}
       </p>
       {result && !result.ok && result.recovery ? (
         <a
@@ -103,6 +138,15 @@ export function BrowserExtensionSyncControl() {
           <ExternalLink aria-hidden="true" size={13} />
         </a>
       ) : null}
+      <button
+        className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 border border-[#cdd5c5] bg-white px-4 text-xs font-black text-[#56604e] transition hover:border-[#171916] hover:text-[#171916] disabled:cursor-not-allowed disabled:bg-[#f0f2ec] disabled:text-[#8a9384]"
+        disabled={busy}
+        onClick={() => void refreshOnServer()}
+        type="button"
+      >
+        {serverSyncing ? <LoaderCircle aria-hidden="true" className="animate-spin" size={15} /> : <RefreshCw aria-hidden="true" size={15} />}
+        {serverSyncing ? "Refreshing on server" : "Refresh on server"}
+      </button>
     </div>
   );
 }
@@ -130,11 +174,20 @@ function requestExtensionSync(): Promise<BrowserExtensionSyncResult> {
   });
 }
 
-function statusText(extension: ExtensionState, syncing: boolean, sharedRefreshActive: boolean, result: BrowserExtensionSyncResult | null): string {
+function statusText(
+  extension: ExtensionState,
+  syncing: boolean,
+  serverSyncing: boolean,
+  sharedRefreshActive: boolean,
+  result: BrowserExtensionSyncResult | null,
+  serverMessage: string | null,
+): string {
   if (syncing) return "PIUGAME is being read by this browser.";
+  if (serverSyncing) return "MyPIU is refreshing through the server fallback.";
   if (sharedRefreshActive) return "The current performance refresh is finishing.";
   if (result?.ok) return browserSyncSuccessMessage(result);
   if (result && !result.ok) return result.error;
+  if (serverMessage) return serverMessage;
   if (extension.kind === "checking") return "Checking for MyPIU Sync...";
   if (extension.kind === "missing") return "MyPIU Sync extension not detected.";
   return `MyPIU Sync ${extension.version} is ready.`;
