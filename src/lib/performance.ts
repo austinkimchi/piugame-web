@@ -981,11 +981,10 @@ export async function importMobilePerformanceSnapshot(
   ) {
     const selectedReleaseProfile = await profiles.findOne(
       { userId, piuVersion: selectedVersion },
-      { projection: { lastSnapshotGeneratedAt: 1, lastSyncedAt: 1, createdAt: 1 } },
+      { projection: { lastSnapshotGeneratedAt: 1, lastSyncedAt: 1 } },
     );
     const releaseObservedAt = selectedReleaseProfile?.lastSnapshotGeneratedAt
-      ?? selectedReleaseProfile?.lastSyncedAt
-      ?? selectedReleaseProfile?.createdAt;
+      ?? selectedReleaseProfile?.lastSyncedAt;
     if (releaseObservedAt) {
       await assertLeaseOwned();
       await users.updateOne(
