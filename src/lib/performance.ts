@@ -1053,7 +1053,6 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
     .then((profile) => ({ ok: true as const, profile, observedAt: new Date() }))
     .catch((error: unknown) => ({ ok: false as const, error }));
   const recentPlays = await client.getRecentPlays(piuUsername);
-  const recentPlaysObservedAt = new Date();
 
   return {
     recentPlays,
@@ -1064,10 +1063,7 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
           throw profileResult.error;
         }
         const profile = profileResult.profile;
-        const observedAt = profileResult.observedAt > recentPlaysObservedAt
-          ? profileResult.observedAt
-          : recentPlaysObservedAt;
-        await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt });
+        await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt: profileResult.observedAt });
         await queueAllPlaysBackfill(userId, piuVersion);
       } catch (error) {
         await markSyncFailed(userId, piuVersion, error);
@@ -1158,12 +1154,14 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
   const password = decryptCredential(encryptedPassword);
   const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, password);
-  const profilePromise = getPlayerDataWithPumbility(client, piuUsername);
+  const profilePromise = getPlayerDataWithPumbility(client, piuUsername)
+    .then((profile) => ({ profile, observedAt: new Date() }));
   const recentPlaysPromise = client
     .getRecentPlays(piuUsername)
     .then((plays) => ({ ok: true as const, plays }))
     .catch((error: unknown) => ({ ok: false as const, error }));
-  const profile = await profilePromise;
+  const profileResult = await profilePromise;
+  const profile = profileResult.profile;
   const recentPlaysResult = await recentPlaysPromise;
   if (!recentPlaysResult.ok) {
     if (!shouldTreatRecentPlaysAsEmpty({ profilePlayCount: profile.playCount, error: recentPlaysResult.error })) {
@@ -1171,8 +1169,7 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
     }
   }
   const recentPlays = recentPlaysResult.ok ? recentPlaysResult.plays : [];
-  const observedAt = new Date();
-  await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt });
+  await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt: profileResult.observedAt });
   await queueAllPlaysBackfill(userId, piuVersion);
 }
 

@@ -8,6 +8,7 @@ import { cache } from "react";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { encryptCredential } from "@/lib/credential-crypto";
+import { withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { piuDisplayName } from "@/lib/piu-account";
 import { getScoreLinkablePerformancePlay } from "@/lib/performance";
 import { isFailedPerformanceGrade } from "@/lib/performance-format";
@@ -706,6 +707,17 @@ export const getCurrentUser = cache(async (): Promise<PublicUser | null> => {
 });
 
 export async function linkPiuAccount(
+  user: PublicUser,
+  args: {
+    piuUsername: string;
+    password: string;
+    profile: PlayerData;
+  },
+): Promise<PublicUser> {
+  return withPerformanceUserLease(user.id, () => linkPiuAccountWhileLocked(user, args));
+}
+
+async function linkPiuAccountWhileLocked(
   user: PublicUser,
   args: {
     piuUsername: string;
