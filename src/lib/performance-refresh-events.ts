@@ -26,12 +26,12 @@ export async function runPerformanceRefresh<T>(
 ): Promise<PerformanceRefreshRun<T>> {
   if (hasWebLocks()) {
     if (options.wait) {
-      return navigator.locks.request(LOCK_NAME, async () => executeRefresh(operation));
+      return navigator.locks.request(LOCK_NAME, async () => executeAfterStoredLease(operation, true));
     }
     return navigator.locks.request(
       LOCK_NAME,
       { ifAvailable: true, mode: "exclusive" },
-      async (lock) => lock ? executeRefresh(operation) : { started: false },
+      async (lock) => lock ? executeAfterStoredLease(operation, false) : { started: false },
     );
   }
 
@@ -73,6 +73,14 @@ async function executeRefresh<T>(operation: () => Promise<T>): Promise<Performan
   }
 }
 
+async function executeAfterStoredLease<T>(operation: () => Promise<T>, wait: boolean): Promise<PerformanceRefreshRun<T>> {
+  if (getPerformanceRefreshState() === "syncing") {
+    if (!wait) return { started: false };
+    await waitForIdle();
+  }
+  return executeRefresh(operation);
+}
+
 function beginRefresh() {
   localRefreshes += 1;
   if (localRefreshes === 1) {
@@ -90,6 +98,18 @@ function endRefresh() {
     clearOwnedRefreshLease();
   }
   refreshStateAndNotify();
+}
+
+function waitForIdle(): Promise<void> {
+  if (getPerformanceRefreshState() === "idle") return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsubscribe = subscribePerformanceRefreshState(() => {
+      if (getPerformanceRefreshState() === "idle") {
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
 }
 
 function publishRefreshLease() {
