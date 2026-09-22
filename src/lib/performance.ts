@@ -14,6 +14,7 @@ import { performanceChartTokenCandidates, performanceChartTokenCandidatesFromPla
 import { piuTimestampToDate } from "@/lib/performance-format";
 import { PERFORMANCE_CHART_STATS_POPULATION_INDEX } from "@/lib/performance-indexes";
 import { performancePlayKey } from "@/lib/performance-play-key";
+import { withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { startsNewSession } from "@/lib/performance-session";
 import { applyBucketBestSummary, applyTopPlaySummary, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
@@ -1063,8 +1064,14 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
           throw profileResult.error;
         }
         const profile = profileResult.profile;
-        await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt: profileResult.observedAt });
-        await queueAllPlaysBackfill(userId, piuVersion);
+        await persistFetchedPerformanceSnapshot(
+          userId,
+          piuVersion,
+          piuUsername,
+          profile,
+          recentPlays,
+          profileResult.observedAt,
+        );
       } catch (error) {
         await markSyncFailed(userId, piuVersion, error);
         throw error;
@@ -1169,8 +1176,33 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
     }
   }
   const recentPlays = recentPlaysResult.ok ? recentPlaysResult.plays : [];
-  await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt: profileResult.observedAt });
-  await queueAllPlaysBackfill(userId, piuVersion);
+  await persistFetchedPerformanceSnapshot(
+    userId,
+    piuVersion,
+    piuUsername,
+    profile,
+    recentPlays,
+    profileResult.observedAt,
+  );
+}
+
+async function persistFetchedPerformanceSnapshot(
+  userId: ObjectId,
+  piuVersion: PiuCatalogVersion,
+  expectedPiuUsername: string,
+  profile: PlayerData,
+  recentPlays: RecentPlay[],
+  observedAt: Date,
+): Promise<void> {
+  await withPerformanceUserLease(userId, async () => {
+    const { users } = await collections();
+    const currentUser = await users.findOne({ _id: userId });
+    if (currentUser?.piuLink?.piuUsername?.trim() !== expectedPiuUsername) {
+      throw new Error("The linked PIU account changed while performance data was being fetched.");
+    }
+    await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt });
+    await queueAllPlaysBackfill(userId, piuVersion);
+  });
 }
 
 async function getPlayerDataWithPumbility(client: PiuClient, username: string): Promise<PlayerData> {

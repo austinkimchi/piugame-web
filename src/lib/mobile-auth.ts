@@ -3,7 +3,7 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { ObjectId, type Collection } from "mongodb";
 
-import { verifyMobilePkce } from "@/lib/mobile-auth-core";
+import { isValidMobilePkceVerifier, mobilePkceChallenge } from "@/lib/mobile-auth-core";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import type { PiuCatalogVersion } from "@/lib/types";
 
@@ -112,17 +112,19 @@ export async function exchangeMobileAuthorizationCode(args: {
   platform: "ios" | "android";
   appVersion: string | null;
 }): Promise<{ accessToken: string; expiresIn: number }> {
+  if (!isValidMobilePkceVerifier(args.codeVerifier)) {
+    throw new MobileAuthorizationError("invalid_grant");
+  }
+
   const { codes, tokens } = await mobileCollections();
   const authorization = await codes.findOneAndDelete({
     codeHash: hashSecret(args.code),
+    clientId: args.clientId,
+    redirectUri: args.redirectUri,
+    codeChallenge: mobilePkceChallenge(args.codeVerifier),
     expiresAt: { $gt: new Date() },
   });
-  if (
-    !authorization ||
-    authorization.clientId !== args.clientId ||
-    authorization.redirectUri !== args.redirectUri ||
-    !verifyMobilePkce(args.codeVerifier, authorization.codeChallenge)
-  ) {
+  if (!authorization) {
     throw new MobileAuthorizationError("invalid_grant");
   }
 

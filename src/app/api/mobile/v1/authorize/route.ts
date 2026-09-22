@@ -7,6 +7,8 @@ import {
   normalizeMobileOAuthState,
 } from "@/lib/mobile-auth-core";
 import { createMobileAuthorizationCode } from "@/lib/mobile-auth";
+import { discordOAuthOrigin } from "@/lib/discord-oauth";
+import { googleOAuthOrigin } from "@/lib/google-oauth";
 import { publicRequestOrigin } from "@/lib/oauth-origin";
 
 export const runtime = "nodejs";
@@ -36,7 +38,13 @@ export async function GET(request: NextRequest) {
 
   const userId = await getCurrentUserId();
   if (!userId) {
-    const publicOrigin = publicRequestOrigin(request.headers, request.nextUrl.origin);
+    let publicOrigin: string;
+    try {
+      const requestOrigin = publicRequestOrigin(request.headers, request.nextUrl.origin);
+      publicOrigin = provider === "discord" ? discordOAuthOrigin(requestOrigin) : googleOAuthOrigin(requestOrigin);
+    } catch {
+      return NextResponse.json({ error: "invalid_request" }, { status: 400, headers: noStoreHeaders() });
+    }
     const loginUrl = new URL(`/api/auth/${provider}/login`, publicOrigin);
     loginUrl.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(loginUrl, { headers: noStoreHeaders() });
