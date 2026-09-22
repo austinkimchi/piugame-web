@@ -1418,25 +1418,19 @@ async function storeTopPlays(
   topPlays: TopPlay[],
   now: Date,
 ): Promise<void> {
-  await chartStats.updateMany({ userId, piuVersion, topPlayRank: { $ne: null } }, { $set: { topPlayRank: null } });
+  await chartStats.updateMany(
+    { userId, piuVersion, topPlayRank: { $ne: null } },
+    { $set: { topPlayRank: null }, $inc: { revision: 1 } },
+  );
 
   for (const play of topPlays) {
     const chartToken = chartTokenFromPlay(play);
     const playedAt = parsePlayDate(play.playedAt);
-    const existing = await chartStats.findOne({ userId, piuVersion, chartToken });
-    const summary = applyTopPlaySummary(existing, play, playedAt, now);
-    await chartStats.updateOne(
+    await mutateChartStat(
+      chartStats,
       { userId, piuVersion, chartToken },
-      {
-        $set: {
-          userId,
-          piuVersion,
-          chartToken,
-          piuUsername,
-          ...summary,
-        },
-      },
-      { upsert: true },
+      { userId, piuVersion, chartToken, piuUsername },
+      (existing) => applyTopPlaySummary(existing, play, playedAt, now),
     );
   }
 }
@@ -1451,29 +1445,11 @@ async function upsertHistoricalBestPlay(
 ): Promise<void> {
   const chartTokenCandidates = performanceChartTokenCandidatesFromPlay(play);
   const chartToken = chartTokenCandidates[0];
-  const existing = await chartStats.findOne({ userId, piuVersion, chartToken: { $in: chartTokenCandidates } });
-  const targetChartToken = existing?.chartToken ?? chartToken;
-  const summary = applyBucketBestSummary(existing, play, now);
-
-  if (!existing) {
-    await chartStats.insertOne({
-      userId,
-      piuVersion,
-      chartToken,
-      piuUsername,
-      ...summary,
-    });
-    return;
-  }
-
-  await chartStats.updateOne(
-    { userId, piuVersion, chartToken: targetChartToken },
-    {
-      $set: {
-        piuUsername,
-        ...summary,
-      },
-    },
+  await mutateChartStat(
+    chartStats,
+    { userId, piuVersion, chartToken: { $in: chartTokenCandidates } },
+    { userId, piuVersion, chartToken, piuUsername },
+    (existing) => applyBucketBestSummary(existing, play, now),
   );
 }
 
@@ -1482,20 +1458,33 @@ async function updateChartStat(
   play: PerformancePlayEventDocument,
   now: Date,
 ): Promise<void> {
+  await mutateChartStat(
+    chartStats,
+    { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
+    {
+      userId: play.userId,
+      piuVersion: play.piuVersion,
+      chartToken: play.chartToken,
+      piuUsername: play.piuUsername,
+    },
+    (existing) => applyRecentPlaySummary(existing, play, play.playedAt, now),
+  );
+}
+
+async function mutateChartStat(
+  chartStats: Collection<PerformanceChartStatDocument>,
+  lookup: Filter<PerformanceChartStatDocument>,
+  identity: Pick<PerformanceChartStatDocument, "userId" | "piuVersion" | "chartToken" | "piuUsername">,
+  summaryFor: (existing: PerformanceChartStatSummary | null) => PerformanceChartStatSummary,
+): Promise<void> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const existing = await chartStats.findOne({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken });
-    const existingSummary = existing
-      ? withoutChartStatIdentity(existing)
-      : null;
-    const summary = applyRecentPlaySummary(existingSummary, play, play.playedAt, now);
+    const existing = await chartStats.findOne(lookup);
+    const summary = summaryFor(existing ? withoutChartStatIdentity(existing) : null);
 
     if (!existing) {
       try {
         await chartStats.insertOne({
-          userId: play.userId,
-          piuVersion: play.piuVersion,
-          chartToken: play.chartToken,
-          piuUsername: play.piuUsername,
+          ...identity,
           revision: 1,
           ...summary,
         });
@@ -1515,7 +1504,7 @@ async function updateChartStat(
       { _id: existing._id, ...revisionFilter },
       {
         $set: {
-          piuUsername: play.piuUsername,
+          piuUsername: identity.piuUsername,
           ...summary,
         },
         $inc: { revision: 1 },
@@ -1526,7 +1515,7 @@ async function updateChartStat(
     }
   }
 
-  throw new Error(`Could not update chart summary after concurrent writes: ${play.chartToken}`);
+  throw new Error(`Could not update chart summary after concurrent writes: ${identity.chartToken}`);
 }
 
 function withoutChartStatIdentity(
@@ -1651,7 +1640,7 @@ async function repairChartPlayCounts(
   ]);
   await chartStats.updateOne(
     { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
-    { $set: { recentPlayCount, stageBreakCount, updatedAt: now } },
+    { $set: { recentPlayCount, stageBreakCount, updatedAt: now }, $inc: { revision: 1 } },
   );
 }
 
