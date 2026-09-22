@@ -959,7 +959,7 @@ export async function importMobilePerformanceSnapshot(
     throw new MobilePerformanceImportError("account_not_found");
   }
 
-  const { users } = await collections();
+  const { users, profiles } = await collections();
   const user = await users.findOne({ _id: userId });
   if (!user) {
     throw new MobilePerformanceImportError("account_not_found");
@@ -973,25 +973,33 @@ export async function importMobilePerformanceSnapshot(
     throw new MobilePerformanceImportError("piu_username_mismatch");
   }
 
-  // Seed release ordering for users whose preference predates field-specific timestamps.
-  await assertLeaseOwned();
-  await users.updateOne(
-    {
-      _id: userId,
-      "preferences.piuGameVersion": { $exists: true },
-      $or: [
-        { "preferences.piuGameVersionUpdatedAt": { $exists: false } },
-        { "preferences.piuGameVersionUpdatedAt": null },
-      ],
-    },
-    [
-      {
-        $set: {
-          "preferences.piuGameVersionUpdatedAt": { $ifNull: ["$updatedAt", "$$NOW"] },
+  const selectedVersion = user.preferences?.piuGameVersion;
+  if (
+    selectedVersion &&
+    selectedVersion !== input.piuVersion &&
+    !user.preferences?.piuGameVersionUpdatedAt
+  ) {
+    const selectedReleaseProfile = await profiles.findOne(
+      { userId, piuVersion: selectedVersion },
+      { projection: { lastSnapshotGeneratedAt: 1, lastSyncedAt: 1, createdAt: 1 } },
+    );
+    const releaseObservedAt = selectedReleaseProfile?.lastSnapshotGeneratedAt
+      ?? selectedReleaseProfile?.lastSyncedAt
+      ?? selectedReleaseProfile?.createdAt;
+    if (releaseObservedAt) {
+      await assertLeaseOwned();
+      await users.updateOne(
+        {
+          _id: userId,
+          $or: [
+            { "preferences.piuGameVersionUpdatedAt": { $exists: false } },
+            { "preferences.piuGameVersionUpdatedAt": null },
+          ],
         },
-      },
-    ],
-  );
+        { $set: { "preferences.piuGameVersionUpdatedAt": releaseObservedAt } },
+      );
+    }
+  }
 
   const profile: PlayerData = {
     username: input.profile.username,
@@ -1329,8 +1337,8 @@ async function storePerformanceSnapshot(
   const affectedCharts = new Map<string, PerformancePlayEventDocument>();
   for (const play of recentPlays) {
     const playDoc = playEventDocument(userId, piuVersion, piuUsername, play, now);
-    const { inserted } = await upsertRecentPlayEvent(plays, playDoc, options.assertLeaseOwned);
-    affectedCharts.set(playDoc.chartToken, playDoc);
+    const { inserted, canonicalPlay } = await upsertRecentPlayEvent(plays, playDoc, options.assertLeaseOwned);
+    affectedCharts.set(canonicalPlay.chartToken, canonicalPlay);
 
     if (inserted) {
       importedRecentPlays += 1;
@@ -1683,7 +1691,7 @@ async function upsertRecentPlayEvent(
   plays: Collection<PerformancePlayEventDocument>,
   play: PerformancePlayEventDocument,
   assertLeaseOwned?: () => Promise<void>,
-): Promise<{ inserted: boolean; removedDuplicates: number }> {
+): Promise<{ inserted: boolean; removedDuplicates: number; canonicalPlay: PerformancePlayEventDocument }> {
   const candidatePlays = await plays
     .find({
       userId: play.userId,
@@ -1705,7 +1713,14 @@ async function upsertRecentPlayEvent(
   if (!canonicalPlay) {
     await assertLeaseOwned?.();
     const result = await plays.updateOne({ userId: play.userId, piuVersion: play.piuVersion, playKey: play.playKey }, { $setOnInsert: play }, { upsert: true });
-    return { inserted: result.upsertedCount > 0, removedDuplicates: 0 };
+    if (result.upsertedCount > 0) {
+      return { inserted: true, removedDuplicates: 0, canonicalPlay: play };
+    }
+    const concurrentlyStoredPlay = await plays.findOne({ userId: play.userId, piuVersion: play.piuVersion, playKey: play.playKey });
+    if (!concurrentlyStoredPlay) {
+      throw new Error(`Could not find the canonical recent play after an upsert race: ${play.playKey}`);
+    }
+    return { inserted: false, removedDuplicates: 0, canonicalPlay: concurrentlyStoredPlay };
   }
 
   await assertLeaseOwned?.();
@@ -1715,7 +1730,7 @@ async function upsertRecentPlayEvent(
     await assertLeaseOwned?.();
     await plays.deleteMany({ _id: { $in: duplicateIds } });
   }
-  return { inserted: false, removedDuplicates: duplicateIds.length };
+  return { inserted: false, removedDuplicates: duplicateIds.length, canonicalPlay };
 }
 
 function chartTokenFromPlay(play: Pick<RecentPlay, "songName" | "mode" | "level">): string {
