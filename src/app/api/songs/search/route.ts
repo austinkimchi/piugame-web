@@ -2,9 +2,11 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getRecommendationCandidateSongs, getSongsByTitles, searchSongs } from "@/lib/catalog";
-import { getAllFavoriteSongSlugs, getCurrentUser, getFavoriteSongSlugSet } from "@/lib/auth";
+import { getAllFavoriteSongSlugs, getCurrentUser, getFavoriteSongSlugSet, getUserById, type PublicUser } from "@/lib/auth";
 import { isPiuSeriesId } from "@/lib/catalog-version";
 import { chartModesFromFilters } from "@/lib/chart-recommendation";
+import { authenticateMobileAccessToken } from "@/lib/mobile-auth";
+import { bearerTokenFromAuthorization } from "@/lib/mobile-auth-core";
 import { addChartRecommendationsToSongs, getPerformanceChartRecommendations, getPerformanceRecentPlays } from "@/lib/performance";
 import { catalogChartTokenFromPlay } from "@/lib/performance-chart-key";
 import { normalizePiuGameVersion, performanceVersionForCatalog } from "@/lib/piu-version";
@@ -55,7 +57,11 @@ export async function GET(request: NextRequest) {
 
   const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
   const limit = Number.parseInt(request.nextUrl.searchParams.get("limit") ?? "24", 10);
-  const user = await getCurrentUser();
+  const requestUser = await userForRequest(request);
+  if (requestUser.invalidToken) {
+    return NextResponse.json({ error: "invalid_token" }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
+  }
+  const user = requestUser.user;
   const favoritesFirst = parseBoolean(request.nextUrl.searchParams.get("favoritesFirst"));
   const favoriteSlugsForSort = favoritesFirst ? await getAllFavoriteSongSlugs(user) : undefined;
   const chartFilters = parseList(request.nextUrl.searchParams, "chart");
@@ -183,6 +189,18 @@ export async function GET(request: NextRequest) {
       "Cache-Control": "private, no-store",
     },
   });
+}
+
+async function userForRequest(request: NextRequest): Promise<{ user: PublicUser | null; invalidToken: boolean }> {
+  const authorization = request.headers.get("authorization");
+  if (authorization === null) {
+    return { user: await getCurrentUser(), invalidToken: false };
+  }
+
+  const accessToken = bearerTokenFromAuthorization(authorization);
+  const identity = await authenticateMobileAccessToken(accessToken);
+  const user = identity ? await getUserById(identity.userId) : null;
+  return user ? { user, invalidToken: false } : { user: null, invalidToken: true };
 }
 
 function chartTokenForRecentPlay(
