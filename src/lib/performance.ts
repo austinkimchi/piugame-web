@@ -9,12 +9,12 @@ import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import type { MobilePerformanceImport } from "@/lib/mobile-sync-schema";
-import { mobileUserSnapshotFence } from "@/lib/mobile-sync-ordering";
+import { mobileUserSnapshotFence, performanceProfileSnapshotFence } from "@/lib/mobile-sync-ordering";
 import { performanceChartTokenCandidates, performanceChartTokenCandidatesFromPlay, performanceChartTokenKey } from "@/lib/performance-chart-key";
 import { piuTimestampToDate } from "@/lib/performance-format";
 import { PERFORMANCE_CHART_STATS_POPULATION_INDEX } from "@/lib/performance-indexes";
 import { performancePlayKey } from "@/lib/performance-play-key";
-import { withPerformanceUserLease } from "@/lib/performance-user-lock";
+import { PerformanceUserBusyError, withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { startsNewSession } from "@/lib/performance-session";
 import { applyBucketBestSummary, applyTopPlaySummary, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
@@ -804,6 +804,15 @@ export async function syncDuePerformanceUsers(): Promise<PerformanceSyncResult> 
       await syncSingleUserPerformance(profile.userId, user, piuVersion);
       result.synced += 1;
     } catch (error) {
+      if (error instanceof PerformanceUserBusyError) {
+        const retryAt = new Date(Date.now() + 5 * 60 * 1000);
+        await profiles.updateOne(
+          { _id: profile._id, syncStatus: "syncing", syncLeaseUntil: claimed.syncLeaseUntil },
+          { $set: { syncStatus: "queued", syncLeaseUntil: null, nextRefreshAt: retryAt, updatedAt: new Date() } },
+        );
+        result.skipped += 1;
+        continue;
+      }
       await markSyncFailed(profile.userId, piuVersion, error);
       result.failed += 1;
     }
@@ -932,6 +941,9 @@ export async function syncCurrentUserPerformance(userIdInput: string | null): Pr
   try {
     await syncSingleUserPerformance(userId, user, normalizePiuGameVersion(user?.preferences?.piuGameVersion));
   } catch (error) {
+    if (error instanceof PerformanceUserBusyError) {
+      return;
+    }
     await markSyncFailed(userId, normalizePiuGameVersion(user?.preferences?.piuGameVersion), error);
     throw error;
   }
@@ -1076,6 +1088,9 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
           profileResult.observedAt,
         );
       } catch (error) {
+        if (error instanceof PerformanceUserBusyError) {
+          return;
+        }
         await markSyncFailed(userId, piuVersion, error);
         throw error;
       }
@@ -1281,11 +1296,7 @@ async function storePerformanceSnapshot(
       {
         userId,
         piuVersion,
-        $or: [
-          { lastSnapshotGeneratedAt: { $exists: false } },
-          { lastSnapshotGeneratedAt: null },
-          { lastSnapshotGeneratedAt: { $lte: observedAt } },
-        ],
+        ...performanceProfileSnapshotFence(observedAt),
       },
       { $set: profileFields },
     );
