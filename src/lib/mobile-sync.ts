@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
+import { clearInterval, setInterval } from "node:timers";
 import { ObjectId, MongoServerError, type Collection } from "mongodb";
 
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
@@ -9,9 +10,11 @@ import type { MobilePerformanceImport } from "@/lib/mobile-sync-schema";
 
 const COMMUNITY_DB_NAME = process.env.COMMUNITY_DB_NAME ?? "piugame_web";
 const MOBILE_IMPORTS_COLLECTION = process.env.MOBILE_IMPORTS_COLLECTION ?? "mobile_sync_imports";
+const MOBILE_LOCKS_COLLECTION = process.env.MOBILE_SYNC_LOCKS_COLLECTION ?? "mobile_sync_locks";
 const MOBILE_RATE_LIMITS_COLLECTION = process.env.MOBILE_RATE_LIMITS_COLLECTION ?? "mobile_sync_rate_limits";
 const IDEMPOTENCY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-const PROCESSING_LEASE_MS = 2 * 60 * 1000;
+const PROCESSING_LEASE_MS = 5 * 60 * 1000;
+const LEASE_HEARTBEAT_MS = 60 * 1000;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_REQUESTS_PER_WINDOW = 30;
 
@@ -52,6 +55,12 @@ interface MobileSyncRateLimitDocument {
   _id: string;
   count: number;
   createdAt: Date;
+  expiresAt: Date;
+}
+
+interface MobileSyncLockDocument {
+  _id: ObjectId;
+  processingToken: string;
   expiresAt: Date;
 }
 
@@ -97,7 +106,7 @@ export async function importIdempotentMobilePerformance(
   input: MobilePerformanceImport,
 ): Promise<MobileSyncResult> {
   const userId = objectId(userIdInput);
-  const { receipts } = await mobileSyncCollections();
+  const { receipts, locks } = await mobileSyncCollections();
   const now = new Date();
   const processingToken = randomUUID();
   const payloadHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
@@ -161,7 +170,14 @@ export async function importIdempotentMobilePerformance(
     }
   }
 
+  let lockAcquired = false;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
   try {
+    lockAcquired = await acquireMobileSyncLock(locks, userId, processingToken);
+    if (!lockAcquired) {
+      throw new MobileSyncInProgressError("Another import for this user is still processing.");
+    }
+    heartbeat = startMobileSyncLeaseHeartbeat(receipts, locks, receiptId, userId, processingToken);
     const imported = await importMobilePerformanceSnapshot(userIdInput, input);
     const result: Omit<MobileSyncResult, "duplicateRequest"> = {
       accepted: true,
@@ -179,11 +195,73 @@ export async function importIdempotentMobilePerformance(
   } catch (error) {
     await receipts.deleteOne({ _id: receiptId, status: "processing", processingToken }).catch(() => undefined);
     throw error;
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
+    if (lockAcquired) {
+      await locks.deleteOne({ _id: userId, processingToken }).catch(() => undefined);
+    }
   }
+}
+
+async function acquireMobileSyncLock(
+  locks: Collection<MobileSyncLockDocument>,
+  userId: ObjectId,
+  processingToken: string,
+): Promise<boolean> {
+  const now = new Date();
+  try {
+    const lock = await locks.findOneAndUpdate(
+      {
+        _id: userId,
+        $or: [
+          { expiresAt: { $lte: now } },
+          { processingToken },
+        ],
+      },
+      {
+        $set: {
+          processingToken,
+          expiresAt: new Date(now.getTime() + PROCESSING_LEASE_MS),
+        },
+      },
+      { upsert: true, returnDocument: "after" },
+    );
+    return lock?.processingToken === processingToken;
+  } catch (error) {
+    if (error instanceof MongoServerError && error.code === 11000) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function startMobileSyncLeaseHeartbeat(
+  receipts: Collection<MobileSyncReceiptDocument>,
+  locks: Collection<MobileSyncLockDocument>,
+  receiptId: ObjectId,
+  userId: ObjectId,
+  processingToken: string,
+): ReturnType<typeof setInterval> {
+  const heartbeat = setInterval(() => {
+    const expiresAt = new Date(Date.now() + PROCESSING_LEASE_MS);
+    void Promise.all([
+      receipts.updateOne(
+        { _id: receiptId, status: "processing", processingToken },
+        { $set: { processingExpiresAt: expiresAt } },
+      ),
+      locks.updateOne(
+        { _id: userId, processingToken },
+        { $set: { expiresAt } },
+      ),
+    ]).catch(() => undefined);
+  }, LEASE_HEARTBEAT_MS);
+  heartbeat.unref();
+  return heartbeat;
 }
 
 async function mobileSyncCollections(): Promise<{
   receipts: Collection<MobileSyncReceiptDocument>;
+  locks: Collection<MobileSyncLockDocument>;
   rateLimits: Collection<MobileSyncRateLimitDocument>;
 }> {
   if (!hasMongoConfig()) {
@@ -192,17 +270,19 @@ async function mobileSyncCollections(): Promise<{
   const client = await getMongoClient();
   const db = client.db(COMMUNITY_DB_NAME);
   const receipts = db.collection<MobileSyncReceiptDocument>(MOBILE_IMPORTS_COLLECTION);
+  const locks = db.collection<MobileSyncLockDocument>(MOBILE_LOCKS_COLLECTION);
   const rateLimits = db.collection<MobileSyncRateLimitDocument>(MOBILE_RATE_LIMITS_COLLECTION);
   if (!globalThis.piuMobileSyncIndexesPromise) {
     globalThis.piuMobileSyncIndexesPromise = Promise.all([
       receipts.createIndex({ userId: 1, idempotencyKey: 1 }, { unique: true }),
       receipts.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       receipts.createIndex({ userId: 1, createdAt: -1 }),
+      locks.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       rateLimits.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     ]).then(() => undefined);
   }
   await globalThis.piuMobileSyncIndexesPromise;
-  return { receipts, rateLimits };
+  return { receipts, locks, rateLimits };
 }
 
 function objectId(value: string): ObjectId {
