@@ -745,6 +745,17 @@ export const getCurrentUser = cache(async (): Promise<PublicUser | null> => {
   return publicUser(user);
 });
 
+export async function getUserById(userIdInput: string): Promise<PublicUser | null> {
+  const userId = objectIdFromString(userIdInput);
+  if (!userId || !hasMongoConfig()) {
+    return null;
+  }
+
+  const { users } = await collections();
+  const user = await users.findOne({ _id: userId });
+  return user ? publicUser(user) : null;
+}
+
 export async function linkPiuAccount(
   user: PublicUser,
   args: {
