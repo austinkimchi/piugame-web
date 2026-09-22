@@ -40,7 +40,7 @@ The endpoint enforces these boundaries:
 - Password, credential, cookie, and raw-HTML fields are rejected recursively.
 - Idempotency receipts remain for 30 days. Reusing a key with different content is rejected.
 - A durable per-user and installation limit allows 30 imports per minute.
-- Expired processing leases can be reclaimed after two minutes; underlying play writes remain idempotent.
+- Expired processing leases can be reclaimed after five minutes; underlying play writes remain idempotent.
 
 Successful new imports return HTTP 201. An exact replay returns the original receipt with HTTP 200 and `duplicateRequest: true`.
 

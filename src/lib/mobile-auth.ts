@@ -162,7 +162,9 @@ export async function authenticateMobileAccessToken(accessToken: string | null):
   }
 
   if (now.getTime() - token.lastUsedAt.getTime() >= TOKEN_TOUCH_INTERVAL_MS) {
-    void tokens.updateOne({ _id: token._id, revokedAt: null }, { $set: { lastUsedAt: now } });
+    void tokens
+      .updateOne({ _id: token._id, revokedAt: null }, { $set: { lastUsedAt: now } })
+      .catch(() => undefined);
   }
 
   return {
