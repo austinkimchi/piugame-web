@@ -8,6 +8,7 @@ import { recommendChartToken, type ChartMode, type ChartSelectionEvidence } from
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
+import type { MobilePerformanceImport } from "@/lib/mobile-sync-schema";
 import { performanceChartTokenCandidates, performanceChartTokenCandidatesFromPlay, performanceChartTokenKey } from "@/lib/performance-chart-key";
 import { piuTimestampToDate } from "@/lib/performance-format";
 import { PERFORMANCE_CHART_STATS_POPULATION_INDEX } from "@/lib/performance-indexes";
@@ -41,6 +42,7 @@ type SyncStatus = "idle" | "queued" | "syncing" | "synced" | "failed";
 type AllPlaysSyncStatus = "queued" | "syncing" | "synced" | "failed";
 
 interface MinimalUserDocument {
+  updatedAt?: Date;
   preferences?: {
     performanceAutoRefresh?: boolean;
     piuGameVersion?: PiuCatalogVersion;
@@ -48,6 +50,8 @@ interface MinimalUserDocument {
   piuLink?: {
     piuUsername?: string;
     displayName?: string;
+    avatarUrl?: string | null;
+    lastProfileFetchedAt?: Date;
     encryptedPassword?: CryptoPayloadV1;
   };
 }
@@ -212,6 +216,20 @@ export interface PerformanceRecentPlaysPage {
 export interface FreshPerformanceRecentPlays {
   recentPlays: RecentPlay[];
   persist(): Promise<void>;
+}
+
+export interface MobilePerformanceImportResult {
+  importedRecentPlays: number;
+  duplicateRecentPlays: number;
+}
+
+export class MobilePerformanceImportError extends Error {
+  readonly code: "account_not_found" | "piu_account_not_linked" | "piu_username_mismatch";
+
+  constructor(code: "account_not_found" | "piu_account_not_linked" | "piu_username_mismatch") {
+    super(code);
+    this.code = code;
+  }
 }
 
 export type PerformanceTopChartsSort = "pumbility" | "score";
@@ -913,6 +931,82 @@ export async function syncCurrentUserPerformance(userIdInput: string | null): Pr
   }
 }
 
+export async function importMobilePerformanceSnapshot(
+  userIdInput: string | null,
+  input: MobilePerformanceImport,
+): Promise<MobilePerformanceImportResult> {
+  const userId = objectIdFromString(userIdInput);
+  if (!userId) {
+    throw new MobilePerformanceImportError("account_not_found");
+  }
+
+  const { users } = await collections();
+  const user = await users.findOne({ _id: userId });
+  if (!user) {
+    throw new MobilePerformanceImportError("account_not_found");
+  }
+
+  const linkedUsername = user.piuLink?.piuUsername?.trim();
+  if (!linkedUsername) {
+    throw new MobilePerformanceImportError("piu_account_not_linked");
+  }
+  if (normalizePiuUsername(linkedUsername) !== normalizePiuUsername(input.profile.username)) {
+    throw new MobilePerformanceImportError("piu_username_mismatch");
+  }
+
+  const profile: PlayerData = {
+    username: input.profile.username,
+    titleName: input.profile.titleName,
+    gameIdTag: input.profile.pumpTag ?? input.profile.displayName,
+    gameId: input.profile.gameId,
+    gameTag: null,
+    avatarUrl: input.profile.avatarUrl,
+    pp: input.profile.pp,
+    pumbilityScore: input.profile.pumbilityScore,
+    lastAccess: input.profile.lastAccess,
+    recentArcade: input.profile.recentArcade,
+    playCount: input.profile.playCount,
+    rating: input.profile.rating,
+    clear: {
+      cleared: input.profile.clearCount,
+      total: input.profile.totalCharts,
+      raw: input.profile.clearCount !== null && input.profile.totalCharts !== null
+        ? `${input.profile.clearCount} / ${input.profile.totalCharts}`
+        : null,
+    },
+    progressPercent: input.profile.progressPercent,
+    plateCounts: input.profile.plateCounts,
+  };
+  const recentPlays: RecentPlay[] = input.recentPlays.map((play) => ({
+    songName: play.songName,
+    songImageUrl: null,
+    mode: play.mode,
+    level: play.level,
+    score: play.score,
+    grade: play.grade,
+    plate: play.plate,
+    stageBreak: play.stageBreak,
+    judgments: play.judgments,
+    playedAt: play.playedAt,
+  }));
+
+  const result = await storePerformanceSnapshot(userId, input.piuVersion, profile, recentPlays);
+  const now = new Date();
+  await users.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        "preferences.piuGameVersion": input.piuVersion,
+        "piuLink.displayName": input.profile.displayName,
+        "piuLink.avatarUrl": input.profile.avatarUrl,
+        "piuLink.lastProfileFetchedAt": now,
+        updatedAt: now,
+      },
+    },
+  );
+  return result;
+}
+
 /**
  * Fetches PIUGAME recent plays and profile data in parallel without waiting for MongoDB writes.
  * Call `persist` after the response has been sent to finish the full sync.
@@ -1071,7 +1165,7 @@ async function storePerformanceSnapshot(
   piuVersion: PiuCatalogVersion,
   profile: PlayerData,
   recentPlays: RecentPlay[],
-): Promise<void> {
+): Promise<MobilePerformanceImportResult> {
   const { profiles, plays, chartStats, metricSnapshots } = await collections();
   const now = new Date();
   const piuUsername = profile.username.trim();
@@ -1113,14 +1207,20 @@ async function storePerformanceSnapshot(
     { upsert: true },
   );
 
+  let importedRecentPlays = 0;
+  let duplicateRecentPlays = 0;
   for (const play of recentPlays) {
     const playDoc = playEventDocument(userId, piuVersion, piuUsername, play, now);
     const { inserted, removedDuplicates } = await upsertRecentPlayEvent(plays, playDoc);
 
     if (inserted) {
+      importedRecentPlays += 1;
       await updateChartStat(chartStats, playDoc, now);
-    } else if (removedDuplicates > 0) {
-      await repairChartPlayCounts(chartStats, plays, playDoc, now);
+    } else {
+      duplicateRecentPlays += 1;
+      if (removedDuplicates > 0) {
+        await repairChartPlayCounts(chartStats, plays, playDoc, now);
+      }
     }
   }
 
@@ -1137,6 +1237,7 @@ async function storePerformanceSnapshot(
     pumbilityScore: profile.pumbilityScore,
     averageBestScore: roundedAverageBestScore(averageScores[0]?.averageBestScore),
   });
+  return { importedRecentPlays, duplicateRecentPlays };
 }
 
 async function queueAllPlaysBackfill(userId: ObjectId, piuVersion: PiuCatalogVersion): Promise<void> {
@@ -1482,6 +1583,10 @@ function parsePlayDate(value: string | null): Date | null {
 
 function songLookupKey(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizePiuUsername(value: string): string {
+  return value.trim().toLocaleLowerCase("en-US");
 }
 
 function firstByCandidateOrder<T extends { chartToken: string }>(documents: T[], chartTokens: string[]): T | null {
