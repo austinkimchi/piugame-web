@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { MongoServerError, ObjectId, type Collection, type Filter, type Sort, type WithId } from "mongodb";
 import { PiuClient, type BestPlay, type PlayerData, type RecentPlay, type TopPlay } from "@austinkimchi/piugame-sdk";
 
-import { recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
+import { normalizeSongName, recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
@@ -662,7 +662,6 @@ export async function addChartRecommendationsToSongs(
     return songs;
   }
 
-  const songNames = Array.from(new Set(songs.map((song) => song.title)));
   const { chartStats } = await collections();
   const projection = {
     _id: 0,
@@ -672,13 +671,12 @@ export async function addChartRecommendationsToSongs(
     bestScore: 1,
     latestPlayedAt: 1,
   } as const;
-  const [songEvidence, skillEvidence] = await Promise.all([
-    chartStats.find({ userId, piuVersion, songName: { $in: songNames } }, { projection }).toArray(),
-    chartStats.find({ userId, piuVersion, bestScore: { $exists: true, $ne: null } }, { projection }).toArray(),
-  ]);
+  // Use one complete per-version evidence set. An exact MongoDB title filter can
+  // discard otherwise matching PIUGAME/catalog titles before normalization.
+  const userEvidence = await chartStats.find({ userId, piuVersion }, { projection }).toArray();
   const evidenceBySong = new Map<string, ChartSelectionEvidence[]>();
-  for (const evidence of songEvidence) {
-    const key = songLookupKey(evidence.songName);
+  for (const evidence of userEvidence) {
+    const key = normalizeSongName(evidence.songName);
     const existing = evidenceBySong.get(key) ?? [];
     existing.push(evidence);
     evidenceBySong.set(key, existing);
@@ -690,8 +688,8 @@ export async function addChartRecommendationsToSongs(
     recommendedChartToken: recommendChartToken({
       songName: song.title,
       chartTokens: song.chartSummary,
-      songEvidence: evidenceBySong.get(songLookupKey(song.title)) ?? [],
-      skillEvidence,
+      songEvidence: evidenceBySong.get(normalizeSongName(song.title)) ?? [],
+      skillEvidence: userEvidence,
       preferredModes,
       now,
     }),

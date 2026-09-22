@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chartModesFromFilters, recommendChartToken, type ChartSelectionEvidence } from "../src/lib/chart-recommendation.ts";
+import { chartModesFromFilters, estimateSkillTargets, normalizeSongName, recommendChartToken, type ChartSelectionEvidence } from "../src/lib/chart-recommendation.ts";
 
 const NOW = new Date("2026-09-21T20:00:00.000Z");
 
@@ -74,6 +74,21 @@ test("prefers the hardest passed chart on the song over a higher score on an eas
   );
 });
 
+test("matches known-song evidence across case, spacing, and Unicode width variants", () => {
+  assert.equal(
+    recommendChartToken({
+      songName: "ＢＩＧ DADDY",
+      chartTokens: ["S16", "S19"],
+      songEvidence: [result("  big   daddy ", "Single", "19", 928_767, "2026-09-14T02:45:45.000Z")],
+      skillEvidence: [result("Comfortable Song", "Single", "16", 980_000)],
+      preferredModes: ["S"],
+      now: NOW,
+    }),
+    "S19",
+  );
+  assert.equal(normalizeSongName(" ＢＩＧ   Daddy "), "big daddy");
+});
+
 test("uses the normal skill range instead of a handful of hardest clears", () => {
   assert.equal(
     recommendChartToken({
@@ -88,6 +103,33 @@ test("uses the normal skill range instead of a handful of hardest clears", () =>
         result("E", "Single", "17", 910_000),
         result("F", "Single", "18", 905_000),
         result("G", "Single", "18", 901_000),
+      ],
+      preferredModes: ["S"],
+      now: NOW,
+    }),
+    "S16",
+  );
+});
+
+test("treats a weak high-level clear as less comfort evidence than a strong clear", () => {
+  const targets = estimateSkillTargets([
+    result("A", "Single", "16", 975_000),
+    result("B", "Single", "17", 960_000),
+    result("C", "Single", "18", 905_000),
+    result("D", "Single", "19", 891_000),
+  ]);
+
+  assert.ok((targets.get("S")?.level ?? Infinity) < 18);
+  assert.equal(
+    recommendChartToken({
+      songName: "Tropicanic",
+      chartTokens: ["S16", "S19"],
+      songEvidence: [],
+      skillEvidence: [
+        result("A", "Single", "16", 975_000),
+        result("B", "Single", "17", 960_000),
+        result("C", "Single", "18", 905_000),
+        result("D", "Single", "19", 891_000),
       ],
       preferredModes: ["S"],
       now: NOW,

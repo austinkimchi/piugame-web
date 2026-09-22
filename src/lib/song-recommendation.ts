@@ -1,4 +1,4 @@
-import { estimateSkillTargets, type ChartMode, type ChartSelectionEvidence } from "./chart-recommendation.ts";
+import { estimateSkillTargets, normalizeSongName, type ChartMode, type ChartSelectionEvidence } from "./chart-recommendation.ts";
 import { catalogChartTokenFromPlay } from "./performance-chart-key.ts";
 
 export interface PopulationChartEvidence {
@@ -117,10 +117,6 @@ function mergePopulationEvidence(candidates: PopulationChartEvidence[]): Populat
     }
   }
   return Array.from(merged.values());
-}
-
-function normalizeSongName(value: string): string {
-  return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase("en-US");
 }
 
 function stableUnitInterval(value: string): number {

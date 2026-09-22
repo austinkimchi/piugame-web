@@ -21,6 +21,10 @@ interface RecommendChartArgs {
 
 const RECENT_PLAY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const SKILL_PERCENTILE = 0.7;
+const COMFORT_SCORE = 950_000;
+const SCORE_PER_LEVEL = 50_000;
+const MIN_SCORE_ADJUSTMENT = -2;
+const MAX_SCORE_ADJUSTMENT = 0.75;
 
 export function recommendChartToken({
   songName,
@@ -51,7 +55,7 @@ export function recommendChartToken({
     return recent.chart.token;
   }
 
-  const passedCharts = evidenceForSong.filter(({ evidence }) => evidence.bestScore !== null);
+  const passedCharts = evidenceForSong.filter(({ evidence }) => isNumericScore(evidence.bestScore));
   const preferredPassedCharts = passedCharts.filter(({ chart }) => preferredModes.includes(chart.mode));
   const relevantPassedCharts = preferredPassedCharts.length > 0 ? preferredPassedCharts : passedCharts;
   if (relevantPassedCharts.length > 0) {
@@ -109,19 +113,19 @@ export function estimateSkillTargets(evidence: ChartSelectionEvidence[]): Map<Ch
   const levelsByMode = new Map<ChartMode, number[]>();
 
   for (const result of evidence) {
-    if (result.bestScore === null) continue;
+    if (!isNumericScore(result.bestScore)) continue;
     const token = catalogChartTokenFromPlay(result);
     const chart = token ? parseChartToken(token) : null;
     if (!chart || chart.mode === "C") continue;
     const levels = levelsByMode.get(chart.mode) ?? [];
-    levels.push(chart.level);
+    levels.push(scoreAdjustedLevel(chart.level, result.bestScore));
     levelsByMode.set(chart.mode, levels);
   }
 
   const targets = new Map<ChartMode, { level: number; sampleSize: number }>();
   for (const [mode, levels] of levelsByMode) {
     const sorted = levels.sort((left, right) => left - right);
-    const level = sorted[Math.floor((sorted.length - 1) * SKILL_PERCENTILE)];
+    const level = percentile(sorted, SKILL_PERCENTILE);
     targets.set(mode, { level, sampleSize: levels.length });
   }
 
@@ -147,6 +151,26 @@ function timestamp(value: Date | string | null): number {
   return Number.isFinite(result) ? result : Number.MIN_SAFE_INTEGER;
 }
 
-function normalizeSongName(value: string): string {
+export function normalizeSongName(value: string): string {
   return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase("en-US");
+}
+
+function isNumericScore(value: number | null): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function scoreAdjustedLevel(level: number, bestScore: number): number {
+  const adjustment = Math.max(
+    MIN_SCORE_ADJUSTMENT,
+    Math.min(MAX_SCORE_ADJUSTMENT, (bestScore - COMFORT_SCORE) / SCORE_PER_LEVEL),
+  );
+  return level + adjustment;
+}
+
+function percentile(sortedValues: number[], percentileValue: number): number {
+  const position = (sortedValues.length - 1) * percentileValue;
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+  const interpolation = position - lowerIndex;
+  return sortedValues[lowerIndex] * (1 - interpolation) + sortedValues[upperIndex] * interpolation;
 }
