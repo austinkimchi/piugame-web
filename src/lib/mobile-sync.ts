@@ -22,6 +22,7 @@ const MOBILE_RATE_LIMITS_COLLECTION = process.env.MOBILE_RATE_LIMITS_COLLECTION 
 const IDEMPOTENCY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const PROCESSING_LEASE_MS = PERFORMANCE_USER_LOCK_LEASE_MS;
 const LEASE_HEARTBEAT_MS = PERFORMANCE_USER_LOCK_HEARTBEAT_MS;
+const LEASE_OWNERSHIP_RECHECK_MS = LEASE_HEARTBEAT_MS;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_REQUESTS_PER_WINDOW = 30;
 
@@ -63,6 +64,11 @@ interface MobileSyncRateLimitDocument {
   count: number;
   createdAt: Date;
   expiresAt: Date;
+}
+
+interface MobileSyncLeaseGuard {
+  assertOwned(): Promise<void>;
+  stop(): void;
 }
 
 export async function claimMobileSyncRateLimit(userId: string, installationId: string, now = new Date()): Promise<boolean> {
@@ -172,14 +178,15 @@ export async function importIdempotentMobilePerformance(
   }
 
   let lease: PerformanceUserLease | null = null;
-  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let leaseGuard: MobileSyncLeaseGuard | null = null;
   try {
     lease = await acquirePerformanceUserLease(userId, processingToken);
     if (!lease) {
       throw new MobileSyncInProgressError("Another import for this user is still processing.");
     }
-    heartbeat = startMobileSyncLeaseHeartbeat(receipts, receiptId, lease);
-    const imported = await importMobilePerformanceSnapshot(userIdInput, input);
+    leaseGuard = startMobileSyncLeaseGuard(receipts, receiptId, lease);
+    const imported = await importMobilePerformanceSnapshot(userIdInput, input, leaseGuard.assertOwned);
+    await leaseGuard.assertOwned();
     const result: Omit<MobileSyncResult, "duplicateRequest"> = {
       accepted: true,
       ...imported,
@@ -197,30 +204,77 @@ export async function importIdempotentMobilePerformance(
     await receipts.deleteOne({ _id: receiptId, status: "processing", processingToken }).catch(() => undefined);
     throw error;
   } finally {
-    if (heartbeat) clearInterval(heartbeat);
+    leaseGuard?.stop();
     if (lease) {
       await releasePerformanceUserLease(lease).catch(() => undefined);
     }
   }
 }
 
-function startMobileSyncLeaseHeartbeat(
+function startMobileSyncLeaseGuard(
   receipts: Collection<MobileSyncReceiptDocument>,
   receiptId: ObjectId,
   lease: PerformanceUserLease,
-): ReturnType<typeof setInterval> {
-  const heartbeat = setInterval(() => {
+): MobileSyncLeaseGuard {
+  let ownershipError: MobileSyncInProgressError | null = null;
+  let lastConfirmedAt = Date.now();
+  let renewalPromise: Promise<void> | null = null;
+
+  const renew = (): Promise<void> => {
+    if (ownershipError) {
+      return Promise.reject(ownershipError);
+    }
+    if (renewalPromise) {
+      return renewalPromise;
+    }
+
     const expiresAt = new Date(Date.now() + PROCESSING_LEASE_MS);
-    void Promise.all([
+    renewalPromise = Promise.all([
       receipts.updateOne(
         { _id: receiptId, status: "processing", processingToken: lease.processingToken },
         { $set: { processingExpiresAt: expiresAt } },
       ),
       renewPerformanceUserLease(lease, expiresAt),
-    ]).catch(() => undefined);
+    ])
+      .then(([receiptResult, lockRenewed]) => {
+        if (receiptResult.matchedCount !== 1 || !lockRenewed) {
+          throw new MobileSyncInProgressError("The import lease was reclaimed before completion.");
+        }
+        lastConfirmedAt = Date.now();
+      })
+      .catch((error: unknown) => {
+        ownershipError = error instanceof MobileSyncInProgressError
+          ? error
+          : new MobileSyncInProgressError("The import lease could not be renewed.");
+        throw ownershipError;
+      })
+      .finally(() => {
+        renewalPromise = null;
+      });
+    return renewalPromise;
+  };
+
+  const heartbeat = setInterval(() => {
+    void renew().catch(() => undefined);
   }, LEASE_HEARTBEAT_MS);
   heartbeat.unref();
-  return heartbeat;
+
+  return {
+    async assertOwned() {
+      if (ownershipError) {
+        throw ownershipError;
+      }
+      if (Date.now() - lastConfirmedAt >= LEASE_OWNERSHIP_RECHECK_MS) {
+        await renew();
+      }
+      if (ownershipError) {
+        throw ownershipError;
+      }
+    },
+    stop() {
+      clearInterval(heartbeat);
+    },
+  };
 }
 
 async function mobileSyncCollections(): Promise<{

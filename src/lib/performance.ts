@@ -940,6 +940,7 @@ export async function syncCurrentUserPerformance(userIdInput: string | null): Pr
 export async function importMobilePerformanceSnapshot(
   userIdInput: string | null,
   input: MobilePerformanceImport,
+  assertLeaseOwned: () => Promise<void> = async () => undefined,
 ): Promise<MobilePerformanceImportResult> {
   const userId = objectIdFromString(userIdInput);
   if (!userId) {
@@ -1003,9 +1004,11 @@ export async function importMobilePerformanceSnapshot(
     observedAt: generatedAt,
     displayName: input.profile.displayName,
     pumpTag: input.profile.pumpTag,
+    assertLeaseOwned,
   });
   const now = new Date();
   if (result.profileUpdated) {
+    await assertLeaseOwned();
     await users.updateOne(
       {
         _id: userId,
@@ -1224,6 +1227,7 @@ async function storePerformanceSnapshot(
     observedAt?: Date;
     displayName?: string;
     pumpTag?: string | null;
+    assertLeaseOwned?: () => Promise<void>;
   } = {},
 ): Promise<MobilePerformanceImportResult & { profileUpdated: boolean }> {
   const { profiles, plays, chartStats, metricSnapshots } = await collections();
@@ -1257,6 +1261,7 @@ async function storePerformanceSnapshot(
     updatedAt: now,
   };
 
+  await options.assertLeaseOwned?.();
   const insertedProfile = await profiles.updateOne(
     { userId, piuVersion },
     {
@@ -1271,6 +1276,7 @@ async function storePerformanceSnapshot(
   );
   let profileUpdated = insertedProfile.upsertedCount > 0;
   if (!profileUpdated) {
+    await options.assertLeaseOwned?.();
     const updatedProfile = await profiles.updateOne(
       {
         userId,
@@ -1291,7 +1297,7 @@ async function storePerformanceSnapshot(
   const affectedCharts = new Map<string, PerformancePlayEventDocument>();
   for (const play of recentPlays) {
     const playDoc = playEventDocument(userId, piuVersion, piuUsername, play, now);
-    const { inserted } = await upsertRecentPlayEvent(plays, playDoc);
+    const { inserted } = await upsertRecentPlayEvent(plays, playDoc, options.assertLeaseOwned);
     affectedCharts.set(playDoc.chartToken, playDoc);
 
     if (inserted) {
@@ -1301,7 +1307,7 @@ async function storePerformanceSnapshot(
     }
   }
   for (const play of affectedCharts.values()) {
-    await reconcileRecentChartStat(chartStats, plays, play, now);
+    await reconcileRecentChartStat(chartStats, plays, play, now, options.assertLeaseOwned);
   }
 
   if (profileUpdated) {
@@ -1311,6 +1317,7 @@ async function storePerformanceSnapshot(
         { $group: { _id: null, averageBestScore: { $avg: "$bestScore" } } },
       ])
       .toArray();
+    await options.assertLeaseOwned?.();
     await metricSnapshots.insertOne({
       userId,
       piuVersion,
@@ -1493,6 +1500,7 @@ async function reconcileRecentChartStat(
   plays: Collection<PerformancePlayEventDocument>,
   play: PerformancePlayEventDocument,
   now: Date,
+  assertLeaseOwned?: () => Promise<void>,
 ): Promise<void> {
   await mutateChartStat(
     chartStats,
@@ -1510,6 +1518,7 @@ async function reconcileRecentChartStat(
         .toArray();
       return reconcileRecentPlaySummary(existing, recentPlays, now);
     },
+    assertLeaseOwned,
   );
 }
 
@@ -1518,6 +1527,7 @@ async function mutateChartStat(
   lookup: Filter<PerformanceChartStatDocument>,
   identity: Pick<PerformanceChartStatDocument, "userId" | "piuVersion" | "chartToken" | "piuUsername">,
   summaryFor: (existing: PerformanceChartStatSummary | null) => PerformanceChartStatSummary | Promise<PerformanceChartStatSummary>,
+  assertLeaseOwned?: () => Promise<void>,
 ): Promise<void> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const existing = await chartStats.findOne(lookup);
@@ -1525,6 +1535,7 @@ async function mutateChartStat(
 
     if (!existing) {
       try {
+        await assertLeaseOwned?.();
         await chartStats.insertOne({
           ...identity,
           revision: 1,
@@ -1542,6 +1553,7 @@ async function mutateChartStat(
     const revisionFilter = existing.revision === undefined
       ? { revision: { $exists: false as const } }
       : { revision: existing.revision };
+    await assertLeaseOwned?.();
     const updated = await chartStats.updateOne(
       { _id: existing._id, ...revisionFilter },
       {
@@ -1638,6 +1650,7 @@ function playEventDocument(userId: ObjectId, piuVersion: PiuCatalogVersion, piuU
 async function upsertRecentPlayEvent(
   plays: Collection<PerformancePlayEventDocument>,
   play: PerformancePlayEventDocument,
+  assertLeaseOwned?: () => Promise<void>,
 ): Promise<{ inserted: boolean; removedDuplicates: number }> {
   const candidatePlays = await plays
     .find({
@@ -1658,13 +1671,16 @@ async function upsertRecentPlayEvent(
   const canonicalPlay = matchingPlays.find((candidate) => candidate.playKey === play.playKey) ?? matchingPlays[0];
 
   if (!canonicalPlay) {
+    await assertLeaseOwned?.();
     const result = await plays.updateOne({ userId: play.userId, piuVersion: play.piuVersion, playKey: play.playKey }, { $setOnInsert: play }, { upsert: true });
     return { inserted: result.upsertedCount > 0, removedDuplicates: 0 };
   }
 
+  await assertLeaseOwned?.();
   await plays.updateOne({ _id: canonicalPlay._id }, { $set: { playKey: play.playKey } });
   const duplicateIds = matchingPlays.slice(1).map((duplicate) => duplicate._id);
   if (duplicateIds.length > 0) {
+    await assertLeaseOwned?.();
     await plays.deleteMany({ _id: { $in: duplicateIds } });
   }
   return { inserted: false, removedDuplicates: duplicateIds.length };
