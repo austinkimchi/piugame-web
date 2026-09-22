@@ -1,20 +1,23 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { ObjectId, type Collection, type Filter, type Sort, type WithId } from "mongodb";
+import { MongoServerError, ObjectId, type Collection, type Filter, type Sort, type WithId } from "mongodb";
 import { PiuClient, type BestPlay, type PlayerData, type RecentPlay, type TopPlay } from "@austinkimchi/piugame-sdk";
 
 import { recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
+import type { MobilePerformanceImport } from "@/lib/mobile-sync-schema";
+import { mobileUserSnapshotFence, performanceProfileSnapshotFence } from "@/lib/mobile-sync-ordering";
 import { performanceChartTokenCandidates, performanceChartTokenCandidatesFromPlay, performanceChartTokenKey } from "@/lib/performance-chart-key";
 import { piuTimestampToDate } from "@/lib/performance-format";
 import { PERFORMANCE_CHART_STATS_POPULATION_INDEX } from "@/lib/performance-indexes";
 import { performancePlayKey } from "@/lib/performance-play-key";
+import { PerformanceUserBusyError, withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { startsNewSession } from "@/lib/performance-session";
-import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
+import { applyBucketBestSummary, applyTopPlaySummary, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
@@ -41,13 +44,18 @@ type SyncStatus = "idle" | "queued" | "syncing" | "synced" | "failed";
 type AllPlaysSyncStatus = "queued" | "syncing" | "synced" | "failed";
 
 interface MinimalUserDocument {
+  updatedAt?: Date;
   preferences?: {
     performanceAutoRefresh?: boolean;
     piuGameVersion?: PiuCatalogVersion;
+    piuGameVersionUpdatedAt?: Date;
   };
   piuLink?: {
     piuUsername?: string;
     displayName?: string;
+    avatarUrl?: string | null;
+    lastProfileFetchedAt?: Date;
+    lastMobileSnapshotGeneratedAt?: Date;
     encryptedPassword?: CryptoPayloadV1;
   };
 }
@@ -74,6 +82,7 @@ interface PerformanceProfileDocument {
   syncStatus: SyncStatus;
   syncError: string | null;
   lastSyncedAt: Date | null;
+  lastSnapshotGeneratedAt?: Date | null;
   allPlaysSyncStatus?: AllPlaysSyncStatus | null;
   allPlaysSyncError?: string | null;
   allPlaysSyncedAt?: Date | null;
@@ -112,6 +121,7 @@ interface PerformanceChartStatDocument extends PerformanceChartStatSummary {
   piuVersion: PiuCatalogVersion;
   chartToken: string;
   piuUsername: string;
+  revision?: number;
 }
 
 interface PerformanceMetricSnapshotDocument {
@@ -212,6 +222,20 @@ export interface PerformanceRecentPlaysPage {
 export interface FreshPerformanceRecentPlays {
   recentPlays: RecentPlay[];
   persist(): Promise<void>;
+}
+
+export interface MobilePerformanceImportResult {
+  importedRecentPlays: number;
+  duplicateRecentPlays: number;
+}
+
+export class MobilePerformanceImportError extends Error {
+  readonly code: "account_not_found" | "piu_account_not_linked" | "piu_username_mismatch";
+
+  constructor(code: "account_not_found" | "piu_account_not_linked" | "piu_username_mismatch") {
+    super(code);
+    this.code = code;
+  }
 }
 
 export type PerformanceTopChartsSort = "pumbility" | "score";
@@ -780,6 +804,15 @@ export async function syncDuePerformanceUsers(): Promise<PerformanceSyncResult> 
       await syncSingleUserPerformance(profile.userId, user, piuVersion);
       result.synced += 1;
     } catch (error) {
+      if (error instanceof PerformanceUserBusyError) {
+        const retryAt = new Date(Date.now() + 5 * 60 * 1000);
+        await profiles.updateOne(
+          { _id: profile._id, syncStatus: "syncing", syncLeaseUntil: claimed.syncLeaseUntil },
+          { $set: { syncStatus: "queued", syncLeaseUntil: null, nextRefreshAt: retryAt, updatedAt: new Date() } },
+        );
+        result.skipped += 1;
+        continue;
+      }
       await markSyncFailed(profile.userId, piuVersion, error);
       result.failed += 1;
     }
@@ -908,9 +941,134 @@ export async function syncCurrentUserPerformance(userIdInput: string | null): Pr
   try {
     await syncSingleUserPerformance(userId, user, normalizePiuGameVersion(user?.preferences?.piuGameVersion));
   } catch (error) {
+    if (error instanceof PerformanceUserBusyError) {
+      return;
+    }
     await markSyncFailed(userId, normalizePiuGameVersion(user?.preferences?.piuGameVersion), error);
     throw error;
   }
+}
+
+export async function importMobilePerformanceSnapshot(
+  userIdInput: string | null,
+  input: MobilePerformanceImport,
+  assertLeaseOwned: () => Promise<void> = async () => undefined,
+): Promise<MobilePerformanceImportResult> {
+  const userId = objectIdFromString(userIdInput);
+  if (!userId) {
+    throw new MobilePerformanceImportError("account_not_found");
+  }
+
+  const { users, profiles } = await collections();
+  const user = await users.findOne({ _id: userId });
+  if (!user) {
+    throw new MobilePerformanceImportError("account_not_found");
+  }
+
+  const linkedUsername = user.piuLink?.piuUsername?.trim();
+  if (!linkedUsername) {
+    throw new MobilePerformanceImportError("piu_account_not_linked");
+  }
+  if (normalizePiuUsername(linkedUsername) !== normalizePiuUsername(input.profile.username)) {
+    throw new MobilePerformanceImportError("piu_username_mismatch");
+  }
+
+  const selectedVersion = user.preferences?.piuGameVersion;
+  if (
+    selectedVersion &&
+    selectedVersion !== input.piuVersion &&
+    !user.preferences?.piuGameVersionUpdatedAt
+  ) {
+    const selectedReleaseProfile = await profiles.findOne(
+      { userId, piuVersion: selectedVersion },
+      { projection: { lastSnapshotGeneratedAt: 1, lastSyncedAt: 1 } },
+    );
+    const releaseObservedAt = selectedReleaseProfile?.lastSnapshotGeneratedAt
+      ?? selectedReleaseProfile?.lastSyncedAt;
+    if (releaseObservedAt) {
+      await assertLeaseOwned();
+      await users.updateOne(
+        {
+          _id: userId,
+          $or: [
+            { "preferences.piuGameVersionUpdatedAt": { $exists: false } },
+            { "preferences.piuGameVersionUpdatedAt": null },
+          ],
+        },
+        { $set: { "preferences.piuGameVersionUpdatedAt": releaseObservedAt } },
+      );
+    }
+  }
+
+  const profile: PlayerData = {
+    username: input.profile.username,
+    titleName: input.profile.titleName,
+    gameIdTag: input.profile.pumpTag ?? input.profile.displayName,
+    gameId: input.profile.gameId,
+    gameTag: null,
+    avatarUrl: input.profile.avatarUrl,
+    pp: input.profile.pp,
+    pumbilityScore: input.profile.pumbilityScore,
+    lastAccess: input.profile.lastAccess,
+    recentArcade: input.profile.recentArcade,
+    playCount: input.profile.playCount,
+    rating: input.profile.rating,
+    clear: {
+      cleared: input.profile.clearCount,
+      total: input.profile.totalCharts,
+      raw: input.profile.clearCount !== null && input.profile.totalCharts !== null
+        ? `${input.profile.clearCount} / ${input.profile.totalCharts}`
+        : null,
+    },
+    progressPercent: input.profile.progressPercent,
+    plateCounts: input.profile.plateCounts,
+  };
+  const recentPlays: RecentPlay[] = input.recentPlays
+    .map((play) => ({
+      songName: play.songName,
+      songImageUrl: null,
+      mode: play.mode,
+      level: play.level,
+      score: play.score,
+      grade: play.grade,
+      plate: play.plate,
+      stageBreak: play.stageBreak,
+      judgments: play.judgments,
+      playedAt: play.playedAt,
+    }))
+    .sort((left, right) => (parsePlayDate(left.playedAt)?.getTime() ?? 0) - (parsePlayDate(right.playedAt)?.getTime() ?? 0));
+
+  const generatedAt = new Date(input.generatedAt);
+  const result = await storePerformanceSnapshot(userId, input.piuVersion, profile, recentPlays, {
+    observedAt: generatedAt,
+    displayName: input.profile.displayName,
+    pumpTag: input.profile.pumpTag,
+    assertLeaseOwned,
+  });
+  const now = new Date();
+  if (result.profileUpdated) {
+    await assertLeaseOwned();
+    await users.updateOne(
+      {
+        _id: userId,
+        ...mobileUserSnapshotFence(generatedAt),
+      },
+      {
+        $set: {
+          "preferences.piuGameVersion": input.piuVersion,
+          "preferences.piuGameVersionUpdatedAt": generatedAt,
+          "piuLink.displayName": input.profile.displayName,
+          "piuLink.avatarUrl": input.profile.avatarUrl,
+          "piuLink.lastMobileSnapshotGeneratedAt": generatedAt,
+          updatedAt: now,
+        },
+      },
+    );
+  }
+  return {
+    importedRecentPlays: result.importedRecentPlays,
+    duplicateRecentPlays: result.duplicateRecentPlays,
+  };
 }
 
 /**
@@ -935,7 +1093,7 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
   const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, decryptCredential(encryptedPassword));
   const profileResultPromise = getPlayerDataWithPumbility(client, piuUsername)
-    .then((profile) => ({ ok: true as const, profile }))
+    .then((profile) => ({ ok: true as const, profile, observedAt: new Date() }))
     .catch((error: unknown) => ({ ok: false as const, error }));
   const recentPlays = await client.getRecentPlays(piuUsername);
 
@@ -948,9 +1106,18 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
           throw profileResult.error;
         }
         const profile = profileResult.profile;
-        await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays);
-        await queueAllPlaysBackfill(userId, piuVersion);
+        await persistFetchedPerformanceSnapshot(
+          userId,
+          piuVersion,
+          piuUsername,
+          profile,
+          recentPlays,
+          profileResult.observedAt,
+        );
       } catch (error) {
+        if (error instanceof PerformanceUserBusyError) {
+          return;
+        }
         await markSyncFailed(userId, piuVersion, error);
         throw error;
       }
@@ -1039,12 +1206,14 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
   const password = decryptCredential(encryptedPassword);
   const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, password);
-  const profilePromise = getPlayerDataWithPumbility(client, piuUsername);
+  const profilePromise = getPlayerDataWithPumbility(client, piuUsername)
+    .then((profile) => ({ profile, observedAt: new Date() }));
   const recentPlaysPromise = client
     .getRecentPlays(piuUsername)
     .then((plays) => ({ ok: true as const, plays }))
     .catch((error: unknown) => ({ ok: false as const, error }));
-  const profile = await profilePromise;
+  const profileResult = await profilePromise;
+  const profile = profileResult.profile;
   const recentPlaysResult = await recentPlaysPromise;
   if (!recentPlaysResult.ok) {
     if (!shouldTreatRecentPlaysAsEmpty({ profilePlayCount: profile.playCount, error: recentPlaysResult.error })) {
@@ -1052,8 +1221,34 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
     }
   }
   const recentPlays = recentPlaysResult.ok ? recentPlaysResult.plays : [];
-  await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays);
-  await queueAllPlaysBackfill(userId, piuVersion);
+  await persistFetchedPerformanceSnapshot(
+    userId,
+    piuVersion,
+    piuUsername,
+    profile,
+    recentPlays,
+    profileResult.observedAt,
+  );
+}
+
+async function persistFetchedPerformanceSnapshot(
+  userId: ObjectId,
+  piuVersion: PiuCatalogVersion,
+  expectedPiuUsername: string,
+  profile: PlayerData,
+  recentPlays: RecentPlay[],
+  observedAt: Date,
+): Promise<void> {
+  await withPerformanceUserLease(userId, async (assertLeaseOwned) => {
+    const { users } = await collections();
+    const currentUser = await users.findOne({ _id: userId });
+    if (currentUser?.piuLink?.piuUsername?.trim() !== expectedPiuUsername) {
+      throw new Error("The linked PIU account changed while performance data was being fetched.");
+    }
+    await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt, assertLeaseOwned });
+    await assertLeaseOwned();
+    await queueAllPlaysBackfill(userId, piuVersion);
+  });
 }
 
 async function getPlayerDataWithPumbility(client: PiuClient, username: string): Promise<PlayerData> {
@@ -1071,72 +1266,106 @@ async function storePerformanceSnapshot(
   piuVersion: PiuCatalogVersion,
   profile: PlayerData,
   recentPlays: RecentPlay[],
-): Promise<void> {
+  options: {
+    observedAt?: Date;
+    displayName?: string;
+    pumpTag?: string | null;
+    assertLeaseOwned?: () => Promise<void>;
+  } = {},
+): Promise<MobilePerformanceImportResult & { profileUpdated: boolean }> {
   const { profiles, plays, chartStats, metricSnapshots } = await collections();
   const now = new Date();
+  const observedAt = options.observedAt ?? now;
   const piuUsername = profile.username.trim();
   const nextRefreshAt = new Date(now.getTime() + Math.max(5, PERFORMANCE_REFRESH_MINUTES) * 60 * 1000);
+  const profileFields = {
+    piuUsername,
+    displayName: options.displayName?.trim() || profile.gameIdTag?.trim() || profile.gameId?.trim() || piuUsername,
+    titleName: profile.titleName,
+    gameId: profile.gameId,
+    pumpTag: options.pumpTag === undefined ? profile.gameIdTag : options.pumpTag,
+    avatarUrl: profile.avatarUrl,
+    pumbilityScore: profile.pumbilityScore,
+    pp: profile.pp,
+    rating: profile.rating,
+    playCount: profile.playCount,
+    clearCount: profile.clear.cleared,
+    totalCharts: profile.clear.total,
+    progressPercent: profile.progressPercent,
+    plateCounts: profile.plateCounts,
+    recentArcade: profile.recentArcade,
+    lastAccess: profile.lastAccess,
+    syncStatus: "synced" as const,
+    syncError: null,
+    lastSyncedAt: now,
+    lastSnapshotGeneratedAt: observedAt,
+    nextRefreshAt,
+    syncLeaseUntil: null,
+    updatedAt: now,
+  };
 
-  await profiles.updateOne(
+  await options.assertLeaseOwned?.();
+  const insertedProfile = await profiles.updateOne(
     { userId, piuVersion },
     {
-      $set: {
-        piuUsername,
-        displayName: profile.gameIdTag?.trim() || profile.gameId?.trim() || piuUsername,
-        titleName: profile.titleName,
-        gameId: profile.gameId,
-        pumpTag: profile.gameIdTag,
-        avatarUrl: profile.avatarUrl,
-        pumbilityScore: profile.pumbilityScore,
-        pp: profile.pp,
-        rating: profile.rating,
-        playCount: profile.playCount,
-        clearCount: profile.clear.cleared,
-        totalCharts: profile.clear.total,
-        progressPercent: profile.progressPercent,
-        plateCounts: profile.plateCounts,
-        recentArcade: profile.recentArcade,
-        lastAccess: profile.lastAccess,
-        syncStatus: "synced",
-        syncError: null,
-        lastSyncedAt: now,
-        nextRefreshAt,
-        syncLeaseUntil: null,
-        updatedAt: now,
-      },
       $setOnInsert: {
         userId,
         piuVersion,
+        ...profileFields,
         createdAt: now,
       },
     },
     { upsert: true },
   );
-
-  for (const play of recentPlays) {
-    const playDoc = playEventDocument(userId, piuVersion, piuUsername, play, now);
-    const { inserted, removedDuplicates } = await upsertRecentPlayEvent(plays, playDoc);
-
-    if (inserted) {
-      await updateChartStat(chartStats, playDoc, now);
-    } else if (removedDuplicates > 0) {
-      await repairChartPlayCounts(chartStats, plays, playDoc, now);
-    }
+  let profileUpdated = insertedProfile.upsertedCount > 0;
+  if (!profileUpdated) {
+    await options.assertLeaseOwned?.();
+    const updatedProfile = await profiles.updateOne(
+      {
+        userId,
+        piuVersion,
+        ...performanceProfileSnapshotFence(observedAt),
+      },
+      { $set: profileFields },
+    );
+    profileUpdated = updatedProfile.matchedCount > 0;
   }
 
-  const averageScores = await chartStats
-    .aggregate<{ averageBestScore: number }>([
-      { $match: { userId, piuVersion, bestScore: { $type: "number" } } },
-      { $group: { _id: null, averageBestScore: { $avg: "$bestScore" } } },
-    ])
-    .toArray();
-  await metricSnapshots.insertOne({
-    userId,
-    piuVersion,
-    capturedAt: now,
-    pumbilityScore: profile.pumbilityScore,
-    averageBestScore: roundedAverageBestScore(averageScores[0]?.averageBestScore),
-  });
+  let importedRecentPlays = 0;
+  let duplicateRecentPlays = 0;
+  const affectedCharts = new Map<string, PerformancePlayEventDocument>();
+  for (const play of recentPlays) {
+    const playDoc = playEventDocument(userId, piuVersion, piuUsername, play, now);
+    const { inserted, canonicalPlay } = await upsertRecentPlayEvent(plays, playDoc, options.assertLeaseOwned);
+    affectedCharts.set(canonicalPlay.chartToken, canonicalPlay);
+
+    if (inserted) {
+      importedRecentPlays += 1;
+    } else {
+      duplicateRecentPlays += 1;
+    }
+  }
+  for (const play of affectedCharts.values()) {
+    await reconcileRecentChartStat(chartStats, plays, play, now, options.assertLeaseOwned);
+  }
+
+  if (profileUpdated) {
+    const averageScores = await chartStats
+      .aggregate<{ averageBestScore: number }>([
+        { $match: { userId, piuVersion, bestScore: { $type: "number" } } },
+        { $group: { _id: null, averageBestScore: { $avg: "$bestScore" } } },
+      ])
+      .toArray();
+    await options.assertLeaseOwned?.();
+    await metricSnapshots.insertOne({
+      userId,
+      piuVersion,
+      capturedAt: observedAt,
+      pumbilityScore: profile.pumbilityScore,
+      averageBestScore: roundedAverageBestScore(averageScores[0]?.averageBestScore),
+    });
+  }
+  return { importedRecentPlays, duplicateRecentPlays, profileUpdated };
 }
 
 async function queueAllPlaysBackfill(userId: ObjectId, piuVersion: PiuCatalogVersion): Promise<void> {
@@ -1270,25 +1499,19 @@ async function storeTopPlays(
   topPlays: TopPlay[],
   now: Date,
 ): Promise<void> {
-  await chartStats.updateMany({ userId, piuVersion, topPlayRank: { $ne: null } }, { $set: { topPlayRank: null } });
+  await chartStats.updateMany(
+    { userId, piuVersion, topPlayRank: { $ne: null } },
+    { $set: { topPlayRank: null }, $inc: { revision: 1 } },
+  );
 
   for (const play of topPlays) {
     const chartToken = chartTokenFromPlay(play);
     const playedAt = parsePlayDate(play.playedAt);
-    const existing = await chartStats.findOne({ userId, piuVersion, chartToken });
-    const summary = applyTopPlaySummary(existing, play, playedAt, now);
-    await chartStats.updateOne(
+    await mutateChartStat(
+      chartStats,
       { userId, piuVersion, chartToken },
-      {
-        $set: {
-          userId,
-          piuVersion,
-          chartToken,
-          piuUsername,
-          ...summary,
-        },
-      },
-      { upsert: true },
+      { userId, piuVersion, chartToken, piuUsername },
+      (existing) => applyTopPlaySummary(existing, play, playedAt, now),
     );
   }
 }
@@ -1303,60 +1526,102 @@ async function upsertHistoricalBestPlay(
 ): Promise<void> {
   const chartTokenCandidates = performanceChartTokenCandidatesFromPlay(play);
   const chartToken = chartTokenCandidates[0];
-  const existing = await chartStats.findOne({ userId, piuVersion, chartToken: { $in: chartTokenCandidates } });
-  const targetChartToken = existing?.chartToken ?? chartToken;
-  const summary = applyBucketBestSummary(existing, play, now);
-
-  if (!existing) {
-    await chartStats.insertOne({
-      userId,
-      piuVersion,
-      chartToken,
-      piuUsername,
-      ...summary,
-    });
-    return;
-  }
-
-  await chartStats.updateOne(
-    { userId, piuVersion, chartToken: targetChartToken },
-    {
-      $set: {
-        piuUsername,
-        ...summary,
-      },
-    },
+  await mutateChartStat(
+    chartStats,
+    { userId, piuVersion, chartToken: { $in: chartTokenCandidates } },
+    { userId, piuVersion, chartToken, piuUsername },
+    (existing) => applyBucketBestSummary(existing, play, now),
   );
 }
 
-async function updateChartStat(
+async function reconcileRecentChartStat(
   chartStats: Collection<PerformanceChartStatDocument>,
+  plays: Collection<PerformancePlayEventDocument>,
   play: PerformancePlayEventDocument,
   now: Date,
+  assertLeaseOwned?: () => Promise<void>,
 ): Promise<void> {
-  const existing = await chartStats.findOne({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken });
-  const summary = applyRecentPlaySummary(existing, play, play.playedAt, now);
-
-  if (!existing) {
-    await chartStats.insertOne({
+  await mutateChartStat(
+    chartStats,
+    { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
+    {
       userId: play.userId,
       piuVersion: play.piuVersion,
       chartToken: play.chartToken,
       piuUsername: play.piuUsername,
-      ...summary,
-    });
-    return;
+    },
+    async (existing) => {
+      const recentPlays = await plays
+        .find({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken })
+        .sort({ playedAt: 1, ingestedAt: 1, _id: 1 })
+        .toArray();
+      return reconcileRecentPlaySummary(existing, recentPlays, now);
+    },
+    assertLeaseOwned,
+  );
+}
+
+async function mutateChartStat(
+  chartStats: Collection<PerformanceChartStatDocument>,
+  lookup: Filter<PerformanceChartStatDocument>,
+  identity: Pick<PerformanceChartStatDocument, "userId" | "piuVersion" | "chartToken" | "piuUsername">,
+  summaryFor: (existing: PerformanceChartStatSummary | null) => PerformanceChartStatSummary | Promise<PerformanceChartStatSummary>,
+  assertLeaseOwned?: () => Promise<void>,
+): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const existing = await chartStats.findOne(lookup);
+    const summary = await summaryFor(existing ? withoutChartStatIdentity(existing) : null);
+
+    if (!existing) {
+      try {
+        await assertLeaseOwned?.();
+        await chartStats.insertOne({
+          ...identity,
+          revision: 1,
+          ...summary,
+        });
+        return;
+      } catch (error) {
+        if (error instanceof MongoServerError && error.code === 11000) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    const revisionFilter = existing.revision === undefined
+      ? { revision: { $exists: false as const } }
+      : { revision: existing.revision };
+    await assertLeaseOwned?.();
+    const updated = await chartStats.updateOne(
+      { _id: existing._id, ...revisionFilter },
+      {
+        $set: {
+          piuUsername: identity.piuUsername,
+          ...summary,
+        },
+        $inc: { revision: 1 },
+      },
+    );
+    if (updated.modifiedCount === 1) {
+      return;
+    }
   }
 
-  await chartStats.updateOne(
-    { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
-    {
-      $set: {
-        piuUsername: play.piuUsername,
-        ...summary,
-      },
-    },
-  );
+  throw new Error(`Could not update chart summary after concurrent writes: ${identity.chartToken}`);
+}
+
+function withoutChartStatIdentity(
+  chart: WithId<PerformanceChartStatDocument>,
+): PerformanceChartStatSummary {
+  const summary = { ...chart };
+  Reflect.deleteProperty(summary, "_id");
+  Reflect.deleteProperty(summary, "userId");
+  Reflect.deleteProperty(summary, "piuVersion");
+  Reflect.deleteProperty(summary, "chartToken");
+  Reflect.deleteProperty(summary, "piuUsername");
+  Reflect.deleteProperty(summary, "revision");
+  return summary;
 }
 
 async function markSyncFailed(userId: ObjectId, piuVersion: PiuCatalogVersion, error: unknown): Promise<void> {
@@ -1424,7 +1689,8 @@ function playEventDocument(userId: ObjectId, piuVersion: PiuCatalogVersion, piuU
 async function upsertRecentPlayEvent(
   plays: Collection<PerformancePlayEventDocument>,
   play: PerformancePlayEventDocument,
-): Promise<{ inserted: boolean; removedDuplicates: number }> {
+  assertLeaseOwned?: () => Promise<void>,
+): Promise<{ inserted: boolean; removedDuplicates: number; canonicalPlay: PerformancePlayEventDocument }> {
   const candidatePlays = await plays
     .find({
       userId: play.userId,
@@ -1444,32 +1710,26 @@ async function upsertRecentPlayEvent(
   const canonicalPlay = matchingPlays.find((candidate) => candidate.playKey === play.playKey) ?? matchingPlays[0];
 
   if (!canonicalPlay) {
+    await assertLeaseOwned?.();
     const result = await plays.updateOne({ userId: play.userId, piuVersion: play.piuVersion, playKey: play.playKey }, { $setOnInsert: play }, { upsert: true });
-    return { inserted: result.upsertedCount > 0, removedDuplicates: 0 };
+    if (result.upsertedCount > 0) {
+      return { inserted: true, removedDuplicates: 0, canonicalPlay: play };
+    }
+    const concurrentlyStoredPlay = await plays.findOne({ userId: play.userId, piuVersion: play.piuVersion, playKey: play.playKey });
+    if (!concurrentlyStoredPlay) {
+      throw new Error(`Could not find the canonical recent play after an upsert race: ${play.playKey}`);
+    }
+    return { inserted: false, removedDuplicates: 0, canonicalPlay: concurrentlyStoredPlay };
   }
 
+  await assertLeaseOwned?.();
   await plays.updateOne({ _id: canonicalPlay._id }, { $set: { playKey: play.playKey } });
   const duplicateIds = matchingPlays.slice(1).map((duplicate) => duplicate._id);
   if (duplicateIds.length > 0) {
+    await assertLeaseOwned?.();
     await plays.deleteMany({ _id: { $in: duplicateIds } });
   }
-  return { inserted: false, removedDuplicates: duplicateIds.length };
-}
-
-async function repairChartPlayCounts(
-  chartStats: Collection<PerformanceChartStatDocument>,
-  plays: Collection<PerformancePlayEventDocument>,
-  play: PerformancePlayEventDocument,
-  now: Date,
-): Promise<void> {
-  const [recentPlayCount, stageBreakCount] = await Promise.all([
-    plays.countDocuments({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken }),
-    plays.countDocuments({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken, stageBreak: true }),
-  ]);
-  await chartStats.updateOne(
-    { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
-    { $set: { recentPlayCount, stageBreakCount, updatedAt: now } },
-  );
+  return { inserted: false, removedDuplicates: duplicateIds.length, canonicalPlay };
 }
 
 function chartTokenFromPlay(play: Pick<RecentPlay, "songName" | "mode" | "level">): string {
@@ -1482,6 +1742,10 @@ function parsePlayDate(value: string | null): Date | null {
 
 function songLookupKey(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizePiuUsername(value: string): string {
+  return value.trim().toLocaleLowerCase("en-US");
 }
 
 function firstByCandidateOrder<T extends { chartToken: string }>(documents: T[], chartTokens: string[]): T | null {

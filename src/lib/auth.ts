@@ -8,6 +8,7 @@ import { cache } from "react";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { encryptCredential } from "@/lib/credential-crypto";
+import { withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { piuDisplayName } from "@/lib/piu-account";
 import { getScoreLinkablePerformancePlay } from "@/lib/performance";
 import { isFailedPerformanceGrade } from "@/lib/performance-format";
@@ -97,7 +98,9 @@ interface UserDocument {
   mutedUntil?: Date | null;
   mutedReason?: string | null;
   mutedBy?: ObjectId | null;
-  preferences?: Partial<UserPreferences>;
+  preferences?: Partial<UserPreferences> & {
+    piuGameVersionUpdatedAt?: Date;
+  };
   piuLink?: {
     piuUsername?: string;
     displayName?: string;
@@ -711,6 +714,18 @@ export async function linkPiuAccount(
     profile: PlayerData;
   },
 ): Promise<PublicUser> {
+  return withPerformanceUserLease(user.id, (assertLeaseOwned) => linkPiuAccountWhileLocked(user, args, assertLeaseOwned));
+}
+
+async function linkPiuAccountWhileLocked(
+  user: PublicUser,
+  args: {
+    piuUsername: string;
+    password: string;
+    profile: PlayerData;
+  },
+  assertLeaseOwned: () => Promise<void>,
+): Promise<PublicUser> {
   const { users } = await collections();
   const now = new Date();
   const piuUsername = args.profile.username.trim().length > 0 ? args.profile.username : args.piuUsername.trim();
@@ -738,6 +753,7 @@ export async function linkPiuAccount(
     lastProfileFetchedAt: now,
   };
 
+  await assertLeaseOwned();
   const result = await users.findOneAndUpdate(
     { _id: existing._id },
     {
@@ -754,6 +770,7 @@ export async function linkPiuAccount(
   if (!result) {
     throw new Error("Failed to link PIU account.");
   }
+  await assertLeaseOwned();
   await syncBotLinkFromPiuLink(piuLink);
   return publicUser(result);
 }
@@ -1347,9 +1364,11 @@ export async function setUsername(user: PublicUser, usernameInput: string): Prom
 }
 
 export async function updateUserPreferences(user: PublicUser, preferences: Partial<UserPreferences>): Promise<PublicUser> {
+  const now = new Date();
   const updates: {
     "preferences.performanceAutoRefresh"?: boolean;
     "preferences.piuGameVersion"?: PiuCatalogVersion;
+    "preferences.piuGameVersionUpdatedAt"?: Date;
     "preferences.songDetailCompactView"?: boolean;
     "preferences.songPreviewMuted"?: boolean;
     "preferences.songPreviewVolume"?: number;
@@ -1358,7 +1377,7 @@ export async function updateUserPreferences(user: PublicUser, preferences: Parti
     "preferences.songExplorerFavoritesFirst"?: boolean;
     updatedAt: Date;
   } = {
-    updatedAt: new Date(),
+    updatedAt: now,
   };
 
   if (typeof preferences.songDetailCompactView === "boolean") {
@@ -1369,6 +1388,7 @@ export async function updateUserPreferences(user: PublicUser, preferences: Parti
   }
   if (isPiuGameVersion(preferences.piuGameVersion)) {
     updates["preferences.piuGameVersion"] = preferences.piuGameVersion;
+    updates["preferences.piuGameVersionUpdatedAt"] = now;
   }
   if (typeof preferences.songPreviewMuted === "boolean") {
     updates["preferences.songPreviewMuted"] = preferences.songPreviewMuted;

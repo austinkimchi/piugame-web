@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 
 import { getCurrentUser, linkPiuAccount } from "@/lib/auth";
+import { PerformanceUserBusyError } from "@/lib/performance-user-lock";
 import { fetchPiuProfile } from "@/lib/piu-account";
 import { fetchCurrentUserRecentPlays, syncCurrentUserTopPlaysIfDue, syncQueuedAllPlaysBackfillForUser } from "@/lib/performance";
 
@@ -37,7 +38,13 @@ export async function POST(request: NextRequest) {
       });
     }
     return NextResponse.json({ user: linkedUser });
-  } catch {
+  } catch (error) {
+    if (error instanceof PerformanceUserBusyError) {
+      return NextResponse.json(
+        { error: "PIU performance data is being updated. Try linking again in a moment." },
+        { status: 409, headers: { "Retry-After": "2" } },
+      );
+    }
     return NextResponse.json({ error: "Could not verify that PIU login. Check the username and password, then try again." }, { status: 400 });
   }
 }
