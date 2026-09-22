@@ -25,7 +25,7 @@ test("mobile user updates compare only field-specific source timestamps", () => 
   assert.equal(Object.hasOwn(fence, "updatedAt"), false);
 });
 
-test("legacy profiles fall back to their existing sync and update timestamps", () => {
+test("legacy profiles use real sync timestamps while allowing unsynced shells", () => {
   const observedAt = new Date("2026-09-22T01:00:00.000Z");
 
   assert.deepEqual(performanceProfileSnapshotFence(observedAt), {
@@ -42,17 +42,8 @@ test("legacy profiles fall back to their existing sync and update timestamps", (
           {
             $or: [
               { lastSyncedAt: { $lte: observedAt } },
-              {
-                $and: [
-                  {
-                    $or: [
-                      { lastSyncedAt: { $exists: false } },
-                      { lastSyncedAt: null },
-                    ],
-                  },
-                  { updatedAt: { $lte: observedAt } },
-                ],
-              },
+              { lastSyncedAt: { $exists: false } },
+              { lastSyncedAt: null },
             ],
           },
         ],

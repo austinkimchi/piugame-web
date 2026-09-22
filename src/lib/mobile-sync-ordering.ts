@@ -23,13 +23,6 @@ export function performanceProfileSnapshotFence(observedAt: Date) {
       { lastSnapshotGeneratedAt: null },
     ],
   };
-  const missingLastSyncedAt = {
-    $or: [
-      { lastSyncedAt: { $exists: false } },
-      { lastSyncedAt: null },
-    ],
-  };
-
   return {
     $or: [
       { lastSnapshotGeneratedAt: { $lte: observedAt } },
@@ -39,12 +32,8 @@ export function performanceProfileSnapshotFence(observedAt: Date) {
           {
             $or: [
               { lastSyncedAt: { $lte: observedAt } },
-              {
-                $and: [
-                  missingLastSyncedAt,
-                  { updatedAt: { $lte: observedAt } },
-                ],
-              },
+              { lastSyncedAt: { $exists: false } },
+              { lastSyncedAt: null },
             ],
           },
         ],
