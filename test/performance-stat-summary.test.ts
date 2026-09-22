@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, type PerformanceChartStatSummary } from "../src/lib/performance-stat-summary.ts";
+import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "../src/lib/performance-stat-summary.ts";
 
 const NOW = new Date("2026-08-11T12:00:00.000Z");
 const PLAYED_AT = new Date("2026-08-11T11:30:00.000Z");
@@ -130,6 +130,39 @@ test("failed recent play does not establish a best", () => {
 
   assert.equal(summary.bestScore, null);
   assert.equal(summary.bestGrade, null);
+});
+
+test("reconciles unordered and retried recent plays idempotently", () => {
+  const older = {
+    songName: "Big Daddy",
+    mode: "S",
+    level: "19",
+    score: 927_885,
+    grade: "aa_p",
+    plate: "fg",
+    stageBreak: false,
+    judgments: JUDGMENTS,
+    playedAt: new Date("2026-08-10T11:30:00.000Z"),
+    ingestedAt: new Date("2026-08-11T11:00:00.000Z"),
+  };
+  const latest = {
+    ...older,
+    score: 950_000,
+    grade: "aaa",
+    playedAt: PLAYED_AT,
+    ingestedAt: NOW,
+  };
+
+  const first = reconcileRecentPlaySummary(null, [latest, older], NOW);
+  const retried = reconcileRecentPlaySummary(first, [older, latest], NOW);
+
+  assert.equal(first.latestScore, 950_000);
+  assert.equal(first.latestPlayedAt, PLAYED_AT);
+  assert.equal(first.bestScore, 950_000);
+  assert.equal(first.recentPlayCount, 2);
+  assert.equal(retried.latestScore, 950_000);
+  assert.equal(retried.recentPlayCount, 2);
+  assert.equal(retried.previousBestScore, null);
 });
 
 test("fetchAllPlays bucket best fills an existing Pumbility shell", () => {

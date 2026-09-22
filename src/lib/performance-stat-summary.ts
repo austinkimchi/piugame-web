@@ -32,6 +32,11 @@ export interface PerformanceChartStatSummary {
 
 export type ExistingPerformanceChartStatSummary = Partial<PerformanceChartStatSummary>;
 
+export interface StoredRecentPlaySummaryInput extends Pick<RecentPlay, "songName" | "mode" | "level" | "score" | "grade" | "plate" | "stageBreak" | "judgments"> {
+  playedAt: Date | null;
+  ingestedAt?: Date;
+}
+
 export function applyRecentPlaySummary(
   existing: ExistingPerformanceChartStatSummary | null,
   play: Pick<RecentPlay, "songName" | "mode" | "level" | "score" | "grade" | "plate" | "stageBreak" | "judgments">,
@@ -63,6 +68,56 @@ export function applyRecentPlaySummary(
       bestScore: play.score,
       bestGrade: play.grade,
       bestPlate: play.plate,
+      bestSyncedAt: now,
+      previousBestScore: summary.bestScore,
+      previousBestGrade: summary.bestGrade,
+      previousBestPlate: summary.bestPlate,
+      previousBestSyncedAt: summary.bestSyncedAt,
+      lastUpscoredAt: summary.bestScore === null ? summary.lastUpscoredAt : now,
+    };
+  }
+
+  return summary;
+}
+
+export function reconcileRecentPlaySummary(
+  existing: ExistingPerformanceChartStatSummary | null,
+  plays: StoredRecentPlaySummaryInput[],
+  now: Date,
+): PerformanceChartStatSummary {
+  const ordered = [...plays].sort(compareStoredRecentPlays);
+  const latest = ordered.at(-1);
+  if (!latest) {
+    if (existing) return existing as PerformanceChartStatSummary;
+    throw new Error("Cannot reconcile a chart without recent plays.");
+  }
+
+  const bestRecent = ordered
+    .filter((play): play is StoredRecentPlaySummaryInput & { score: number } => isCompletedPlay(play))
+    .sort((left, right) => (right.score - left.score) || compareStoredRecentPlays(right, left))[0];
+  const summary: PerformanceChartStatSummary = {
+    ...emptySummary(latest.songName, latest.mode, latest.level, now),
+    ...existing,
+    songName: latest.songName,
+    mode: latest.mode,
+    level: latest.level,
+    latestScore: latest.score,
+    latestGrade: latest.grade,
+    latestPlate: latest.plate,
+    latestStageBreak: latest.stageBreak,
+    latestJudgments: latest.judgments,
+    latestPlayedAt: latest.playedAt,
+    recentPlayCount: ordered.length,
+    stageBreakCount: ordered.filter((play) => play.stageBreak).length,
+    updatedAt: now,
+  };
+
+  if (bestRecent && (summary.bestScore === null || bestRecent.score > summary.bestScore)) {
+    return {
+      ...summary,
+      bestScore: bestRecent.score,
+      bestGrade: bestRecent.grade,
+      bestPlate: bestRecent.plate,
       bestSyncedAt: now,
       previousBestScore: summary.bestScore,
       previousBestGrade: summary.bestGrade,
@@ -169,4 +224,10 @@ function emptySummary(songName: string, mode: string | null, level: string | nul
 
 function isCompletedPlay(play: Pick<RecentPlay, "score" | "grade" | "stageBreak">): play is Pick<RecentPlay, "score" | "grade" | "stageBreak"> & { score: number } {
   return !play.stageBreak && typeof play.score === "number" && !String(play.grade ?? "").trim().toLowerCase().startsWith("x_");
+}
+
+function compareStoredRecentPlays(left: StoredRecentPlaySummaryInput, right: StoredRecentPlaySummaryInput): number {
+  const playedAtDifference = (left.playedAt?.getTime() ?? 0) - (right.playedAt?.getTime() ?? 0);
+  if (playedAtDifference !== 0) return playedAtDifference;
+  return (left.ingestedAt?.getTime() ?? 0) - (right.ingestedAt?.getTime() ?? 0);
 }

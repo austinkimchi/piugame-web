@@ -58,7 +58,19 @@ interface MobileSyncRateLimitDocument {
 export async function claimMobileSyncRateLimit(userId: string, installationId: string, now = new Date()): Promise<boolean> {
   const { rateLimits } = await mobileSyncCollections();
   const window = Math.floor(now.getTime() / RATE_LIMIT_WINDOW_MS);
-  const key = createHash("sha256").update(`${userId}:${installationId}:${window}`).digest("hex");
+  const userKey = createHash("sha256").update(`${userId}:user:${window}`).digest("hex");
+  const installationKey = createHash("sha256").update(`${userId}:installation:${installationId}:${window}`).digest("hex");
+  if (!(await claimRateLimitBucket(rateLimits, userKey, now))) {
+    return false;
+  }
+  return claimRateLimitBucket(rateLimits, installationKey, now);
+}
+
+async function claimRateLimitBucket(
+  rateLimits: Collection<MobileSyncRateLimitDocument>,
+  key: string,
+  now: Date,
+): Promise<boolean> {
   try {
     const result = await rateLimits.findOneAndUpdate(
       { _id: key, count: { $lt: RATE_LIMIT_REQUESTS_PER_WINDOW } },

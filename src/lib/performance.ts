@@ -15,7 +15,7 @@ import { PERFORMANCE_CHART_STATS_POPULATION_INDEX } from "@/lib/performance-inde
 import { performancePlayKey } from "@/lib/performance-play-key";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { startsNewSession } from "@/lib/performance-session";
-import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
+import { applyBucketBestSummary, applyTopPlaySummary, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
@@ -980,18 +980,20 @@ export async function importMobilePerformanceSnapshot(
     progressPercent: input.profile.progressPercent,
     plateCounts: input.profile.plateCounts,
   };
-  const recentPlays: RecentPlay[] = input.recentPlays.map((play) => ({
-    songName: play.songName,
-    songImageUrl: null,
-    mode: play.mode,
-    level: play.level,
-    score: play.score,
-    grade: play.grade,
-    plate: play.plate,
-    stageBreak: play.stageBreak,
-    judgments: play.judgments,
-    playedAt: play.playedAt,
-  }));
+  const recentPlays: RecentPlay[] = input.recentPlays
+    .map((play) => ({
+      songName: play.songName,
+      songImageUrl: null,
+      mode: play.mode,
+      level: play.level,
+      score: play.score,
+      grade: play.grade,
+      plate: play.plate,
+      stageBreak: play.stageBreak,
+      judgments: play.judgments,
+      playedAt: play.playedAt,
+    }))
+    .sort((left, right) => (parsePlayDate(left.playedAt)?.getTime() ?? 0) - (parsePlayDate(right.playedAt)?.getTime() ?? 0));
 
   const generatedAt = new Date(input.generatedAt);
   const result = await storePerformanceSnapshot(userId, input.piuVersion, profile, recentPlays, {
@@ -1254,19 +1256,20 @@ async function storePerformanceSnapshot(
 
   let importedRecentPlays = 0;
   let duplicateRecentPlays = 0;
+  const affectedCharts = new Map<string, PerformancePlayEventDocument>();
   for (const play of recentPlays) {
     const playDoc = playEventDocument(userId, piuVersion, piuUsername, play, now);
-    const { inserted, removedDuplicates } = await upsertRecentPlayEvent(plays, playDoc);
+    const { inserted } = await upsertRecentPlayEvent(plays, playDoc);
+    affectedCharts.set(playDoc.chartToken, playDoc);
 
     if (inserted) {
       importedRecentPlays += 1;
-      await updateChartStat(chartStats, playDoc, now);
     } else {
       duplicateRecentPlays += 1;
-      if (removedDuplicates > 0) {
-        await repairChartPlayCounts(chartStats, plays, playDoc, now);
-      }
     }
+  }
+  for (const play of affectedCharts.values()) {
+    await reconcileRecentChartStat(chartStats, plays, play, now);
   }
 
   if (profileUpdated) {
@@ -1453,11 +1456,16 @@ async function upsertHistoricalBestPlay(
   );
 }
 
-async function updateChartStat(
+async function reconcileRecentChartStat(
   chartStats: Collection<PerformanceChartStatDocument>,
+  plays: Collection<PerformancePlayEventDocument>,
   play: PerformancePlayEventDocument,
   now: Date,
 ): Promise<void> {
+  const recentPlays = await plays
+    .find({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken })
+    .sort({ playedAt: 1, ingestedAt: 1, _id: 1 })
+    .toArray();
   await mutateChartStat(
     chartStats,
     { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
@@ -1467,7 +1475,7 @@ async function updateChartStat(
       chartToken: play.chartToken,
       piuUsername: play.piuUsername,
     },
-    (existing) => applyRecentPlaySummary(existing, play, play.playedAt, now),
+    (existing) => reconcileRecentPlaySummary(existing, recentPlays, now),
   );
 }
 
@@ -1626,22 +1634,6 @@ async function upsertRecentPlayEvent(
     await plays.deleteMany({ _id: { $in: duplicateIds } });
   }
   return { inserted: false, removedDuplicates: duplicateIds.length };
-}
-
-async function repairChartPlayCounts(
-  chartStats: Collection<PerformanceChartStatDocument>,
-  plays: Collection<PerformancePlayEventDocument>,
-  play: PerformancePlayEventDocument,
-  now: Date,
-): Promise<void> {
-  const [recentPlayCount, stageBreakCount] = await Promise.all([
-    plays.countDocuments({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken }),
-    plays.countDocuments({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken, stageBreak: true }),
-  ]);
-  await chartStats.updateOne(
-    { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
-    { $set: { recentPlayCount, stageBreakCount, updatedAt: now }, $inc: { revision: 1 } },
-  );
 }
 
 function chartTokenFromPlay(play: Pick<RecentPlay, "songName" | "mode" | "level">): string {
