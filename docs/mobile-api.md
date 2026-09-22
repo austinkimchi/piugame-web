@@ -43,3 +43,5 @@ The endpoint enforces these boundaries:
 - Expired processing leases can be reclaimed after two minutes; underlying play writes remain idempotent.
 
 Successful new imports return HTTP 201. An exact replay returns the original receipt with HTTP 200 and `duplicateRequest: true`.
+
+The browser extension can retrieve the signed-in user's linked PIUGAME username and selected release from `GET /api/mobile/v1/extension/context`. This endpoint accepts only the existing same-origin MyPIU session cookie and never returns PIUGAME credentials.
