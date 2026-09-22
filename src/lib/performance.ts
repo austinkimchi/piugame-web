@@ -174,6 +174,7 @@ export interface PerformanceDashboard {
     recentlyPlayed: number;
   };
   recentPlays: Array<{
+    id: string;
     songName: string;
     chartToken: string;
     score: number | null;
@@ -1888,6 +1889,7 @@ function publicProfile(profile: WithId<PerformanceProfileDocument>): NonNullable
 function publicRecentPlay(play: WithId<PerformancePlayEventDocument>): PerformanceDashboard["recentPlays"][number] {
   const playedAtFromRaw = parsePlayDate(play.playedAtRaw);
   return {
+    id: play._id.toHexString(),
     songName: play.songName,
     chartToken: play.chartToken,
     score: play.score,
