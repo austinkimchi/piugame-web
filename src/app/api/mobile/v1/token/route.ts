@@ -10,6 +10,7 @@ import {
   exchangeMobileAuthorizationCode,
   revokeMobileAccessToken,
 } from "@/lib/mobile-auth";
+import { readRequestText, RequestBodyTooLargeError } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,14 +90,14 @@ export async function DELETE(request: Request) {
 }
 
 async function tokenRequestBody(request: Request): Promise<Record<string, unknown>> {
-  const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (contentLength > MAX_TOKEN_REQUEST_BYTES) {
-    throw new MobileTokenRequestError();
-  }
-
-  const text = await request.text();
-  if (Buffer.byteLength(text, "utf8") > MAX_TOKEN_REQUEST_BYTES) {
-    throw new MobileTokenRequestError();
+  let text: string;
+  try {
+    text = await readRequestText(request, MAX_TOKEN_REQUEST_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      throw new MobileTokenRequestError();
+    }
+    throw error;
   }
 
   if (request.headers.get("content-type")?.includes("application/json")) {

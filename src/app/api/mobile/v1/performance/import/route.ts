@@ -13,6 +13,7 @@ import {
   MobileSyncInProgressError,
 } from "@/lib/mobile-sync";
 import { MobileSyncValidationError, parseMobilePerformanceImport } from "@/lib/mobile-sync-schema";
+import { readRequestText, RequestBodyTooLargeError } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,13 +86,14 @@ async function jsonBody(request: Request): Promise<unknown> {
   if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) {
     throw new MobileSyncValidationError("Expected application/json.", null);
   }
-  const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (contentLength > MAX_IMPORT_BYTES) {
-    throw new MobileSyncValidationError("Payload is too large.", null);
-  }
-  const text = await request.text();
-  if (Buffer.byteLength(text, "utf8") > MAX_IMPORT_BYTES) {
-    throw new MobileSyncValidationError("Payload is too large.", null);
+  let text: string;
+  try {
+    text = await readRequestText(request, MAX_IMPORT_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      throw new MobileSyncValidationError("Payload is too large.", null);
+    }
+    throw error;
   }
   try {
     return JSON.parse(text) as unknown;
