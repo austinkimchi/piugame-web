@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { Activity, ArrowUpRight, BarChart3, Database, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
 
 import { AccountBar } from "@/components/account-bar";
+import { BrowserExtensionSyncControl } from "@/components/browser-extension-sync-control";
 import { PerformanceDashboardTables } from "@/components/performance-dashboard-tables";
 import { PerformancePageRefresh } from "@/components/performance-page-refresh";
 import { getCurrentUser } from "@/lib/auth";
@@ -85,12 +86,15 @@ export default async function PerformancePage() {
               </div>
               <p className="mt-4 text-sm font-medium leading-6 text-[#56604e]">{statusDetail(user, dashboard)}</p>
               {dashboard.canSync ? (
-                <form action="/api/performance/sync" className="mt-5" method="post">
-                  <button className="inline-flex h-11 w-full items-center justify-center gap-2 bg-[#28c950] px-4 text-sm font-black text-[#071109] transition hover:bg-[#35d867]" type="submit">
-                    <RefreshCw aria-hidden="true" size={16} />
-                    Sync now
-                  </button>
-                </form>
+                <div className="mt-5 space-y-3">
+                  <BrowserExtensionSyncControl />
+                  <form action="/api/performance/sync" method="post">
+                    <button className="inline-flex h-10 w-full items-center justify-center gap-2 border border-[#cdd5c5] bg-white px-4 text-xs font-black text-[#56604e] transition hover:border-[#171916] hover:text-[#171916]" type="submit">
+                      <RefreshCw aria-hidden="true" size={15} />
+                      Refresh on server
+                    </button>
+                  </form>
+                </div>
               ) : (
                 <Link className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 bg-[#171916] px-4 text-sm font-black text-white transition hover:bg-[#2f352b]" href="/">
                   <ArrowUpRight aria-hidden="true" size={16} />
