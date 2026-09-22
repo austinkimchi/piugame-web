@@ -59,11 +59,13 @@ export async function deleteUserAccount(userIdInput: string): Promise<void> {
       throw new AccountDeletionNotFoundError("The account no longer exists.");
     }
 
-    const discordProvider = user.providers?.find((provider) => provider.provider === "discord");
-    const discordUserId = cleanDiscordUserId(
-      discordProvider?.providerAccountId ?? user.piuLink?.discordUserId,
-    );
-    const plan = accountDeletionPlan({ userId, discordUserId, collections: COLLECTIONS });
+    const discordUserIds = cleanDiscordUserIds([
+      ...(user.providers ?? [])
+        .filter((provider) => provider.provider === "discord")
+        .map((provider) => provider.providerAccountId),
+      user.piuLink?.discordUserId,
+    ]);
+    const plan = accountDeletionPlan({ userId, discordUserIds, collections: COLLECTIONS });
     for (const operation of plan.filter((item) => item.stage === "data")) {
       await assertLeaseOwned();
       await applyOperation(client, operation);
@@ -101,7 +103,6 @@ async function applyOperation(
   await collection.updateMany(operation.filter, operation.update);
 }
 
-function cleanDiscordUserId(value: string | undefined): string | null {
-  const cleaned = value?.trim();
-  return cleaned ? cleaned : null;
+function cleanDiscordUserIds(values: Array<string | undefined>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
 }

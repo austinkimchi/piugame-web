@@ -1,5 +1,14 @@
 import type { ObjectId } from "mongodb";
 
+export const DISCORD_BOT_USER_COLLECTIONS = [
+  "account_links",
+  "play_snapshots",
+  "recent_pagers",
+  "song_pagers",
+  "player_profiles",
+  "title_caches",
+] as const;
+
 export type AccountDeletionDatabase = "community" | "discordBot";
 
 export interface AccountDeletionCollectionNames {
@@ -41,10 +50,10 @@ export type AccountDeletionOperation =
 
 export function accountDeletionPlan(args: {
   userId: ObjectId;
-  discordUserId: string | null;
+  discordUserIds: string[];
   collections: AccountDeletionCollectionNames;
 }): AccountDeletionOperation[] {
-  const { userId, discordUserId, collections } = args;
+  const { userId, discordUserIds, collections } = args;
   const userOwnedCollections = [
     collections.savedSongs,
     collections.tagContributions,
@@ -100,21 +109,14 @@ export function accountDeletionPlan(args: {
     },
   );
 
-  if (discordUserId) {
-    for (const collection of [
-      "account_links",
-      "play_snapshots",
-      "recent_pagers",
-      "song_pagers",
-      "player_profiles",
-      "title_caches",
-    ]) {
+  if (discordUserIds.length > 0) {
+    for (const collection of DISCORD_BOT_USER_COLLECTIONS) {
       operations.push({
         kind: "deleteMany",
         stage: "data",
         database: "discordBot",
         collection,
-        filter: { discordUserId },
+        filter: { discordUserId: { $in: discordUserIds } },
       });
     }
   }

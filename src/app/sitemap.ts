@@ -14,6 +14,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 1,
     },
+    {
+      url: absoluteSiteUrl("/privacy"),
+      lastModified: now,
+      changeFrequency: "yearly",
+      priority: 0.4,
+    },
     ...songs.map((song) => ({
       url: absoluteSiteUrl(`/songs/${song.slug}`),
       lastModified: now,

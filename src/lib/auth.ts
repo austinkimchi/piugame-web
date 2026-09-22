@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
+import { DISCORD_BOT_USER_COLLECTIONS } from "@/lib/account-deletion-core";
 import { withActiveAccountWrite } from "@/lib/account-write-fence";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { encryptCredential } from "@/lib/credential-crypto";
@@ -469,7 +470,6 @@ export async function upsertGoogleUser(profile: {
   imageUrl: string | null;
 }): Promise<WithId<UserDocument>> {
   const { users } = await collections();
-  const now = new Date();
   const email = profile.email.toLowerCase();
   const providerIdentity: AuthProviderIdentity = {
     provider: "google",
@@ -482,6 +482,7 @@ export async function upsertGoogleUser(profile: {
   });
 
   if (!existing) {
+    const now = new Date();
     const inserted = await users.insertOne({
       email,
       emailVerified: profile.emailVerified,
@@ -504,37 +505,50 @@ export async function upsertGoogleUser(profile: {
     return created;
   }
 
-  const hasGoogleProvider = existing.providers.some((provider) => provider.provider === "google" && provider.providerAccountId === profile.googleId);
-  await users.updateOne(
-    { _id: existing._id },
-    {
-      $set: {
-        emailVerified: profile.emailVerified,
-        name: profile.name || existing.name,
-        imageUrl: profile.imageUrl ?? existing.imageUrl,
-        roles: existing.roles?.length ? existing.roles : ["user"],
-        updatedAt: now,
-        lastLoginAt: now,
-      },
-      ...(hasGoogleProvider ? {} : { $push: { providers: providerIdentity } }),
-    },
-  );
+  return withActiveAccountWrite([existing._id], async (assertLeaseOwned) => {
+    const { users: lockedUsers } = await collections();
+    await assertLeaseOwned();
+    const [current, providerOwner] = await Promise.all([
+      lockedUsers.findOne({ _id: existing._id }),
+      lockedUsers.findOne({
+        providers: { $elemMatch: { provider: "google", providerAccountId: profile.googleId } },
+      }),
+    ]);
+    if (!current) {
+      throw new Error("User not found.");
+    }
+    if (providerOwner && !providerOwner._id.equals(current._id)) {
+      throw new Error("That Google account is already linked to another user.");
+    }
 
-  return {
-    ...existing,
-    emailVerified: profile.emailVerified,
-    name: profile.name || existing.name,
-    imageUrl: profile.imageUrl ?? existing.imageUrl,
-    roles: existing.roles?.length ? existing.roles : ["user"],
-    updatedAt: now,
-    lastLoginAt: now,
-    providers: hasGoogleProvider ? existing.providers : [...existing.providers, providerIdentity],
-  };
+    const hasGoogleProvider = current.providers.some(
+      (provider) => provider.provider === "google" && provider.providerAccountId === profile.googleId,
+    );
+    const now = new Date();
+    await assertLeaseOwned();
+    const updated = await lockedUsers.findOneAndUpdate(
+      { _id: current._id },
+      {
+        $set: {
+          emailVerified: profile.emailVerified,
+          name: profile.name || current.name,
+          imageUrl: profile.imageUrl ?? current.imageUrl,
+          roles: current.roles?.length ? current.roles : ["user"],
+          updatedAt: now,
+          lastLoginAt: now,
+        },
+        ...(hasGoogleProvider ? {} : { $push: { providers: providerIdentity } }),
+      },
+      { returnDocument: "after" },
+    );
+    if (!updated) {
+      throw new Error("Could not link Google.");
+    }
+    return updated;
+  });
 }
 
 export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: string): Promise<WithId<UserDocument>> {
-  const { users } = await collections();
-  const now = new Date();
   const providerIdentity: AuthProviderIdentity = {
     provider: "discord",
     providerAccountId: profile.discordId,
@@ -546,57 +560,29 @@ export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: 
     throw new Error("Could not link Discord to this session.");
   }
 
+  if (linkedUserObjectId) {
+    return withActiveAccountWrite([linkedUserObjectId], async (assertLeaseOwned) => {
+      const { users } = await collections();
+      return updateExistingDiscordUser({
+        users,
+        userId: linkedUserObjectId,
+        profile,
+        providerIdentity,
+        loginEmail: null,
+        assertLeaseOwned,
+      });
+    });
+  }
+
+  const { users } = await collections();
+  const email = profile.email?.toLowerCase() ?? syntheticDiscordEmail(profile.discordId);
   const providerOwner = await users.findOne({
     providers: { $elemMatch: { provider: "discord", providerAccountId: profile.discordId } },
   });
-
-  if (linkedUserObjectId) {
-    if (providerOwner && !providerOwner._id.equals(linkedUserObjectId)) {
-      throw new Error("That Discord account is already linked to another user.");
-    }
-
-    const existing = await users.findOne({ _id: linkedUserObjectId });
-    if (!existing) {
-      throw new Error("User not found.");
-    }
-
-    const hasDiscordProvider = existing.providers.some((provider) => provider.provider === "discord" && provider.providerAccountId === profile.discordId);
-    const piuLink = {
-      ...(existing.piuLink ?? {}),
-      discordUserId: profile.discordId,
-      discordUsername: profile.username,
-      linkedAt: existing.piuLink?.linkedAt ?? now,
-    };
-    await users.updateOne(
-      { _id: existing._id },
-      {
-        $set: {
-          imageUrl: existing.imageUrl ?? profile.imageUrl,
-          piuLink,
-          roles: existing.roles?.length ? existing.roles : ["user"],
-          updatedAt: now,
-          lastLoginAt: now,
-        },
-        ...(hasDiscordProvider ? {} : { $push: { providers: providerIdentity } }),
-      },
-    );
-    await withActiveAccountWrite([existing._id], (assertLeaseOwned) => syncBotLinkFromPiuLink(piuLink, assertLeaseOwned));
-
-    return {
-      ...existing,
-      imageUrl: existing.imageUrl ?? profile.imageUrl,
-      providers: hasDiscordProvider ? existing.providers : [...existing.providers, providerIdentity],
-      piuLink,
-      roles: existing.roles?.length ? existing.roles : ["user"],
-      updatedAt: now,
-      lastLoginAt: now,
-    };
-  }
-
-  const email = profile.email?.toLowerCase() ?? syntheticDiscordEmail(profile.discordId);
   const existing = providerOwner ?? (profile.email ? await users.findOne({ email }) : null);
 
   if (!existing) {
+    const now = new Date();
     const inserted = await users.insertOne({
       email,
       emailVerified: profile.emailVerified,
@@ -624,41 +610,86 @@ export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: 
     return created;
   }
 
-  const hasDiscordProvider = existing.providers.some((provider) => provider.provider === "discord" && provider.providerAccountId === profile.discordId);
+  return withActiveAccountWrite([existing._id], async (assertLeaseOwned) => {
+    const { users: lockedUsers } = await collections();
+    return updateExistingDiscordUser({
+      users: lockedUsers,
+      userId: existing._id,
+      profile,
+      providerIdentity,
+      loginEmail: email,
+      assertLeaseOwned,
+    });
+  });
+}
+
+async function updateExistingDiscordUser(args: {
+  users: Collection<UserDocument>;
+  userId: ObjectId;
+  profile: DiscordProfile;
+  providerIdentity: AuthProviderIdentity;
+  loginEmail: string | null;
+  assertLeaseOwned: () => Promise<void>;
+}): Promise<WithId<UserDocument>> {
+  const { users, userId, profile, providerIdentity, loginEmail, assertLeaseOwned } = args;
+  await assertLeaseOwned();
+  const [existing, providerOwner] = await Promise.all([
+    users.findOne({ _id: userId }),
+    users.findOne({
+      providers: { $elemMatch: { provider: "discord", providerAccountId: profile.discordId } },
+    }),
+  ]);
+  if (!existing) {
+    throw new Error("User not found.");
+  }
+  if (providerOwner && !providerOwner._id.equals(existing._id)) {
+    throw new Error("That Discord account is already linked to another user.");
+  }
+
+  const priorDiscordUserIds = discordUserIdsForDocument(existing)
+    .filter((discordUserId) => discordUserId !== profile.discordId);
+  await assertLeaseOwned();
+  await deleteDiscordBotUserData(priorDiscordUserIds);
+
+  const now = new Date();
   const piuLink = {
     ...(existing.piuLink ?? {}),
     discordUserId: profile.discordId,
     discordUsername: profile.username,
     linkedAt: existing.piuLink?.linkedAt ?? now,
   };
-  await users.updateOne(
+  const providers = [
+    ...existing.providers.filter((provider) => provider.provider !== "discord"),
+    providerIdentity,
+  ];
+  await assertLeaseOwned();
+  const updated = await users.findOneAndUpdate(
     { _id: existing._id },
     {
       $set: {
-        emailVerified: existing.email === email ? profile.emailVerified : existing.emailVerified,
-        name: existing.name || profile.displayName,
+        ...(loginEmail
+          ? {
+              emailVerified: existing.email === loginEmail ? profile.emailVerified : existing.emailVerified,
+              name: existing.name || profile.displayName,
+            }
+          : {}),
         imageUrl: existing.imageUrl ?? profile.imageUrl,
+        providers,
         piuLink,
         roles: existing.roles?.length ? existing.roles : ["user"],
         updatedAt: now,
         lastLoginAt: now,
       },
-      ...(hasDiscordProvider ? {} : { $push: { providers: providerIdentity } }),
     },
+    { returnDocument: "after" },
   );
-  await withActiveAccountWrite([existing._id], (assertLeaseOwned) => syncBotLinkFromPiuLink(piuLink, assertLeaseOwned));
+  if (!updated) {
+    throw new Error("Could not link Discord.");
+  }
 
-  return {
-    ...existing,
-    emailVerified: existing.email === email ? profile.emailVerified : existing.emailVerified,
-    name: existing.name || profile.displayName,
-    imageUrl: existing.imageUrl ?? profile.imageUrl,
-    providers: hasDiscordProvider ? existing.providers : [...existing.providers, providerIdentity],
-    piuLink,
-    roles: existing.roles?.length ? existing.roles : ["user"],
-    updatedAt: now,
-    lastLoginAt: now,
-  };
+  await assertLeaseOwned();
+  await syncBotLinkFromPiuLink(piuLink, assertLeaseOwned);
+  return updated;
 }
 
 export async function createSession(userId: ObjectId): Promise<string> {
@@ -784,45 +815,72 @@ async function linkPiuAccountWhileLocked(
 }
 
 export async function unlinkDiscordAccount(user: PublicUser): Promise<PublicUser> {
-  const { users } = await collections();
-  const existing = await users.findOne({ _id: objectIdFromUser(user) });
-  if (!existing) {
-    throw new Error("User not found.");
-  }
+  return withActiveAccountWrite([user.id], async (assertLeaseOwned) => {
+    const { users } = await collections();
+    const existing = await users.findOne({ _id: objectIdFromUser(user) });
+    if (!existing) {
+      throw new Error("User not found.");
+    }
 
-  const discordIdentity = existing.providers.find((provider) => provider.provider === "discord");
-  if (!discordIdentity) {
-    return publicUser(existing);
-  }
-  if (existing.providers.length <= 1) {
-    throw new Error("Link another sign-in service before disconnecting Discord.");
-  }
+    const discordUserIds = discordUserIdsForDocument(existing);
+    if (discordUserIds.length === 0) {
+      return publicUser(existing);
+    }
+    if (!existing.providers.some((provider) => provider.provider !== "discord")) {
+      throw new Error("Link another sign-in service before disconnecting Discord.");
+    }
 
-  const piuLinkWithoutDiscord = { ...(existing.piuLink ?? {}) };
-  delete piuLinkWithoutDiscord.discordUserId;
-  delete piuLinkWithoutDiscord.discordUsername;
-  const updated = await users.findOneAndUpdate(
-    { _id: existing._id },
-    {
-      $pull: { providers: { provider: "discord" } },
-      $set: {
-        piuLink: piuLinkWithoutDiscord,
-        updatedAt: new Date(),
+    await assertLeaseOwned();
+    await deleteDiscordBotUserData(discordUserIds);
+
+    const piuLinkWithoutDiscord = { ...(existing.piuLink ?? {}) };
+    delete piuLinkWithoutDiscord.discordUserId;
+    delete piuLinkWithoutDiscord.discordUsername;
+    await assertLeaseOwned();
+    const updated = await users.findOneAndUpdate(
+      { _id: existing._id },
+      {
+        $pull: { providers: { provider: "discord" } },
+        $set: {
+          piuLink: piuLinkWithoutDiscord,
+          updatedAt: new Date(),
+        },
       },
-    },
-    { returnDocument: "after" },
-  );
-  if (!updated) {
-    throw new Error("Could not disconnect Discord.");
+      { returnDocument: "after" },
+    );
+    if (!updated) {
+      throw new Error("Could not disconnect Discord.");
+    }
+
+    return publicUser(updated);
+  });
+}
+
+function discordUserIdsForDocument(user: UserDocument): string[] {
+  const values = [
+    ...user.providers
+      .filter((provider) => provider.provider === "discord")
+      .map((provider) => provider.providerAccountId),
+    user.piuLink?.discordUserId,
+  ];
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+async function deleteDiscordBotUserData(discordUserIds: string[]): Promise<void> {
+  if (discordUserIds.length === 0) {
+    return;
+  }
+  if (!hasMongoConfig()) {
+    throw new Error("MongoDB is required for bot account linking.");
   }
 
-  const { accountLinks, playerProfiles } = await botCollections();
-  await Promise.all([
-    accountLinks.deleteOne({ discordUserId: discordIdentity.providerAccountId }),
-    playerProfiles.deleteOne({ discordUserId: discordIdentity.providerAccountId }),
-  ]);
-
-  return publicUser(updated);
+  const client = await getMongoClient();
+  const db = client.db(DISCORD_BOT_DB_NAME);
+  await Promise.all(
+    DISCORD_BOT_USER_COLLECTIONS.map((collection) =>
+      db.collection(collection).deleteMany({ discordUserId: { $in: discordUserIds } }),
+    ),
+  );
 }
 
 async function syncBotLinkFromPiuLink(

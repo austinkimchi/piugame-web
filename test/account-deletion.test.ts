@@ -29,7 +29,7 @@ const collections: AccountDeletionCollectionNames = {
 
 test("account deletion removes every MyPIU user-owned collection and deletes the identity last", () => {
   const userId = new ObjectId("507f1f77bcf86cd799439011");
-  const plan = accountDeletionPlan({ userId, discordUserId: null, collections });
+  const plan = accountDeletionPlan({ userId, discordUserIds: [], collections });
   const deletedCollections = plan
     .filter((operation) => operation.kind === "deleteMany")
     .map((operation) => operation.collection);
@@ -70,7 +70,7 @@ test("account deletion removes every MyPIU user-owned collection and deletes the
 
 test("account deletion clears moderator references and all linked Discord bot caches", () => {
   const userId = new ObjectId("507f1f77bcf86cd799439011");
-  const plan = accountDeletionPlan({ userId, discordUserId: "discord-42", collections });
+  const plan = accountDeletionPlan({ userId, discordUserIds: ["discord-42", "discord-84"], collections });
   const botCollections = plan
     .filter((operation) => operation.database === "discordBot")
     .map((operation) => operation.collection);
@@ -83,6 +83,10 @@ test("account deletion clears moderator references and all linked Discord bot ca
     "player_profiles",
     "title_caches",
   ]);
+  assert.deepEqual(
+    plan.find((operation) => operation.database === "discordBot")?.filter,
+    { discordUserId: { $in: ["discord-42", "discord-84"] } },
+  );
   assert.ok(
     plan.some((operation) => operation.kind === "updateMany"
       && operation.database === "community"
