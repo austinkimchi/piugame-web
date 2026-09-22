@@ -973,6 +973,26 @@ export async function importMobilePerformanceSnapshot(
     throw new MobilePerformanceImportError("piu_username_mismatch");
   }
 
+  // Seed release ordering for users whose preference predates field-specific timestamps.
+  await assertLeaseOwned();
+  await users.updateOne(
+    {
+      _id: userId,
+      "preferences.piuGameVersion": { $exists: true },
+      $or: [
+        { "preferences.piuGameVersionUpdatedAt": { $exists: false } },
+        { "preferences.piuGameVersionUpdatedAt": null },
+      ],
+    },
+    [
+      {
+        $set: {
+          "preferences.piuGameVersionUpdatedAt": { $ifNull: ["$updatedAt", "$$NOW"] },
+        },
+      },
+    ],
+  );
+
   const profile: PlayerData = {
     username: input.profile.username,
     titleName: input.profile.titleName,
