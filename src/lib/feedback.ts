@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
+import { withActiveAccountWrite } from "@/lib/account-write-fence";
 import type { PublicUser } from "@/lib/auth";
 
 const FEEDBACK_DB_NAME = process.env.COMMUNITY_DB_NAME ?? "piugame_web";
@@ -35,18 +36,27 @@ export async function createFeedback(input: FeedbackInput, context: { user: Publ
     throw new Error("Feedback storage is not configured.");
   }
 
-  const now = new Date();
-  const client = await getMongoClient();
-  const collection = client.db(FEEDBACK_DB_NAME).collection<FeedbackDocument>(FEEDBACK_COLLECTION);
-  await collection.createIndex({ createdAt: -1 });
-  await collection.createIndex({ kind: 1, scenario: 1, createdAt: -1 });
-  await collection.insertOne({
-    ...input,
-    user: context.user,
-    userAgent: context.userAgent,
-    ipAddress: context.ipAddress,
-    status: "new",
-    createdAt: now,
-    updatedAt: now,
-  });
+  const store = async (assertLeaseOwned: () => Promise<void>) => {
+    const now = new Date();
+    const client = await getMongoClient();
+    const collection = client.db(FEEDBACK_DB_NAME).collection<FeedbackDocument>(FEEDBACK_COLLECTION);
+    await collection.createIndex({ createdAt: -1 });
+    await collection.createIndex({ kind: 1, scenario: 1, createdAt: -1 });
+    await assertLeaseOwned();
+    await collection.insertOne({
+      ...input,
+      user: context.user,
+      userAgent: context.userAgent,
+      ipAddress: context.ipAddress,
+      status: "new",
+      createdAt: now,
+      updatedAt: now,
+    });
+  };
+
+  if (context.user) {
+    await withActiveAccountWrite([context.user.id], store);
+  } else {
+    await store(async () => undefined);
+  }
 }

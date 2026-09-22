@@ -4,10 +4,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { clearInterval, setInterval } from "node:timers";
 import { ObjectId, MongoServerError, type Collection } from "mongodb";
 
+import { AccountWriteUnavailableError, withActiveAccountWrite } from "@/lib/account-write-fence";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
-import { importMobilePerformanceSnapshot } from "@/lib/performance";
+import { importMobilePerformanceSnapshot, MobilePerformanceImportError } from "@/lib/performance";
 import {
   acquirePerformanceUserLease,
+  PerformanceUserBusyError,
   PERFORMANCE_USER_LOCK_HEARTBEAT_MS,
   PERFORMANCE_USER_LOCK_LEASE_MS,
   releasePerformanceUserLease,
@@ -61,6 +63,7 @@ export class MobileSyncIdempotencyConflictError extends Error {}
 
 interface MobileSyncRateLimitDocument {
   _id: string;
+  userId: ObjectId;
   count: number;
   createdAt: Date;
   expiresAt: Date;
@@ -72,19 +75,35 @@ interface MobileSyncLeaseGuard {
 }
 
 export async function claimMobileSyncRateLimit(userId: string, installationId: string, now = new Date()): Promise<boolean> {
-  const { rateLimits } = await mobileSyncCollections();
-  const window = Math.floor(now.getTime() / RATE_LIMIT_WINDOW_MS);
-  const userKey = createHash("sha256").update(`${userId}:user:${window}`).digest("hex");
-  const installationKey = createHash("sha256").update(`${userId}:installation:${installationId}:${window}`).digest("hex");
-  if (!(await claimRateLimitBucket(rateLimits, userKey, now))) {
-    return false;
+  const accountId = objectId(userId);
+  try {
+    return await withActiveAccountWrite([accountId], async (assertLeaseOwned) => {
+      const { rateLimits } = await mobileSyncCollections();
+      const window = Math.floor(now.getTime() / RATE_LIMIT_WINDOW_MS);
+      const userKey = createHash("sha256").update(`${userId}:user:${window}`).digest("hex");
+      const installationKey = createHash("sha256").update(`${userId}:installation:${installationId}:${window}`).digest("hex");
+      await assertLeaseOwned();
+      if (!(await claimRateLimitBucket(rateLimits, userKey, accountId, now))) {
+        return false;
+      }
+      await assertLeaseOwned();
+      return claimRateLimitBucket(rateLimits, installationKey, accountId, now);
+    });
+  } catch (error) {
+    if (error instanceof AccountWriteUnavailableError) {
+      throw new MobilePerformanceImportError("account_not_found");
+    }
+    if (error instanceof PerformanceUserBusyError) {
+      throw new MobileSyncInProgressError("Another account operation is still processing.");
+    }
+    throw error;
   }
-  return claimRateLimitBucket(rateLimits, installationKey, now);
 }
 
 async function claimRateLimitBucket(
   rateLimits: Collection<MobileSyncRateLimitDocument>,
   key: string,
+  userId: ObjectId,
   now: Date,
 ): Promise<boolean> {
   try {
@@ -93,6 +112,7 @@ async function claimRateLimitBucket(
       {
         $inc: { count: 1 },
         $setOnInsert: {
+          userId,
           createdAt: now,
           expiresAt: new Date(now.getTime() + 2 * RATE_LIMIT_WINDOW_MS),
         },
@@ -294,6 +314,7 @@ async function mobileSyncCollections(): Promise<{
       receipts.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       receipts.createIndex({ userId: 1, createdAt: -1 }),
       rateLimits.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      rateLimits.createIndex({ userId: 1 }),
     ]).then(() => undefined);
   }
   await globalThis.piuMobileSyncIndexesPromise;

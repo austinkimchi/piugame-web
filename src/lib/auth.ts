@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
+import { withActiveAccountWrite } from "@/lib/account-write-fence";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { encryptCredential } from "@/lib/credential-crypto";
 import { withPerformanceUserLease } from "@/lib/performance-user-lock";
@@ -579,7 +580,7 @@ export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: 
         ...(hasDiscordProvider ? {} : { $push: { providers: providerIdentity } }),
       },
     );
-    await syncBotLinkFromPiuLink(piuLink);
+    await withActiveAccountWrite([existing._id], (assertLeaseOwned) => syncBotLinkFromPiuLink(piuLink, assertLeaseOwned));
 
     return {
       ...existing,
@@ -645,7 +646,7 @@ export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: 
       ...(hasDiscordProvider ? {} : { $push: { providers: providerIdentity } }),
     },
   );
-  await syncBotLinkFromPiuLink(piuLink);
+  await withActiveAccountWrite([existing._id], (assertLeaseOwned) => syncBotLinkFromPiuLink(piuLink, assertLeaseOwned));
 
   return {
     ...existing,
@@ -661,17 +662,20 @@ export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: 
 }
 
 export async function createSession(userId: ObjectId): Promise<string> {
-  const { sessions } = await collections();
-  const token = randomBytes(32).toString("base64url");
-  const now = new Date();
-  await sessions.insertOne({
-    userId,
-    tokenHash: tokenHash(token),
-    createdAt: now,
-    expiresAt: sessionExpiresAt(),
-    lastSeenAt: now,
+  return withActiveAccountWrite([userId], async (assertLeaseOwned) => {
+    const { sessions } = await collections();
+    const token = randomBytes(32).toString("base64url");
+    const now = new Date();
+    await assertLeaseOwned();
+    await sessions.insertOne({
+      userId,
+      tokenHash: tokenHash(token),
+      createdAt: now,
+      expiresAt: sessionExpiresAt(),
+      lastSeenAt: now,
+    });
+    return token;
   });
-  return token;
 }
 
 export async function getCurrentUserId(): Promise<string | null> {
@@ -680,9 +684,13 @@ export async function getCurrentUserId(): Promise<string | null> {
     return null;
   }
 
-  const { sessions } = await collections();
+  const { sessions, users } = await collections();
   const session = await sessions.findOne({ tokenHash: tokenHash(token), expiresAt: { $gt: new Date() } });
-  return session?.userId.toHexString() ?? null;
+  if (!session) {
+    return null;
+  }
+  const user = await users.findOne({ _id: session.userId }, { projection: { _id: 1 } });
+  return user ? session.userId.toHexString() : null;
 }
 
 export const getCurrentUser = cache(async (): Promise<PublicUser | null> => {
@@ -771,7 +779,7 @@ async function linkPiuAccountWhileLocked(
     throw new Error("Failed to link PIU account.");
   }
   await assertLeaseOwned();
-  await syncBotLinkFromPiuLink(piuLink);
+  await syncBotLinkFromPiuLink(piuLink, assertLeaseOwned);
   return publicUser(result);
 }
 
@@ -817,13 +825,17 @@ export async function unlinkDiscordAccount(user: PublicUser): Promise<PublicUser
   return publicUser(updated);
 }
 
-async function syncBotLinkFromPiuLink(piuLink: UserDocument["piuLink"]): Promise<void> {
+async function syncBotLinkFromPiuLink(
+  piuLink: UserDocument["piuLink"],
+  assertLeaseOwned: () => Promise<void>,
+): Promise<void> {
   if (!piuLink?.discordUserId || !piuLink.piuUsername || !piuLink.encryptedPassword) {
     return;
   }
 
   const { accountLinks, playerProfiles } = await botCollections();
   const now = new Date();
+  await assertLeaseOwned();
   await Promise.all([
     accountLinks.updateOne(
       { discordUserId: piuLink.discordUserId },
@@ -985,23 +997,26 @@ export async function setSongSaved(user: PublicUser, song: { slug: string; title
   }
 
   const now = new Date();
-  await savedSongs.updateOne(
-    { userId, songSlug: song.slug },
-    {
-      $set: {
-        title: song.title,
-        artist: song.artist,
-        version: song.version,
-        updatedAt: now,
+  await withActiveAccountWrite([userId], async (assertLeaseOwned) => {
+    await assertLeaseOwned();
+    await savedSongs.updateOne(
+      { userId, songSlug: song.slug },
+      {
+        $set: {
+          title: song.title,
+          artist: song.artist,
+          version: song.version,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          userId,
+          songSlug: song.slug,
+          createdAt: now,
+        },
       },
-      $setOnInsert: {
-        userId,
-        songSlug: song.slug,
-        createdAt: now,
-      },
-    },
-    { upsert: true },
-  );
+      { upsert: true },
+    );
+  });
 }
 
 export async function addSongTag(user: PublicUser, song: { slug: string; title: string; artist: string }, chartTokenInput: string, tagInput: string): Promise<string | null> {
@@ -1020,44 +1035,48 @@ export async function voteSongTag(user: PublicUser, song: { slug: string; title:
   const { tagContributions, tagVotes } = await collections();
   const now = new Date();
   const userId = objectIdFromUser(user);
-  const existingVote = await tagVotes.findOne({ userId, songSlug: song.slug, chartToken, tag });
-  if (existingVote) {
-    throw new Error("You already voted on that tag.");
-  }
-  await tagVotes.insertOne({
-    userId,
-    songSlug: song.slug,
-    chartToken,
-    tag,
-    value,
-    title: song.title,
-    artist: song.artist,
-    createdAt: now,
-  });
+  return withActiveAccountWrite([userId], async (assertLeaseOwned) => {
+    const existingVote = await tagVotes.findOne({ userId, songSlug: song.slug, chartToken, tag });
+    if (existingVote) {
+      throw new Error("You already voted on that tag.");
+    }
+    await assertLeaseOwned();
+    await tagVotes.insertOne({
+      userId,
+      songSlug: song.slug,
+      chartToken,
+      tag,
+      value,
+      title: song.title,
+      artist: song.artist,
+      createdAt: now,
+    });
 
-  if (value === -1) {
+    if (value === -1) {
+      return tag;
+    }
+
+    await assertLeaseOwned();
+    await tagContributions.updateOne(
+      { userId, songSlug: song.slug, chartToken, tag },
+      {
+        $set: {
+          title: song.title,
+          artist: song.artist,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          userId,
+          songSlug: song.slug,
+          chartToken,
+          tag,
+          createdAt: now,
+        },
+      },
+      { upsert: true },
+    );
     return tag;
-  }
-
-  await tagContributions.updateOne(
-    { userId, songSlug: song.slug, chartToken, tag },
-    {
-      $set: {
-        title: song.title,
-        artist: song.artist,
-        updatedAt: now,
-      },
-      $setOnInsert: {
-        userId,
-        songSlug: song.slug,
-        chartToken,
-        tag,
-        createdAt: now,
-      },
-    },
-    { upsert: true },
-  );
-  return tag;
+  });
 }
 
 export async function removeSongTag(user: PublicUser, songSlug: string, chartTokenInput: string, tagInput: string): Promise<void> {
@@ -1105,27 +1124,30 @@ export async function createCommunityPost(
 
   const { posts } = await collections();
   const userId = objectIdFromUser(user);
-  const activePost = await posts.findOne({ userId, songSlug: song.slug, chartToken, status: "active" });
-  if (activePost) {
-    throw new Error("Archive your current post before adding a new one.");
-  }
+  await withActiveAccountWrite([userId], async (assertLeaseOwned) => {
+    const activePost = await posts.findOne({ userId, songSlug: song.slug, chartToken, status: "active" });
+    if (activePost) {
+      throw new Error("Archive your current post before adding a new one.");
+    }
 
-  const now = new Date();
-  await posts.insertOne({
-    userId,
-    username: user.username ?? user.name,
-    songSlug: song.slug,
-    chartToken,
-    title: song.title,
-    artist: song.artist,
-    body,
-    youtubeUrl: youtube?.url ?? null,
-    youtubeVideoId: youtube?.videoId ?? null,
-    caption,
-    scoreLink,
-    status: "active",
-    createdAt: now,
-    updatedAt: now,
+    const now = new Date();
+    await assertLeaseOwned();
+    await posts.insertOne({
+      userId,
+      username: user.username ?? user.name,
+      songSlug: song.slug,
+      chartToken,
+      title: song.title,
+      artist: song.artist,
+      body,
+      youtubeUrl: youtube?.url ?? null,
+      youtubeVideoId: youtube?.videoId ?? null,
+      caption,
+      scoreLink,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
   });
 }
 
@@ -1203,17 +1225,21 @@ export async function deleteCommunityPost(user: PublicUser, postIdInput: string)
     throw new Error("You cannot delete this post.");
   }
 
-  await posts.updateOne(
-    { _id: postId },
-    {
-      $set: {
-        status: "removed",
-        removedAt: new Date(),
-        removedBy: objectIdFromUser(user),
-        moderationNote: post.userId.equals(objectIdFromUser(user)) ? "Deleted by author." : "Removed by moderator.",
+  const actorId = objectIdFromUser(user);
+  await withActiveAccountWrite([actorId, post.userId], async (assertLeaseOwned) => {
+    await assertLeaseOwned();
+    await posts.updateOne(
+      { _id: postId },
+      {
+        $set: {
+          status: "removed",
+          removedAt: new Date(),
+          removedBy: actorId,
+          moderationNote: post.userId.equals(actorId) ? "Deleted by author." : "Removed by moderator.",
+        },
       },
-    },
-  );
+    );
+  });
 }
 
 export async function removeCommunityPost(user: PublicUser, postIdInput: string, notesInput?: string): Promise<void> {
@@ -1231,29 +1257,34 @@ export async function removeCommunityPost(user: PublicUser, postIdInput: string,
 
   const notes = cleanText(notesInput).slice(0, 600) || null;
   const now = new Date();
-  await posts.updateOne(
-    { _id: postId },
-    {
-      $set: {
-        status: "removed",
-        removedAt: now,
-        removedBy: objectIdFromUser(user),
-        moderationNote: notes,
+  const actorId = objectIdFromUser(user);
+  await withActiveAccountWrite([actorId, post.userId], async (assertLeaseOwned) => {
+    await assertLeaseOwned();
+    await posts.updateOne(
+      { _id: postId },
+      {
+        $set: {
+          status: "removed",
+          removedAt: now,
+          removedBy: actorId,
+          moderationNote: notes,
+        },
       },
-    },
-  );
-  await siteLogs.insertOne({
-    category: "moderation",
-    class: "community",
-    action: "post.remove",
-    actorId: objectIdFromUser(user),
-    actorUsername: user.username,
-    targetUserId: post.userId,
-    targetUsername: post.username,
-    songSlug: post.songSlug,
-    postId,
-    notes,
-    createdAt: now,
+    );
+    await assertLeaseOwned();
+    await siteLogs.insertOne({
+      category: "moderation",
+      class: "community",
+      action: "post.remove",
+      actorId,
+      actorUsername: user.username,
+      targetUserId: post.userId,
+      targetUsername: post.username,
+      songSlug: post.songSlug,
+      postId,
+      notes,
+      createdAt: now,
+    });
   });
 }
 
@@ -1272,28 +1303,33 @@ export async function muteCommunityUser(user: PublicUser, targetUserIdInput: str
   const mutedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   const notes = cleanText(notesInput).slice(0, 600) || null;
   const now = new Date();
-  await users.updateOne(
-    { _id: targetUserId },
-    {
-      $set: {
-        mutedUntil,
-        mutedReason: notes,
-        mutedBy: objectIdFromUser(user),
-        updatedAt: now,
+  const actorId = objectIdFromUser(user);
+  await withActiveAccountWrite([actorId, targetUserId], async (assertLeaseOwned) => {
+    await assertLeaseOwned();
+    await users.updateOne(
+      { _id: targetUserId },
+      {
+        $set: {
+          mutedUntil,
+          mutedReason: notes,
+          mutedBy: actorId,
+          updatedAt: now,
+        },
       },
-    },
-  );
-  await siteLogs.insertOne({
-    category: "moderation",
-    class: "user",
-    action: "user.mute",
-    actorId: objectIdFromUser(user),
-    actorUsername: user.username,
-    targetUserId,
-    targetUsername: target.username ?? target.name,
-    notes,
-    metadata: { days, mutedUntil: mutedUntil.toISOString() },
-    createdAt: now,
+    );
+    await assertLeaseOwned();
+    await siteLogs.insertOne({
+      category: "moderation",
+      class: "user",
+      action: "user.mute",
+      actorId,
+      actorUsername: user.username,
+      targetUserId,
+      targetUsername: target.username ?? target.name,
+      notes,
+      metadata: { days, mutedUntil: mutedUntil.toISOString() },
+      createdAt: now,
+    });
   });
 }
 
@@ -1312,29 +1348,32 @@ export async function saveSongNote(user: PublicUser, song: { slug: string; title
   }
 
   const now = new Date();
-  await notes.updateOne(
-    { userId, songSlug: song.slug, chartToken },
-    {
-      $set: {
-        title: song.title,
-        artist: song.artist,
-        note,
-        source: "web",
-        botCompatibility: {
-          database: "piugame_discord",
-          collection: "none",
+  await withActiveAccountWrite([userId], async (assertLeaseOwned) => {
+    await assertLeaseOwned();
+    await notes.updateOne(
+      { userId, songSlug: song.slug, chartToken },
+      {
+        $set: {
+          title: song.title,
+          artist: song.artist,
+          note,
+          source: "web",
+          botCompatibility: {
+            database: "piugame_discord",
+            collection: "none",
+          },
+          updatedAt: now,
         },
-        updatedAt: now,
+        $setOnInsert: {
+          userId,
+          songSlug: song.slug,
+          chartToken,
+          createdAt: now,
+        },
       },
-      $setOnInsert: {
-        userId,
-        songSlug: song.slug,
-        chartToken,
-        createdAt: now,
-      },
-    },
-    { upsert: true },
-  );
+      { upsert: true },
+    );
+  });
 }
 
 export async function setUsername(user: PublicUser, usernameInput: string): Promise<PublicUser> {
@@ -1471,23 +1510,28 @@ export async function setUserModeratorRole(actor: PublicUser, targetUserIdInput:
     throw new Error("User not found.");
   }
 
-  if (enabled) {
-    await users.updateOne({ _id: targetUserId }, { $addToSet: { roles: "moderator" }, $set: { updatedAt: now } });
-  } else {
-    await users.updateOne({ _id: targetUserId }, { $pull: { roles: "moderator" }, $set: { updatedAt: now } });
-  }
+  const actorId = objectIdFromUser(actor);
+  await withActiveAccountWrite([actorId, targetUserId], async (assertLeaseOwned) => {
+    await assertLeaseOwned();
+    if (enabled) {
+      await users.updateOne({ _id: targetUserId }, { $addToSet: { roles: "moderator" }, $set: { updatedAt: now } });
+    } else {
+      await users.updateOne({ _id: targetUserId }, { $pull: { roles: "moderator" }, $set: { updatedAt: now } });
+    }
 
-  await siteLogs.insertOne({
-    category: "admin",
-    class: "role",
-    action: enabled ? "role.assign" : "role.revoke",
-    actorId: objectIdFromUser(actor),
-    actorUsername: actor.username,
-    targetUserId,
-    targetUsername: target.username ?? target.name,
-    notes: cleanText(notesInput).slice(0, 600) || null,
-    metadata: { role: "moderator" },
-    createdAt: now,
+    await assertLeaseOwned();
+    await siteLogs.insertOne({
+      category: "admin",
+      class: "role",
+      action: enabled ? "role.assign" : "role.revoke",
+      actorId,
+      actorUsername: actor.username,
+      targetUserId,
+      targetUsername: target.username ?? target.name,
+      notes: cleanText(notesInput).slice(0, 600) || null,
+      metadata: { role: "moderator" },
+      createdAt: now,
+    });
   });
 }
 

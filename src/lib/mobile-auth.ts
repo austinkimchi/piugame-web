@@ -4,7 +4,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { ObjectId, type Collection } from "mongodb";
 
 import { isValidMobilePkceVerifier, mobilePkceChallenge } from "@/lib/mobile-auth-core";
+import { AccountWriteUnavailableError, withActiveAccountWrite } from "@/lib/account-write-fence";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
+import { PerformanceUserBusyError } from "@/lib/performance-user-lock";
 import type { PiuCatalogVersion } from "@/lib/types";
 
 const COMMUNITY_DB_NAME = process.env.COMMUNITY_DB_NAME ?? "piugame_web";
@@ -87,19 +89,26 @@ export async function createMobileAuthorizationCode(args: {
   codeChallenge: string;
 }): Promise<string> {
   const userId = objectId(args.userId);
-  const { codes } = await mobileCollections();
-  const code = randomBytes(32).toString("base64url");
-  const now = new Date();
-  await codes.insertOne({
-    userId,
-    codeHash: hashSecret(code),
-    clientId: args.clientId,
-    redirectUri: args.redirectUri,
-    codeChallenge: args.codeChallenge,
-    createdAt: now,
-    expiresAt: new Date(now.getTime() + AUTHORIZATION_CODE_TTL_SECONDS * 1000),
-  });
-  return code;
+  try {
+    return await withActiveAccountWrite([userId], async (assertLeaseOwned) => {
+      const { codes } = await mobileCollections();
+      const code = randomBytes(32).toString("base64url");
+      const now = new Date();
+      await assertLeaseOwned();
+      await codes.insertOne({
+        userId,
+        codeHash: hashSecret(code),
+        clientId: args.clientId,
+        redirectUri: args.redirectUri,
+        codeChallenge: args.codeChallenge,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + AUTHORIZATION_CODE_TTL_SECONDS * 1000),
+      });
+      return code;
+    });
+  } catch (error) {
+    throwMobileAuthorizationFenceError(error);
+  }
 }
 
 export async function exchangeMobileAuthorizationCode(args: {
@@ -116,7 +125,7 @@ export async function exchangeMobileAuthorizationCode(args: {
     throw new MobileAuthorizationError("invalid_grant");
   }
 
-  const { codes, tokens } = await mobileCollections();
+  const { codes } = await mobileCollections();
   const authorization = await codes.findOneAndDelete({
     codeHash: hashSecret(args.code),
     clientId: args.clientId,
@@ -127,24 +136,30 @@ export async function exchangeMobileAuthorizationCode(args: {
   if (!authorization) {
     throw new MobileAuthorizationError("invalid_grant");
   }
-
-  const accessToken = `mypiu_${randomBytes(32).toString("base64url")}`;
-  const now = new Date();
-  await tokens.insertOne({
-    userId: authorization.userId,
-    tokenHash: hashSecret(accessToken),
-    clientId: args.clientId,
-    installationId: args.installationId,
-    clientName: args.clientName,
-    platform: args.platform,
-    appVersion: args.appVersion,
-    createdAt: now,
-    expiresAt: new Date(now.getTime() + ACCESS_TOKEN_TTL_SECONDS * 1000),
-    lastUsedAt: now,
-    revokedAt: null,
-  });
-
-  return { accessToken, expiresIn: ACCESS_TOKEN_TTL_SECONDS };
+  try {
+    return await withActiveAccountWrite([authorization.userId], async (assertLeaseOwned) => {
+      const { tokens } = await mobileCollections();
+      const accessToken = `mypiu_${randomBytes(32).toString("base64url")}`;
+      const now = new Date();
+      await assertLeaseOwned();
+      await tokens.insertOne({
+        userId: authorization.userId,
+        tokenHash: hashSecret(accessToken),
+        clientId: args.clientId,
+        installationId: args.installationId,
+        clientName: args.clientName,
+        platform: args.platform,
+        appVersion: args.appVersion,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + ACCESS_TOKEN_TTL_SECONDS * 1000),
+        lastUsedAt: now,
+        revokedAt: null,
+      });
+      return { accessToken, expiresIn: ACCESS_TOKEN_TTL_SECONDS };
+    });
+  } catch (error) {
+    throwMobileAuthorizationFenceError(error);
+  }
 }
 
 export async function authenticateMobileAccessToken(accessToken: string | null): Promise<MobileAccessIdentity | null> {
@@ -152,7 +167,7 @@ export async function authenticateMobileAccessToken(accessToken: string | null):
     return null;
   }
 
-  const { tokens } = await mobileCollections();
+  const { users, tokens } = await mobileCollections();
   const now = new Date();
   const token = await tokens.findOne({
     tokenHash: hashSecret(accessToken),
@@ -160,6 +175,10 @@ export async function authenticateMobileAccessToken(accessToken: string | null):
     revokedAt: null,
   });
   if (!token) {
+    return null;
+  }
+  const user = await users.findOne({ _id: token.userId }, { projection: { _id: 1 } });
+  if (!user) {
     return null;
   }
 
@@ -218,12 +237,22 @@ export async function getMobileAccountSnapshot(userIdInput: string): Promise<Mob
 }
 
 export class MobileAuthorizationError extends Error {
-  readonly code: "invalid_grant";
+  readonly code: "invalid_grant" | "temporarily_unavailable";
 
-  constructor(code: "invalid_grant") {
+  constructor(code: "invalid_grant" | "temporarily_unavailable") {
     super(code);
     this.code = code;
   }
+}
+
+function throwMobileAuthorizationFenceError(error: unknown): never {
+  if (error instanceof AccountWriteUnavailableError) {
+    throw new MobileAuthorizationError("invalid_grant");
+  }
+  if (error instanceof PerformanceUserBusyError) {
+    throw new MobileAuthorizationError("temporarily_unavailable");
+  }
+  throw error;
 }
 
 async function mobileCollections() {
