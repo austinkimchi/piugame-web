@@ -16,7 +16,7 @@ import { PERFORMANCE_CHART_STATS_POPULATION_INDEX } from "@/lib/performance-inde
 import { performancePlayKey } from "@/lib/performance-play-key";
 import { PerformanceUserBusyError, withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
-import { startsNewSession } from "@/lib/performance-session";
+import { startsNewSession, summarizePerformanceSession } from "@/lib/performance-session";
 import { applyBucketBestSummary, applyTopPlaySummary, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
@@ -217,6 +217,22 @@ export interface PerformanceRecentPlaysPage {
   recentPlays: PerformanceDashboard["recentPlays"];
   nextOffset: number | null;
   total: number;
+}
+
+export interface PerformanceSession {
+  summary: {
+    playCount: number;
+    clearCount: number;
+    failedCount: number;
+    stageBreakCount: number;
+    averageScore: number | null;
+    bestScore: number | null;
+    distinctCharts: number;
+    startedAt: string;
+    endedAt: string;
+    durationMinutes: number;
+  };
+  plays: PerformanceDashboard["recentPlays"];
 }
 
 export interface FreshPerformanceRecentPlays {
@@ -578,6 +594,59 @@ export async function getPerformanceRecentPlays(
     recentPlays: recentPlays.map(publicRecentPlay),
     nextOffset: offset + recentPlays.length < total ? offset + recentPlays.length : null,
     total,
+  };
+}
+
+export async function getLatestPerformanceSession(
+  userIdInput: string | null,
+): Promise<PerformanceSession | null> {
+  const userId = objectIdFromString(userIdInput);
+  if (!userId || !hasMongoConfig()) {
+    return null;
+  }
+
+  const { users, plays } = await collections();
+  const piuVersion = await performanceVersionForUser(users, userId);
+  const cursor = plays
+    .find({ userId, piuVersion, playedAt: { $type: "date" } })
+    .sort(recentPlaySort());
+  const sessionPlays: Array<WithId<PerformancePlayEventDocument>> = [];
+  let previous: Date | null = null;
+
+  try {
+    for await (const play of cursor) {
+      if (!play.playedAt) {
+        continue;
+      }
+      if (previous && startsNewSession(previous, play.playedAt)) {
+        break;
+      }
+      sessionPlays.push(play);
+      previous = play.playedAt;
+    }
+  } finally {
+    await cursor.close();
+  }
+
+  const summary = summarizePerformanceSession(sessionPlays);
+  if (!summary) {
+    return null;
+  }
+
+  return {
+    summary: {
+      playCount: summary.playCount,
+      clearCount: summary.clearCount,
+      failedCount: summary.failedCount,
+      stageBreakCount: summary.stageBreakCount,
+      averageScore: summary.averageScore,
+      bestScore: summary.bestScore,
+      distinctCharts: summary.distinctCharts,
+      startedAt: summary.startedAt.toISOString(),
+      endedAt: summary.endedAt.toISOString(),
+      durationMinutes: summary.durationMinutes,
+    },
+    plays: sessionPlays.map(publicRecentPlay),
   };
 }
 
