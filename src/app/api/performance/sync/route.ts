@@ -31,10 +31,8 @@ export async function POST(request: NextRequest) {
       });
     } else {
       await syncCurrentUserPerformance(userId);
-      after(() => {
-        void syncCurrentUserTopPlaysIfDue(userId).catch(() => undefined);
-        void syncQueuedAllPlaysBackfillForUser(userId).catch(() => undefined);
-      });
+      await syncCurrentUserTopPlaysIfDue(userId);
+      await syncQueuedAllPlaysBackfillForUser(userId);
     }
 
     return syncJsonOrRedirect(request, { ok: true });
