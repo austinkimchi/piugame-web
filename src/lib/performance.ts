@@ -1050,9 +1050,10 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
   const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, decryptCredential(encryptedPassword));
   const profileResultPromise = getPlayerDataWithPumbility(client, piuUsername)
-    .then((profile) => ({ ok: true as const, profile }))
+    .then((profile) => ({ ok: true as const, profile, observedAt: new Date() }))
     .catch((error: unknown) => ({ ok: false as const, error }));
   const recentPlays = await client.getRecentPlays(piuUsername);
+  const recentPlaysObservedAt = new Date();
 
   return {
     recentPlays,
@@ -1063,7 +1064,10 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
           throw profileResult.error;
         }
         const profile = profileResult.profile;
-        await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays);
+        const observedAt = profileResult.observedAt > recentPlaysObservedAt
+          ? profileResult.observedAt
+          : recentPlaysObservedAt;
+        await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt });
         await queueAllPlaysBackfill(userId, piuVersion);
       } catch (error) {
         await markSyncFailed(userId, piuVersion, error);
@@ -1167,7 +1171,8 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
     }
   }
   const recentPlays = recentPlaysResult.ok ? recentPlaysResult.plays : [];
-  await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays);
+  const observedAt = new Date();
+  await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt });
   await queueAllPlaysBackfill(userId, piuVersion);
 }
 
