@@ -223,6 +223,7 @@ export interface PerformanceSession {
   summary: {
     playCount: number;
     clearCount: number;
+    failedCount: number;
     stageBreakCount: number;
     averageScore: number | null;
     bestScore: number | null;
@@ -636,6 +637,7 @@ export async function getLatestPerformanceSession(
     summary: {
       playCount: summary.playCount,
       clearCount: summary.clearCount,
+      failedCount: summary.failedCount,
       stageBreakCount: summary.stageBreakCount,
       averageScore: summary.averageScore,
       bestScore: summary.bestScore,

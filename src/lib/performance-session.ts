@@ -1,8 +1,11 @@
+import { isFailedPerformanceGrade } from "./performance-format.ts";
+
 const SESSION_BREAK_MS = 2 * 60 * 60 * 1000;
 
 export interface PerformanceSessionPlay {
   playedAt: Date | null;
   score: number | null;
+  grade?: string | null;
   stageBreak: boolean;
   chartToken: string;
 }
@@ -10,6 +13,7 @@ export interface PerformanceSessionPlay {
 export interface PerformanceSessionSummary {
   playCount: number;
   clearCount: number;
+  failedCount: number;
   stageBreakCount: number;
   averageScore: number | null;
   bestScore: number | null;
@@ -49,6 +53,7 @@ export function summarizePerformanceSession(
 ): PerformanceSessionSummary | null {
   let playCount = 0;
   let clearCount = 0;
+  let failedCount = 0;
   let stageBreakCount = 0;
   let scoreTotal = 0;
   let scoredClearCount = 0;
@@ -64,9 +69,14 @@ export function summarizePerformanceSession(
     }
 
     playCount += 1;
+    const failed = play.stageBreak || isFailedPerformanceGrade(play.grade);
+    if (failed) {
+      failedCount += 1;
+    }
     if (play.stageBreak) {
       stageBreakCount += 1;
-    } else {
+    }
+    if (!failed) {
       clearCount += 1;
       if (typeof play.score === "number" && Number.isFinite(play.score)) {
         scoreTotal += play.score;
@@ -94,6 +104,7 @@ export function summarizePerformanceSession(
   return {
     playCount,
     clearCount,
+    failedCount,
     stageBreakCount,
     averageScore: scoredClearCount > 0 ? Math.round(scoreTotal / scoredClearCount) : null,
     bestScore,

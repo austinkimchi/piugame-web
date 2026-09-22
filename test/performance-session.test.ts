@@ -25,18 +25,21 @@ test("summarizes clears, failures, scores, charts, and duration", () => {
     {
       playedAt: new Date("2026-08-18T22:45:00.000Z"),
       score: null,
+      grade: null,
       stageBreak: true,
       chartToken: "big-daddy:s:19",
     },
     {
       playedAt: new Date("2026-08-18T22:15:00.000Z"),
       score: 950_000,
+      grade: "s",
       stageBreak: false,
       chartToken: "battle-no-1:s:19",
     },
     {
       playedAt: new Date("2026-08-18T21:45:00.000Z"),
       score: 900_000,
+      grade: "a",
       stageBreak: false,
       chartToken: "battle-no-1:s:19",
     },
@@ -45,6 +48,7 @@ test("summarizes clears, failures, scores, charts, and duration", () => {
   assert.deepEqual(summary, {
     playCount: 3,
     clearCount: 2,
+    failedCount: 1,
     stageBreakCount: 1,
     averageScore: 925_000,
     bestScore: 950_000,
@@ -57,13 +61,14 @@ test("summarizes clears, failures, scores, charts, and duration", () => {
 
 test("ignores invalid timestamps and failed scores", () => {
   const summary = summarizePerformanceSession([
-    { playedAt: new Date("invalid"), score: 999_999, stageBreak: false, chartToken: "ignored" },
-    { playedAt: new Date("2026-08-18T22:00:00.000Z"), score: 800_000, stageBreak: true, chartToken: "song:s:18" },
+    { playedAt: new Date("invalid"), score: 999_999, grade: "s", stageBreak: false, chartToken: "ignored" },
+    { playedAt: new Date("2026-08-18T22:00:00.000Z"), score: 800_000, grade: "x_aa", stageBreak: false, chartToken: "song:s:18" },
   ]);
 
   assert.equal(summary?.playCount, 1);
   assert.equal(summary?.clearCount, 0);
-  assert.equal(summary?.stageBreakCount, 1);
+  assert.equal(summary?.failedCount, 1);
+  assert.equal(summary?.stageBreakCount, 0);
   assert.equal(summary?.averageScore, null);
   assert.equal(summary?.bestScore, null);
 });
