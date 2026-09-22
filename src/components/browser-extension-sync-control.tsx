@@ -2,7 +2,7 @@
 
 import { ExternalLink, Laptop, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   browserSyncSuccessMessage,
@@ -10,7 +10,11 @@ import {
   parseExtensionSyncResult,
   type BrowserExtensionSyncResult,
 } from "@/lib/browser-extension-sync";
-import { emitPerformanceRefreshState } from "@/lib/performance-refresh-events";
+import {
+  emitPerformanceRefreshState,
+  getPerformanceRefreshState,
+  subscribePerformanceRefreshState,
+} from "@/lib/performance-refresh-events";
 
 const EXTENSION_CHECK_DELAY_MS = 800;
 const SYNC_TIMEOUT_MS = 60_000;
@@ -26,6 +30,12 @@ export function BrowserExtensionSyncControl() {
   const [extension, setExtension] = useState<ExtensionState>({ kind: "checking" });
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<BrowserExtensionSyncResult | null>(null);
+  const sharedRefreshState = useSyncExternalStore(
+    subscribePerformanceRefreshState,
+    getPerformanceRefreshState,
+    getPerformanceRefreshState,
+  );
+  const busy = syncing || sharedRefreshState === "syncing";
 
   useEffect(() => {
     mountedRef.current = true;
@@ -49,7 +59,7 @@ export function BrowserExtensionSyncControl() {
   }, []);
 
   async function syncFromBrowser() {
-    if (extension.kind !== "ready" || syncing) return;
+    if (extension.kind !== "ready" || busy) return;
     setSyncing(true);
     setResult(null);
     emitPerformanceRefreshState("syncing");
@@ -72,15 +82,15 @@ export function BrowserExtensionSyncControl() {
     <div>
       <button
         className="inline-flex h-11 w-full items-center justify-center gap-2 bg-[#28c950] px-4 text-sm font-black text-[#071109] transition hover:bg-[#35d867] disabled:cursor-not-allowed disabled:bg-[#d9ded2] disabled:text-[#66705e]"
-        disabled={extension.kind !== "ready" || syncing}
+        disabled={extension.kind !== "ready" || busy}
         onClick={() => void syncFromBrowser()}
         type="button"
       >
-        {syncing ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : <Laptop aria-hidden="true" size={16} />}
-        {syncing ? "Syncing on this device" : "Sync from this browser"}
+        {busy ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : <Laptop aria-hidden="true" size={16} />}
+        {syncing ? "Syncing on this device" : sharedRefreshState === "syncing" ? "Refresh in progress" : "Sync from this browser"}
       </button>
       <p aria-live="polite" className="mt-2 text-xs font-bold leading-5 text-[#66705e]">
-        {statusText(extension, syncing, result)}
+        {statusText(extension, syncing, sharedRefreshState === "syncing", result)}
       </p>
       {result && !result.ok && result.recovery ? (
         <a
@@ -120,8 +130,9 @@ function requestExtensionSync(): Promise<BrowserExtensionSyncResult> {
   });
 }
 
-function statusText(extension: ExtensionState, syncing: boolean, result: BrowserExtensionSyncResult | null): string {
+function statusText(extension: ExtensionState, syncing: boolean, sharedRefreshActive: boolean, result: BrowserExtensionSyncResult | null): string {
   if (syncing) return "PIUGAME is being read by this browser.";
+  if (sharedRefreshActive) return "The current performance refresh is finishing.";
   if (result?.ok) return browserSyncSuccessMessage(result);
   if (result && !result.ok) return result.error;
   if (extension.kind === "checking") return "Checking for MyPIU Sync...";
