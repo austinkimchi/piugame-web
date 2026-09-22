@@ -6,7 +6,7 @@ import {
   isValidMobilePkceChallenge,
   normalizeMobileOAuthState,
 } from "@/lib/mobile-auth-core";
-import { createMobileAuthorizationCode } from "@/lib/mobile-auth";
+import { createMobileAuthorizationCode, MobileAuthorizationError } from "@/lib/mobile-auth";
 import { discordOAuthOrigin } from "@/lib/discord-oauth";
 import { googleOAuthOrigin } from "@/lib/google-oauth";
 import { publicRequestOrigin } from "@/lib/oauth-origin";
@@ -50,7 +50,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(loginUrl, { headers: noStoreHeaders() });
   }
 
-  const code = await createMobileAuthorizationCode({ userId, clientId, redirectUri, codeChallenge });
+  let code: string;
+  try {
+    code = await createMobileAuthorizationCode({ userId, clientId, redirectUri, codeChallenge });
+  } catch (error) {
+    if (error instanceof MobileAuthorizationError) {
+      const status = error.code === "temporarily_unavailable" ? 503 : 401;
+      return NextResponse.json({ error: error.code }, { status, headers: noStoreHeaders() });
+    }
+    throw error;
+  }
   const callbackUrl = new URL(redirectUri);
   callbackUrl.searchParams.set("code", code);
   callbackUrl.searchParams.set("state", state);

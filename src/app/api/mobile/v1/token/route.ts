@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof MobileAuthorizationError) {
-      return oauthError(error.code, 400);
+      return oauthError(error.code, error.code === "temporarily_unavailable" ? 503 : 400);
     }
     if (error instanceof MobileTokenRequestError) {
       return oauthError("invalid_request", 400);
