@@ -18,6 +18,7 @@ export async function GET() {
   return NextResponse.json(
     {
       piuUsername: user.piuProfile.piuUsername,
+      piuDisplayName: user.piuProfile.displayName,
       piuVersion: normalizePiuGameVersion(user.preferences.piuGameVersion),
     },
     { headers: noStoreHeaders() },
