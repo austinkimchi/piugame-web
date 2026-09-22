@@ -19,7 +19,7 @@ import {
 } from "@/lib/performance-refresh-events";
 
 const EXTENSION_CHECK_DELAY_MS = 800;
-const SYNC_TIMEOUT_MS = 60_000;
+const SYNC_SLOW_MS = 60_000;
 
 type ExtensionState =
   | { kind: "checking" }
@@ -31,6 +31,7 @@ export function BrowserExtensionSyncControl() {
   const mountedRef = useRef(true);
   const [extension, setExtension] = useState<ExtensionState>({ kind: "checking" });
   const [syncing, setSyncing] = useState(false);
+  const [syncSlow, setSyncSlow] = useState(false);
   const [serverSyncing, setServerSyncing] = useState(false);
   const [result, setResult] = useState<BrowserExtensionSyncResult | null>(null);
   const [serverMessage, setServerMessage] = useState<string | null>(null);
@@ -66,11 +67,14 @@ export function BrowserExtensionSyncControl() {
   async function syncFromBrowser() {
     if (!extensionSupported || busy) return;
     setSyncing(true);
+    setSyncSlow(false);
     setResult(null);
     setServerMessage(null);
     emitPerformanceRefreshState("syncing");
     try {
-      const nextResult = await requestExtensionSync();
+      const nextResult = await requestExtensionSync(() => {
+        if (mountedRef.current) setSyncSlow(true);
+      });
       if (!mountedRef.current) return;
       setResult(nextResult);
       if (nextResult.ok) {
@@ -79,6 +83,7 @@ export function BrowserExtensionSyncControl() {
     } finally {
       if (mountedRef.current) {
         setSyncing(false);
+        setSyncSlow(false);
       }
       emitPerformanceRefreshState("idle");
     }
@@ -125,10 +130,10 @@ export function BrowserExtensionSyncControl() {
         type="button"
       >
         {busy ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : <Laptop aria-hidden="true" size={16} />}
-        {syncing ? "Syncing on this device" : sharedRefreshState === "syncing" ? "Refresh in progress" : "Sync from this browser"}
+        {syncing ? (syncSlow ? "Still syncing on this device" : "Syncing on this device") : sharedRefreshState === "syncing" ? "Refresh in progress" : "Sync from this browser"}
       </button>
       <p aria-live="polite" className="mt-2 text-xs font-bold leading-5 text-[#66705e]">
-        {statusText(extension, syncing, serverSyncing, sharedRefreshState === "syncing", result, serverMessage)}
+        {statusText(extension, syncing, syncSlow, serverSyncing, sharedRefreshState === "syncing", result, serverMessage)}
       </p>
       {result && !result.ok && result.recovery ? (
         <a
@@ -154,14 +159,14 @@ export function BrowserExtensionSyncControl() {
   );
 }
 
-function requestExtensionSync(): Promise<BrowserExtensionSyncResult> {
+function requestExtensionSync(onSlow: () => void): Promise<BrowserExtensionSyncResult> {
   return new Promise((resolve) => {
-    const requestId = crypto.randomUUID();
+    const requestId = window.crypto.randomUUID();
     let settled = false;
     const finish = (result: BrowserExtensionSyncResult) => {
       if (settled) return;
       settled = true;
-      window.clearTimeout(timer);
+      window.clearTimeout(slowTimer);
       window.removeEventListener("mypiu:extension-sync-result", onResult);
       resolve(result);
     };
@@ -169,9 +174,7 @@ function requestExtensionSync(): Promise<BrowserExtensionSyncResult> {
       const result = parseExtensionSyncResult((event as CustomEvent<unknown>).detail, requestId);
       if (result) finish(result);
     };
-    const timer = window.setTimeout(() => {
-      finish({ ok: false, error: "Browser sync timed out. Retry after checking both sessions.", recovery: null });
-    }, SYNC_TIMEOUT_MS);
+    const slowTimer = window.setTimeout(onSlow, SYNC_SLOW_MS);
 
     window.addEventListener("mypiu:extension-sync-result", onResult);
     window.dispatchEvent(new CustomEvent("mypiu:request-extension-sync", { detail: { requestId } }));
@@ -181,12 +184,15 @@ function requestExtensionSync(): Promise<BrowserExtensionSyncResult> {
 function statusText(
   extension: ExtensionState,
   syncing: boolean,
+  syncSlow: boolean,
   serverSyncing: boolean,
   sharedRefreshActive: boolean,
   result: BrowserExtensionSyncResult | null,
   serverMessage: string | null,
 ): string {
-  if (syncing) return "PIUGAME is being read by this browser.";
+  if (syncing) return syncSlow
+    ? "Browser sync is still finishing. Keep this page open."
+    : "PIUGAME is being read by this browser.";
   if (serverSyncing) return "MyPIU is refreshing through the server fallback.";
   if (sharedRefreshActive) return "The current performance refresh is finishing.";
   if (result?.ok) return browserSyncSuccessMessage(result);

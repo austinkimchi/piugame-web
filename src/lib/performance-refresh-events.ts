@@ -1,14 +1,18 @@
 export type PerformanceRefreshState = "idle" | "syncing";
 
 let performanceRefreshState: PerformanceRefreshState = "idle";
+let activePerformanceRefreshes = 0;
 const listeners = new Set<() => void>();
 
 export function emitPerformanceRefreshState(state: PerformanceRefreshState) {
-  if (performanceRefreshState === state) {
+  const previousState = performanceRefreshState;
+  activePerformanceRefreshes = state === "syncing"
+    ? activePerformanceRefreshes + 1
+    : Math.max(0, activePerformanceRefreshes - 1);
+  performanceRefreshState = activePerformanceRefreshes > 0 ? "syncing" : "idle";
+  if (performanceRefreshState === previousState) {
     return;
   }
-
-  performanceRefreshState = state;
   for (const listener of listeners) {
     listener();
   }

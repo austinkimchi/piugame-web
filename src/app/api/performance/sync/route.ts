@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { after } from "next/server";
 
 import { getCurrentUserId } from "@/lib/auth";
 import { publicRequestOrigin } from "@/lib/oauth-origin";
@@ -24,16 +23,12 @@ export async function POST(request: NextRequest) {
 
     if (request.nextUrl.searchParams.get("background") === "true") {
       const fresh = await fetchCurrentUserRecentPlays(userId);
-      after(() => {
-        void fresh.persist()
-          .then(() => Promise.all([syncCurrentUserTopPlaysIfDue(userId), syncQueuedAllPlaysBackfillForUser(userId)]))
-          .catch(() => undefined);
-      });
+      await fresh.persist();
     } else {
       await syncCurrentUserPerformance(userId);
-      await syncCurrentUserTopPlaysIfDue(userId).catch(() => undefined);
-      await syncQueuedAllPlaysBackfillForUser(userId).catch(() => undefined);
     }
+    await syncCurrentUserTopPlaysIfDue(userId).catch(() => undefined);
+    await syncQueuedAllPlaysBackfillForUser(userId).catch(() => undefined);
 
     return syncJsonOrRedirect(request, { ok: true });
   } catch (error) {
