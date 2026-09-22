@@ -1,5 +1,24 @@
 const SESSION_BREAK_MS = 2 * 60 * 60 * 1000;
 
+export interface PerformanceSessionPlay {
+  playedAt: Date | null;
+  score: number | null;
+  stageBreak: boolean;
+  chartToken: string;
+}
+
+export interface PerformanceSessionSummary {
+  playCount: number;
+  clearCount: number;
+  stageBreakCount: number;
+  averageScore: number | null;
+  bestScore: number | null;
+  distinctCharts: number;
+  startedAt: Date;
+  endedAt: Date;
+  durationMinutes: number;
+}
+
 export function startsNewSession(previous: Date, next: Date): boolean {
   return previous.getTime() - next.getTime() >= SESSION_BREAK_MS;
 }
@@ -23,4 +42,64 @@ export function countLatestSessionPlays(playedAtValues: Iterable<Date | null>): 
   }
 
   return count;
+}
+
+export function summarizePerformanceSession(
+  plays: Iterable<PerformanceSessionPlay>,
+): PerformanceSessionSummary | null {
+  let playCount = 0;
+  let clearCount = 0;
+  let stageBreakCount = 0;
+  let scoreTotal = 0;
+  let scoredClearCount = 0;
+  let bestScore: number | null = null;
+  let startedAt: Date | null = null;
+  let endedAt: Date | null = null;
+  const chartTokens = new Set<string>();
+
+  for (const play of plays) {
+    const playedAt = play.playedAt;
+    if (!playedAt || Number.isNaN(playedAt.getTime())) {
+      continue;
+    }
+
+    playCount += 1;
+    if (play.stageBreak) {
+      stageBreakCount += 1;
+    } else {
+      clearCount += 1;
+      if (typeof play.score === "number" && Number.isFinite(play.score)) {
+        scoreTotal += play.score;
+        scoredClearCount += 1;
+        bestScore = bestScore === null ? play.score : Math.max(bestScore, play.score);
+      }
+    }
+
+    const chartToken = play.chartToken.trim().toLowerCase();
+    if (chartToken) {
+      chartTokens.add(chartToken);
+    }
+    if (!startedAt || playedAt < startedAt) {
+      startedAt = playedAt;
+    }
+    if (!endedAt || playedAt > endedAt) {
+      endedAt = playedAt;
+    }
+  }
+
+  if (!startedAt || !endedAt || playCount === 0) {
+    return null;
+  }
+
+  return {
+    playCount,
+    clearCount,
+    stageBreakCount,
+    averageScore: scoredClearCount > 0 ? Math.round(scoreTotal / scoredClearCount) : null,
+    bestScore,
+    distinctCharts: chartTokens.size,
+    startedAt,
+    endedAt,
+    durationMinutes: Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 60_000)),
+  };
 }
