@@ -1006,10 +1006,27 @@ export async function importMobilePerformanceSnapshot(
     await users.updateOne(
       {
         _id: userId,
-        $or: [
-          { "piuLink.lastMobileSnapshotGeneratedAt": { $exists: false } },
-          { "piuLink.lastMobileSnapshotGeneratedAt": null },
-          { "piuLink.lastMobileSnapshotGeneratedAt": { $lte: generatedAt } },
+        $and: [
+          {
+            $or: [
+              { "piuLink.lastMobileSnapshotGeneratedAt": { $exists: false } },
+              { "piuLink.lastMobileSnapshotGeneratedAt": null },
+              { "piuLink.lastMobileSnapshotGeneratedAt": { $lte: generatedAt } },
+            ],
+          },
+          {
+            $or: [
+              { "piuLink.lastProfileFetchedAt": { $exists: false } },
+              { "piuLink.lastProfileFetchedAt": null },
+              { "piuLink.lastProfileFetchedAt": { $lte: generatedAt } },
+            ],
+          },
+          {
+            $or: [
+              { updatedAt: { $exists: false } },
+              { updatedAt: { $lte: generatedAt } },
+            ],
+          },
         ],
       },
       {
@@ -1462,10 +1479,6 @@ async function reconcileRecentChartStat(
   play: PerformancePlayEventDocument,
   now: Date,
 ): Promise<void> {
-  const recentPlays = await plays
-    .find({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken })
-    .sort({ playedAt: 1, ingestedAt: 1, _id: 1 })
-    .toArray();
   await mutateChartStat(
     chartStats,
     { userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken },
@@ -1475,7 +1488,13 @@ async function reconcileRecentChartStat(
       chartToken: play.chartToken,
       piuUsername: play.piuUsername,
     },
-    (existing) => reconcileRecentPlaySummary(existing, recentPlays, now),
+    async (existing) => {
+      const recentPlays = await plays
+        .find({ userId: play.userId, piuVersion: play.piuVersion, chartToken: play.chartToken })
+        .sort({ playedAt: 1, ingestedAt: 1, _id: 1 })
+        .toArray();
+      return reconcileRecentPlaySummary(existing, recentPlays, now);
+    },
   );
 }
 
@@ -1483,11 +1502,11 @@ async function mutateChartStat(
   chartStats: Collection<PerformanceChartStatDocument>,
   lookup: Filter<PerformanceChartStatDocument>,
   identity: Pick<PerformanceChartStatDocument, "userId" | "piuVersion" | "chartToken" | "piuUsername">,
-  summaryFor: (existing: PerformanceChartStatSummary | null) => PerformanceChartStatSummary,
+  summaryFor: (existing: PerformanceChartStatSummary | null) => PerformanceChartStatSummary | Promise<PerformanceChartStatSummary>,
 ): Promise<void> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const existing = await chartStats.findOne(lookup);
-    const summary = summaryFor(existing ? withoutChartStatIdentity(existing) : null);
+    const summary = await summaryFor(existing ? withoutChartStatIdentity(existing) : null);
 
     if (!existing) {
       try {
