@@ -65,6 +65,44 @@ export async function GET(request: NextRequest) {
   const favoritesFirst = parseBoolean(request.nextUrl.searchParams.get("favoritesFirst"));
   const favoriteSlugsForSort = favoritesFirst ? await getAllFavoriteSongSlugs(user) : undefined;
   const chartFilters = parseList(request.nextUrl.searchParams, "chart");
+  if (query.toLowerCase() === "favorites") {
+    if (!user) {
+      return NextResponse.json(
+        { error: "Sign in required to view favorite songs." },
+        { status: 401, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
+
+    const version = normalizePiuGameVersion(user.preferences.piuGameVersion);
+    const favoriteSlugs = await getAllFavoriteSongSlugs(user);
+    const result = await searchSongs({
+      query: "",
+      cursor: request.nextUrl.searchParams.get("cursor"),
+      limit: Number.isFinite(limit) ? limit : 24,
+      folders: parseList(request.nextUrl.searchParams, "folder"),
+      series: parseList(request.nextUrl.searchParams, "series"),
+      levels: parseList(request.nextUrl.searchParams, "level"),
+      charts: chartFilters,
+      levelMode: parseLevelMode(request.nextUrl.searchParams.get("levelMode")),
+      sortBy: parseSortOption(request.nextUrl.searchParams.get("sortBy")),
+      sortDirection: parseSortDirection(request.nextUrl.searchParams.get("sortDirection")),
+      favoriteSlugs,
+      favoritesOnly: true,
+      supportedVersion: version,
+    });
+    const recommendedSongs = await addChartRecommendationsToSongs(
+      user.id,
+      version,
+      result.songs,
+      chartModesFromFilters(chartFilters),
+    );
+
+    return NextResponse.json({
+      ...result,
+      songs: recommendedSongs.map((song) => ({ ...song, isFavorite: true })),
+      filterOptions: { folders: [], series: [], levels: [], charts: [] },
+    }, { headers: { "Cache-Control": "private, no-store" } });
+  }
   if (query.toLowerCase() === "recent") {
     if (!user) {
       return NextResponse.json({ error: "Sign in required to view recent songs." }, { status: 401 });

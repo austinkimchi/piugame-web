@@ -9,6 +9,7 @@ import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, sortPiuSeries } from "@/lib/catalog-version";
 import { isPremiumSong } from "@/lib/premium-songs";
 import { songMatchesChartFilters } from "@/lib/song-chart-filters";
+import { songsMatchingSlugs } from "@/lib/song-slug-filter";
 import type {
   CatalogFilterOptions,
   CatalogEditorPayload,
@@ -915,14 +916,15 @@ async function findMongoFavoriteSortedSongs(
   sortBy: SongSortOption,
   sortDirection: SortDirection,
   favoriteSlugs: Set<string>,
-): Promise<PublicSong[]> {
+  favoritesOnly = false,
+): Promise<{ songs: PublicSong[]; total: number }> {
   const collection = await collectionFor(version);
   const candidates = await collection
     .find(filter)
     .project<WithId<CatalogDocument>>({ songName: 1, songKey: 1, artist: 1, piuVersion: 1, catalogVersion: 1, folder: 1, series: 1 })
     .toArray();
   const fallbackVersion = piuCatalogVersionFromSeries(version);
-  const orderedCandidates = sortFavoriteCandidates(
+  const sortedCandidates = sortFavoriteCandidates(
     candidates.map((document) => {
       const title = cleanText(document.songName ?? document.songKey ?? "Untitled Song");
       const artist = cleanText(document.artist ?? "Unknown Artist");
@@ -940,18 +942,20 @@ async function findMongoFavoriteSortedSongs(
     sortDirection,
     favoriteSlugs,
   );
+  const orderedCandidates = favoritesOnly ? songsMatchingSlugs(sortedCandidates, favoriteSlugs) : sortedCandidates;
   const page = orderedCandidates.slice(offset, offset + limit);
   if (page.length === 0) {
-    return [];
+    return { songs: [], total: orderedCandidates.length };
   }
 
   const documents = await collection.find({ _id: { $in: page.map((candidate) => candidate.id) } }).toArray();
   const songsById = new Map(documents.map((document) => [document._id.toHexString(), publicSongFromDocument(document, fallbackVersion, undefined, version)]));
 
-  return page.flatMap((candidate) => {
+  const songs = page.flatMap((candidate) => {
     const song = songsById.get(candidate.id.toHexString());
     return song ? [song] : [];
   });
+  return { songs, total: orderedCandidates.length };
 }
 
 async function fallbackSongs(version: PiuSeriesId, offset = 0, limit = PAGE_SIZE): Promise<PublicSong[]> {
@@ -1137,6 +1141,7 @@ export async function searchSongs(params: {
   sortBy?: SongSortOption;
   sortDirection?: SortDirection;
   favoriteSlugs?: Set<string>;
+  favoritesOnly?: boolean;
   supportedVersion?: PiuSeriesId;
   removedFromVersion?: PiuSeriesId;
 }): Promise<SongSearchResult> {
@@ -1147,10 +1152,13 @@ export async function searchSongs(params: {
   const sortDirection = normalizeSortDirection(params.sortDirection);
   const favoriteSlugs = params.favoriteSlugs;
   const favoritesFirst = Boolean(favoriteSlugs && favoriteSlugs.size > 0);
+  const favoritesOnly = params.favoritesOnly === true;
 
   if (!hasMongoConfig()) {
+    const matchingSongs = (await fallbackSongs(version, 0, 250)).filter((song) => fallbackMatchesFilters(song, params));
+    const includedSongs = favoritesOnly ? songsMatchingSlugs(matchingSongs, favoriteSlugs ?? new Set()) : matchingSongs;
     const all = sortFallbackSongs(
-      (await fallbackSongs(version, 0, 250)).filter((song) => fallbackMatchesFilters(song, params)),
+      includedSongs,
       sortBy,
       sortDirection,
       favoriteSlugs,
@@ -1169,17 +1177,28 @@ export async function searchSongs(params: {
     };
   }
 
+  if (favoritesOnly && (!favoriteSlugs || favoriteSlugs.size === 0)) {
+    return {
+      songs: [],
+      nextCursor: null,
+      total: 0,
+      filterOptions: { folders: [], series: [], levels: [], charts: [] },
+    };
+  }
+
   const filter = buildSearchFilter({ ...params, supportedVersion: version });
   const collection = await collectionFor(version);
   const [total, filterOptions] = await Promise.all([collection.countDocuments(filter), getCatalogFilterOptions(version, filter, params.charts, params.removedFromVersion)]);
-  const songs = favoritesFirst
-    ? await findMongoFavoriteSortedSongs(version, filter, offset, limit + 1, sortBy, sortDirection, favoriteSlugs!)
-    : await findMongoSongs(version, filter, offset, limit + 1, sortBy, sortDirection);
+  const favoriteResult = favoritesFirst || favoritesOnly
+    ? await findMongoFavoriteSortedSongs(version, filter, offset, limit + 1, sortBy, sortDirection, favoriteSlugs!, favoritesOnly)
+    : null;
+  const songs = favoriteResult?.songs ?? await findMongoSongs(version, filter, offset, limit + 1, sortBy, sortDirection);
+  const resultTotal = favoritesOnly ? favoriteResult?.total ?? 0 : total;
 
   return {
     songs: songs.slice(0, limit),
     nextCursor: songs.length > limit ? encodeCursor(offset + limit) : null,
-    total,
+    total: resultTotal,
     filterOptions,
   };
 }
