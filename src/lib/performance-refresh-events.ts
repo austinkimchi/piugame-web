@@ -8,6 +8,8 @@ const LOCK_NAME = "mypiu-performance-refresh";
 const STORAGE_KEY = "mypiu:performance-refresh";
 const LEASE_MS = 5 * 60 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
+const COORDINATION_DB = "mypiu-coordination";
+const COORDINATION_STORE = "locks";
 
 let performanceRefreshState: PerformanceRefreshState = "idle";
 let localRefreshes = 0;
@@ -15,6 +17,7 @@ let heartbeat: ReturnType<typeof setInterval> | null = null;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 let storageListenerReady = false;
 let ownerId: string | null = null;
+let coordinationDatabasePromise: Promise<IDBDatabase> | null = null;
 const listeners = new Set<() => void>();
 
 export async function runPerformanceRefresh<T>(
@@ -32,11 +35,12 @@ export async function runPerformanceRefresh<T>(
     );
   }
 
-  if (options.wait) {
-    await waitForIdle();
-  } else if (getPerformanceRefreshState() === "syncing") {
-    return { started: false };
+  if (typeof window !== "undefined") {
+    if (!("indexedDB" in window)) return { started: false };
+    return runWithIndexedDbLock(operation, options.wait === true);
   }
+
+  if (getPerformanceRefreshState() === "syncing") return { started: false };
   return executeRefresh(operation);
 }
 
@@ -46,6 +50,10 @@ export function getPerformanceRefreshState(): PerformanceRefreshState {
   scheduleExpiry(stored?.expiresAt ?? null);
   performanceRefreshState = localRefreshes > 0 || Boolean(stored) ? "syncing" : "idle";
   return performanceRefreshState;
+}
+
+export function getPerformanceRefreshServerState(): PerformanceRefreshState {
+  return "idle";
 }
 
 export function subscribePerformanceRefreshState(listener: () => void): () => void {
@@ -82,18 +90,6 @@ function endRefresh() {
     clearOwnedRefreshLease();
   }
   refreshStateAndNotify();
-}
-
-function waitForIdle(): Promise<void> {
-  if (getPerformanceRefreshState() === "idle") return Promise.resolve();
-  return new Promise((resolve) => {
-    const unsubscribe = subscribePerformanceRefreshState(() => {
-      if (getPerformanceRefreshState() === "idle") {
-        unsubscribe();
-        resolve();
-      }
-    });
-  });
 }
 
 function publishRefreshLease() {
@@ -154,5 +150,100 @@ function refreshStateAndNotify() {
 }
 
 function hasWebLocks(): boolean {
-  return typeof navigator !== "undefined" && "locks" in navigator;
+  return typeof navigator !== "undefined" && typeof navigator.locks?.request === "function";
+}
+
+async function runWithIndexedDbLock<T>(operation: () => Promise<T>, wait: boolean): Promise<PerformanceRefreshRun<T>> {
+  const lockOwner = window.crypto.randomUUID();
+  while (!(await claimIndexedDbLock(lockOwner))) {
+    if (!wait) return { started: false };
+    await waitForLockRetry();
+  }
+
+  const lockHeartbeat = setInterval(() => {
+    void renewIndexedDbLock(lockOwner).catch(() => undefined);
+  }, HEARTBEAT_MS);
+  try {
+    return await executeRefresh(operation);
+  } finally {
+    clearInterval(lockHeartbeat);
+    await releaseIndexedDbLock(lockOwner).catch(() => undefined);
+  }
+}
+
+function waitForLockRetry(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 500));
+}
+
+async function claimIndexedDbLock(lockOwner: string): Promise<boolean> {
+  const db = await coordinationDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(COORDINATION_STORE, "readwrite");
+    const store = transaction.objectStore(COORDINATION_STORE);
+    const request = store.get(LOCK_NAME);
+    let acquired = false;
+    request.onsuccess = () => {
+      const current = request.result as RefreshLockRecord | undefined;
+      if (current && current.expiresAt > Date.now() && current.ownerId !== lockOwner) return;
+      store.put({ name: LOCK_NAME, ownerId: lockOwner, expiresAt: Date.now() + LEASE_MS } satisfies RefreshLockRecord);
+      acquired = true;
+    };
+    transaction.oncomplete = () => resolve(acquired);
+    transaction.onerror = () => reject(transaction.error ?? new Error("Performance refresh lock failed."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Performance refresh lock was aborted."));
+  });
+}
+
+async function renewIndexedDbLock(lockOwner: string): Promise<void> {
+  const db = await coordinationDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(COORDINATION_STORE, "readwrite");
+    const store = transaction.objectStore(COORDINATION_STORE);
+    const request = store.get(LOCK_NAME);
+    request.onsuccess = () => {
+      const current = request.result as RefreshLockRecord | undefined;
+      if (current?.ownerId === lockOwner) {
+        store.put({ ...current, expiresAt: Date.now() + LEASE_MS });
+      }
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Performance refresh lock renewal failed."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Performance refresh lock renewal was aborted."));
+  });
+}
+
+async function releaseIndexedDbLock(lockOwner: string): Promise<void> {
+  const db = await coordinationDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(COORDINATION_STORE, "readwrite");
+    const store = transaction.objectStore(COORDINATION_STORE);
+    const request = store.get(LOCK_NAME);
+    request.onsuccess = () => {
+      const current = request.result as RefreshLockRecord | undefined;
+      if (current?.ownerId === lockOwner) store.delete(LOCK_NAME);
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Performance refresh lock release failed."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Performance refresh lock release was aborted."));
+  });
+}
+
+function coordinationDatabase(): Promise<IDBDatabase> {
+  coordinationDatabasePromise ??= new Promise((resolve, reject) => {
+    const request = window.indexedDB.open(COORDINATION_DB, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(COORDINATION_STORE)) {
+        request.result.createObjectStore(COORDINATION_STORE, { keyPath: "name" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Performance refresh coordination is unavailable."));
+  });
+  return coordinationDatabasePromise;
+}
+
+interface RefreshLockRecord {
+  name: string;
+  ownerId: string;
+  expiresAt: number;
 }

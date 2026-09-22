@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type UIEvent } from 
 import { SongDetailView } from "@/components/song-detail-view";
 import type { PublicUser, SongCommunityState } from "@/lib/auth";
 import { formatPerformanceGrade, isFailedPerformanceGrade, piuTimestampToDate } from "@/lib/performance-format";
-import { getPerformanceRefreshState, subscribePerformanceRefreshState } from "@/lib/performance-refresh-events";
+import { getPerformanceRefreshServerState, getPerformanceRefreshState, subscribePerformanceRefreshState } from "@/lib/performance-refresh-events";
 import type { PiuCatalogVersion, PublicSong } from "@/lib/types";
 
 interface TopChartRow {
@@ -110,7 +110,7 @@ export function PerformanceDashboardTables({
   const [nextRecentOffset, setNextRecentOffset] = useState(nextRecentPlaysOffset);
   const [recentTotal, setRecentTotal] = useState(totalRecentPlays);
   const [recentStatus, setRecentStatus] = useState("");
-  const pageRefreshState = useSyncExternalStore(subscribePerformanceRefreshState, getPerformanceRefreshState, getPerformanceRefreshState);
+  const pageRefreshState = useSyncExternalStore(subscribePerformanceRefreshState, getPerformanceRefreshState, getPerformanceRefreshServerState);
 
   useEffect(() => {
     if (!openSong) {

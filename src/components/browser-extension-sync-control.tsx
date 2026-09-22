@@ -14,6 +14,7 @@ import {
 } from "@/lib/browser-extension-sync";
 import {
   getPerformanceRefreshState,
+  getPerformanceRefreshServerState,
   runPerformanceRefresh,
   subscribePerformanceRefreshState,
 } from "@/lib/performance-refresh-events";
@@ -38,7 +39,7 @@ export function BrowserExtensionSyncControl() {
   const sharedRefreshState = useSyncExternalStore(
     subscribePerformanceRefreshState,
     getPerformanceRefreshState,
-    getPerformanceRefreshState,
+    getPerformanceRefreshServerState,
   );
   const extensionSupported = extension.kind === "ready" && extensionSupportsCorrelatedSync(extension.version);
   const busy = syncing || serverSyncing || sharedRefreshState === "syncing";
