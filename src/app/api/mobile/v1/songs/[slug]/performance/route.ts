@@ -49,7 +49,11 @@ export async function GET(
 
 function normalizeChartToken(value: string | null): string | null {
   const normalized = String(value ?? "").trim().toUpperCase();
-  return /^(?:S|D|C(?:X)?)\d{1,2}[+-]?$/.test(normalized) ? normalized : null;
+  const match = /^(S|D|C(?:X)?)(\d{1,2}[+-]?)$/.exec(normalized);
+  if (!match) {
+    return null;
+  }
+  return `${match[1].startsWith("C") ? "C" : match[1]}${match[2]}`;
 }
 
 function errorResponse(error: string, status: number) {
