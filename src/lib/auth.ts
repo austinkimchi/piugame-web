@@ -97,7 +97,9 @@ interface UserDocument {
   mutedUntil?: Date | null;
   mutedReason?: string | null;
   mutedBy?: ObjectId | null;
-  preferences?: Partial<UserPreferences>;
+  preferences?: Partial<UserPreferences> & {
+    piuGameVersionUpdatedAt?: Date;
+  };
   piuLink?: {
     piuUsername?: string;
     displayName?: string;
@@ -1347,9 +1349,11 @@ export async function setUsername(user: PublicUser, usernameInput: string): Prom
 }
 
 export async function updateUserPreferences(user: PublicUser, preferences: Partial<UserPreferences>): Promise<PublicUser> {
+  const now = new Date();
   const updates: {
     "preferences.performanceAutoRefresh"?: boolean;
     "preferences.piuGameVersion"?: PiuCatalogVersion;
+    "preferences.piuGameVersionUpdatedAt"?: Date;
     "preferences.songDetailCompactView"?: boolean;
     "preferences.songPreviewMuted"?: boolean;
     "preferences.songPreviewVolume"?: number;
@@ -1358,7 +1362,7 @@ export async function updateUserPreferences(user: PublicUser, preferences: Parti
     "preferences.songExplorerFavoritesFirst"?: boolean;
     updatedAt: Date;
   } = {
-    updatedAt: new Date(),
+    updatedAt: now,
   };
 
   if (typeof preferences.songDetailCompactView === "boolean") {
@@ -1369,6 +1373,7 @@ export async function updateUserPreferences(user: PublicUser, preferences: Parti
   }
   if (isPiuGameVersion(preferences.piuGameVersion)) {
     updates["preferences.piuGameVersion"] = preferences.piuGameVersion;
+    updates["preferences.piuGameVersionUpdatedAt"] = now;
   }
   if (typeof preferences.songPreviewMuted === "boolean") {
     updates["preferences.songPreviewMuted"] = preferences.songPreviewMuted;

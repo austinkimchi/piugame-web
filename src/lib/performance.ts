@@ -9,6 +9,7 @@ import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import type { MobilePerformanceImport } from "@/lib/mobile-sync-schema";
+import { mobileUserSnapshotFence } from "@/lib/mobile-sync-ordering";
 import { performanceChartTokenCandidates, performanceChartTokenCandidatesFromPlay, performanceChartTokenKey } from "@/lib/performance-chart-key";
 import { piuTimestampToDate } from "@/lib/performance-format";
 import { PERFORMANCE_CHART_STATS_POPULATION_INDEX } from "@/lib/performance-indexes";
@@ -46,6 +47,7 @@ interface MinimalUserDocument {
   preferences?: {
     performanceAutoRefresh?: boolean;
     piuGameVersion?: PiuCatalogVersion;
+    piuGameVersionUpdatedAt?: Date;
   };
   piuLink?: {
     piuUsername?: string;
@@ -1006,35 +1008,14 @@ export async function importMobilePerformanceSnapshot(
     await users.updateOne(
       {
         _id: userId,
-        $and: [
-          {
-            $or: [
-              { "piuLink.lastMobileSnapshotGeneratedAt": { $exists: false } },
-              { "piuLink.lastMobileSnapshotGeneratedAt": null },
-              { "piuLink.lastMobileSnapshotGeneratedAt": { $lte: generatedAt } },
-            ],
-          },
-          {
-            $or: [
-              { "piuLink.lastProfileFetchedAt": { $exists: false } },
-              { "piuLink.lastProfileFetchedAt": null },
-              { "piuLink.lastProfileFetchedAt": { $lte: generatedAt } },
-            ],
-          },
-          {
-            $or: [
-              { updatedAt: { $exists: false } },
-              { updatedAt: { $lte: generatedAt } },
-            ],
-          },
-        ],
+        ...mobileUserSnapshotFence(generatedAt),
       },
       {
         $set: {
           "preferences.piuGameVersion": input.piuVersion,
+          "preferences.piuGameVersionUpdatedAt": generatedAt,
           "piuLink.displayName": input.profile.displayName,
           "piuLink.avatarUrl": input.profile.avatarUrl,
-          "piuLink.lastProfileFetchedAt": now,
           "piuLink.lastMobileSnapshotGeneratedAt": generatedAt,
           updatedAt: now,
         },
