@@ -1212,13 +1212,14 @@ async function persistFetchedPerformanceSnapshot(
   recentPlays: RecentPlay[],
   observedAt: Date,
 ): Promise<void> {
-  await withPerformanceUserLease(userId, async () => {
+  await withPerformanceUserLease(userId, async (assertLeaseOwned) => {
     const { users } = await collections();
     const currentUser = await users.findOne({ _id: userId });
     if (currentUser?.piuLink?.piuUsername?.trim() !== expectedPiuUsername) {
       throw new Error("The linked PIU account changed while performance data was being fetched.");
     }
-    await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt });
+    await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt, assertLeaseOwned });
+    await assertLeaseOwned();
     await queueAllPlaysBackfill(userId, piuVersion);
   });
 }

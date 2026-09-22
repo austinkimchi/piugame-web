@@ -28,6 +28,11 @@ export interface PerformanceUserLease {
 
 export class PerformanceUserBusyError extends Error {}
 
+export interface PerformanceUserLeaseGuard {
+  assertOwned(): Promise<void>;
+  stop(): void;
+}
+
 export async function acquirePerformanceUserLease(
   userIdInput: string | ObjectId,
   processingToken = randomUUID(),
@@ -78,23 +83,79 @@ export async function releasePerformanceUserLease(lease: PerformanceUserLease): 
   await locks.deleteOne({ _id: lease.userId, processingToken: lease.processingToken });
 }
 
-export async function withPerformanceUserLease<T>(userIdInput: string | ObjectId, operation: () => Promise<T>): Promise<T> {
+export async function withPerformanceUserLease<T>(
+  userIdInput: string | ObjectId,
+  operation: (assertOwned: () => Promise<void>) => Promise<T>,
+): Promise<T> {
   const lease = await acquirePerformanceUserLease(userIdInput);
   if (!lease) {
     throw new PerformanceUserBusyError("Performance data for this user is currently changing.");
   }
+  const guard = startPerformanceUserLeaseGuard(lease);
+
+  try {
+    const result = await operation(guard.assertOwned);
+    await guard.assertOwned();
+    return result;
+  } finally {
+    guard.stop();
+    await releasePerformanceUserLease(lease).catch(() => undefined);
+  }
+}
+
+function startPerformanceUserLeaseGuard(lease: PerformanceUserLease): PerformanceUserLeaseGuard {
+  let ownershipError: PerformanceUserBusyError | null = null;
+  let lastConfirmedAt = Date.now();
+  let renewalPromise: Promise<void> | null = null;
+
+  const renew = (): Promise<void> => {
+    if (ownershipError) {
+      return Promise.reject(ownershipError);
+    }
+    if (renewalPromise) {
+      return renewalPromise;
+    }
+
+    renewalPromise = renewPerformanceUserLease(lease)
+      .then((renewed) => {
+        if (!renewed) {
+          throw new PerformanceUserBusyError("The performance lease was reclaimed before completion.");
+        }
+        lastConfirmedAt = Date.now();
+      })
+      .catch((error: unknown) => {
+        ownershipError = error instanceof PerformanceUserBusyError
+          ? error
+          : new PerformanceUserBusyError("The performance lease could not be renewed.");
+        throw ownershipError;
+      })
+      .finally(() => {
+        renewalPromise = null;
+      });
+    return renewalPromise;
+  };
 
   const heartbeat = setInterval(() => {
-    void renewPerformanceUserLease(lease).catch(() => undefined);
+    void renew().catch(() => undefined);
   }, PERFORMANCE_USER_LOCK_HEARTBEAT_MS);
   heartbeat.unref();
 
-  try {
-    return await operation();
-  } finally {
-    clearInterval(heartbeat);
-    await releasePerformanceUserLease(lease).catch(() => undefined);
-  }
+  return {
+    async assertOwned() {
+      if (ownershipError) {
+        throw ownershipError;
+      }
+      if (Date.now() - lastConfirmedAt >= PERFORMANCE_USER_LOCK_HEARTBEAT_MS) {
+        await renew();
+      }
+      if (ownershipError) {
+        throw ownershipError;
+      }
+    },
+    stop() {
+      clearInterval(heartbeat);
+    },
+  };
 }
 
 async function lockCollection(): Promise<Collection<PerformanceUserLockDocument>> {

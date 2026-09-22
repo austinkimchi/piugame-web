@@ -714,7 +714,7 @@ export async function linkPiuAccount(
     profile: PlayerData;
   },
 ): Promise<PublicUser> {
-  return withPerformanceUserLease(user.id, () => linkPiuAccountWhileLocked(user, args));
+  return withPerformanceUserLease(user.id, (assertLeaseOwned) => linkPiuAccountWhileLocked(user, args, assertLeaseOwned));
 }
 
 async function linkPiuAccountWhileLocked(
@@ -724,6 +724,7 @@ async function linkPiuAccountWhileLocked(
     password: string;
     profile: PlayerData;
   },
+  assertLeaseOwned: () => Promise<void>,
 ): Promise<PublicUser> {
   const { users } = await collections();
   const now = new Date();
@@ -752,6 +753,7 @@ async function linkPiuAccountWhileLocked(
     lastProfileFetchedAt: now,
   };
 
+  await assertLeaseOwned();
   const result = await users.findOneAndUpdate(
     { _id: existing._id },
     {
@@ -768,6 +770,7 @@ async function linkPiuAccountWhileLocked(
   if (!result) {
     throw new Error("Failed to link PIU account.");
   }
+  await assertLeaseOwned();
   await syncBotLinkFromPiuLink(piuLink);
   return publicUser(result);
 }
