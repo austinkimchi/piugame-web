@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { runPerformanceRefresh } from "@/lib/performance-refresh-events";
+
 let startedForPageLoad = false;
 
 export function HomePerformanceRefresh({ enabled }: { enabled: boolean }) {
@@ -11,11 +13,17 @@ export function HomePerformanceRefresh({ enabled }: { enabled: boolean }) {
     }
 
     startedForPageLoad = true;
-    void fetch("/api/performance/sync?response=json&background=true", {
-      method: "POST",
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    }).catch(() => undefined);
+    async function refreshPerformance() {
+      await runPerformanceRefresh(async () => {
+        await fetch("/api/performance/sync?response=json&background=true", {
+          method: "POST",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+      }, { wait: true });
+    }
+
+    void refreshPerformance().catch(() => undefined);
   }, [enabled]);
 
   return null;

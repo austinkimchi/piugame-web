@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { emitPerformanceRefreshState } from "@/lib/performance-refresh-events";
+import { runPerformanceRefresh } from "@/lib/performance-refresh-events";
 
 let pageLoadSyncStarted = false;
 
@@ -18,8 +18,7 @@ export function PerformancePageRefresh({ token }: { token: string | null }) {
     pageLoadSyncStarted = true;
 
     async function refreshPerformance() {
-      emitPerformanceRefreshState("syncing");
-      try {
+      await runPerformanceRefresh(async () => {
         const response = await fetch("/api/performance/sync?response=json", {
           method: "POST",
           headers: {
@@ -32,9 +31,7 @@ export function PerformancePageRefresh({ token }: { token: string | null }) {
         if (response.ok) {
           router.refresh();
         }
-      } finally {
-        emitPerformanceRefreshState("idle");
-      }
+      }, { wait: true });
     }
 
     void refreshPerformance().catch(() => undefined);

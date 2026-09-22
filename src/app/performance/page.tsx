@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { after } from "next/server";
 import { Activity, ArrowUpRight, BarChart3, Database, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
 
 import { AccountBar } from "@/components/account-bar";
+import { BrowserExtensionSyncControl } from "@/components/browser-extension-sync-control";
 import { PerformanceDashboardTables } from "@/components/performance-dashboard-tables";
 import { PerformancePageRefresh } from "@/components/performance-page-refresh";
 import { getCurrentUser } from "@/lib/auth";
 import { getSongsByTitles } from "@/lib/catalog";
-import { getPerformanceDashboard, syncCurrentUserTopPlaysIfDue, type PerformanceDashboard } from "@/lib/performance";
+import { getPerformanceDashboard, type PerformanceDashboard } from "@/lib/performance";
 import { createPerformanceSyncToken } from "@/lib/performance-sync-token";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 
@@ -28,11 +28,6 @@ export default async function PerformancePage() {
   const user = await getCurrentUser();
   const userId = user?.id ?? null;
   const dashboard = await getPerformanceDashboard(userId);
-  if (userId && dashboard.mongoReady) {
-    after(() => {
-      void syncCurrentUserTopPlaysIfDue(userId).catch(() => undefined);
-    });
-  }
   const catalogSongsByTitle = await getSongsByTitles(
     normalizePiuGameVersion(user?.preferences.piuGameVersion),
     [...dashboard.topCharts.map((chart) => chart.songName), ...dashboard.recentPlays.map((play) => play.songName)],
@@ -85,12 +80,9 @@ export default async function PerformancePage() {
               </div>
               <p className="mt-4 text-sm font-medium leading-6 text-[#56604e]">{statusDetail(user, dashboard)}</p>
               {dashboard.canSync ? (
-                <form action="/api/performance/sync" className="mt-5" method="post">
-                  <button className="inline-flex h-11 w-full items-center justify-center gap-2 bg-[#28c950] px-4 text-sm font-black text-[#071109] transition hover:bg-[#35d867]" type="submit">
-                    <RefreshCw aria-hidden="true" size={16} />
-                    Sync now
-                  </button>
-                </form>
+                <div className="mt-5">
+                  <BrowserExtensionSyncControl />
+                </div>
               ) : (
                 <Link className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 bg-[#171916] px-4 text-sm font-black text-white transition hover:bg-[#2f352b]" href="/">
                   <ArrowUpRight aria-hidden="true" size={16} />
