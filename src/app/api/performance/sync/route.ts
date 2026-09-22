@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
       });
     } else {
       await syncCurrentUserPerformance(userId);
-      await syncCurrentUserTopPlaysIfDue(userId);
-      await syncQueuedAllPlaysBackfillForUser(userId);
+      await syncCurrentUserTopPlaysIfDue(userId).catch(() => undefined);
+      await syncQueuedAllPlaysBackfillForUser(userId).catch(() => undefined);
     }
 
     return syncJsonOrRedirect(request, { ok: true });
