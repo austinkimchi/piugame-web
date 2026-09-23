@@ -42,7 +42,7 @@ export function buildSongPerformanceCarousel<TJudgments>({
           stageBreak: false,
           judgments: null as TJudgments,
         };
-  const primary = latestFailed ? latestPlay : bestAttempt ?? latestPlay ?? recentAttempts[0] ?? syntheticBest;
+  const primary = latestFailed ? latestPlay : bestAttempt ?? syntheticBest ?? latestPlay ?? recentAttempts[0];
   const primaryKind = latestFailed || !bestAttempt && bestScore === null ? "latest" : "best";
 
   if (!primary) {

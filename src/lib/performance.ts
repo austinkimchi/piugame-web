@@ -17,7 +17,7 @@ import { performancePlayKey } from "@/lib/performance-play-key";
 import { PerformanceUserBusyError, withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { startsNewSession, summarizePerformanceSession } from "@/lib/performance-session";
-import { applyBucketBestSummary, applyTopPlaySummary, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
+import { applyBucketBestSummary, applyTopPlaySummary, combineChartStatSummaries, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
@@ -761,7 +761,7 @@ export async function getSongChartPerformance(
     plays.find({ userId, piuVersion: args.piuVersion, chartToken: { $in: chartTokens } }).sort(recentPlaySort()).limit(limit).toArray(),
     chartStats.find({ userId, piuVersion: args.piuVersion, chartToken: { $in: chartTokens } }).toArray(),
   ]);
-  const stats = firstByCandidateOrder(statsCandidates, chartTokens);
+  const stats = combineChartStatSummaries(statsCandidates);
 
   return {
     latestPlay: historyDesc[0] ? publicSongChartPlay(historyDesc[0]) : null,
@@ -1818,18 +1818,24 @@ async function upsertRecentPlayEvent(
     return { inserted: false, removedDuplicates: 0, canonicalPlay: concurrentlyStoredPlay };
   }
 
-  await assertLeaseOwned?.();
-  await plays.updateOne({ _id: canonicalPlay._id }, { $set: { playKey: play.playKey } });
-  const duplicateIds = matchingPlays.slice(1).map((duplicate) => duplicate._id);
+  const duplicateIds = matchingPlays
+    .filter((duplicate) => !duplicate._id.equals(canonicalPlay._id))
+    .map((duplicate) => duplicate._id);
   if (duplicateIds.length > 0) {
     await assertLeaseOwned?.();
     await plays.deleteMany({ _id: { $in: duplicateIds } });
   }
-  return { inserted: false, removedDuplicates: duplicateIds.length, canonicalPlay };
+  await assertLeaseOwned?.();
+  await plays.updateOne({ _id: canonicalPlay._id }, { $set: play });
+  return {
+    inserted: false,
+    removedDuplicates: duplicateIds.length,
+    canonicalPlay: { ...canonicalPlay, ...play },
+  };
 }
 
 function chartTokenFromPlay(play: Pick<RecentPlay, "songName" | "mode" | "level">): string {
-  return performanceChartTokenKey(play.songName, play.mode, play.level);
+  return performanceChartTokenCandidatesFromPlay(play)[0] ?? performanceChartTokenKey(play.songName, play.mode, play.level);
 }
 
 function parsePlayDate(value: string | null): Date | null {
@@ -1842,17 +1848,6 @@ function songLookupKey(value: string): string {
 
 function normalizePiuUsername(value: string): string {
   return value.trim().toLocaleLowerCase("en-US");
-}
-
-function firstByCandidateOrder<T extends { chartToken: string }>(documents: T[], chartTokens: string[]): T | null {
-  const byToken = new Map(documents.map((document) => [document.chartToken, document]));
-  for (const chartToken of chartTokens) {
-    const document = byToken.get(chartToken);
-    if (document) {
-      return document;
-    }
-  }
-  return documents[0] ?? null;
 }
 
 function publicProfile(profile: WithId<PerformanceProfileDocument>): NonNullable<PerformanceDashboard["profile"]> {

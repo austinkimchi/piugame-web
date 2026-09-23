@@ -53,3 +53,20 @@ test("starts with the recorded best after a completed play and preserves prior a
   assert.equal(carousel.primaryKind, "best");
   assert.deepEqual(carousel.entries.map((play) => play.score), [950000, 900000]);
 });
+
+test("shows the stored chart best when it falls outside recent attempt history", () => {
+  const latest = { score: 920000, grade: "aaa", plate: "fg", playedAt: "2026-08-18T12:00:00.000Z", stageBreak: false, judgments };
+
+  const carousel = buildSongPerformanceCarousel({
+    bestGrade: "sss",
+    bestPlate: "rg",
+    bestScore: 980000,
+    history: [latest],
+    latestPlay: latest,
+  });
+
+  assert.equal(carousel.primaryKind, "best");
+  assert.deepEqual(carousel.entries.map((play) => play.score), [980000, 920000]);
+  assert.equal(carousel.entries[0]?.grade, "sss");
+  assert.equal(carousel.entries[0]?.plate, "rg");
+});
