@@ -22,6 +22,7 @@ import { populationCandidatesInCatalog, rankChartRecommendations, recommendation
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
 import { fetchPumbilityTopPlays } from "@/lib/piu-top-plays";
+import { selectNextTitleObjective, type NextTitleObjective } from "@/lib/piu-next-title";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 import type { PiuCatalogVersion, PublicSong } from "@/lib/types";
 
@@ -68,6 +69,7 @@ interface PerformanceProfileDocument {
   piuUsername: string;
   displayName: string;
   titleName: string | null;
+  nextTitle?: NextTitleObjective | null;
   gameId: string | null;
   pumpTag: string | null;
   avatarUrl: string | null;
@@ -141,6 +143,7 @@ export interface PerformanceDashboard {
     displayName: string;
     piuUsername: string;
     titleName: string | null;
+    nextTitle: NextTitleObjective | null;
     gameId: string | null;
     pumpTag: string | null;
     avatarUrl: string | null;
@@ -1190,8 +1193,8 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
 
   const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, decryptCredential(encryptedPassword));
-  const profileResultPromise = getPlayerDataWithPumbility(client, piuUsername)
-    .then((profile) => ({ ok: true as const, profile, observedAt: new Date() }))
+  const profileResultPromise = getPlayerDataWithPumbilityAndTitle(client, piuUsername)
+    .then((snapshot) => ({ ok: true as const, ...snapshot, observedAt: new Date() }))
     .catch((error: unknown) => ({ ok: false as const, error }));
   const recentPlays = await client.getRecentPlays(piuUsername);
 
@@ -1211,6 +1214,7 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
           profile,
           recentPlays,
           profileResult.observedAt,
+          profileResult.nextTitle,
         );
       } catch (error) {
         if (error instanceof PerformanceUserBusyError) {
@@ -1265,6 +1269,7 @@ async function ensureUserPerformanceSchedule(
             piuUsername,
             displayName: user?.piuLink?.displayName?.trim() || piuUsername,
             titleName: null,
+            nextTitle: null,
             gameId: null,
             pumpTag: null,
             avatarUrl: null,
@@ -1313,8 +1318,8 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
   const password = decryptCredential(encryptedPassword);
   const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, password);
-  const profilePromise = getPlayerDataWithPumbility(client, piuUsername)
-    .then((profile) => ({ profile, observedAt: new Date() }));
+  const profilePromise = getPlayerDataWithPumbilityAndTitle(client, piuUsername)
+    .then((snapshot) => ({ ...snapshot, observedAt: new Date() }));
   const recentPlaysPromise = client
     .getRecentPlays(piuUsername)
     .then((plays) => ({ ok: true as const, plays }))
@@ -1335,6 +1340,7 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
     profile,
     recentPlays,
     profileResult.observedAt,
+    profileResult.nextTitle,
   );
 }
 
@@ -1345,6 +1351,7 @@ async function persistFetchedPerformanceSnapshot(
   profile: PlayerData,
   recentPlays: RecentPlay[],
   observedAt: Date,
+  nextTitle: NextTitleObjective | null | undefined,
 ): Promise<void> {
   await withPerformanceUserLease(userId, async (assertLeaseOwned) => {
     const { users } = await collections();
@@ -1352,7 +1359,11 @@ async function persistFetchedPerformanceSnapshot(
     if (currentUser?.piuLink?.piuUsername?.trim() !== expectedPiuUsername) {
       throw new Error("The linked PIU account changed while performance data was being fetched.");
     }
-    await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, { observedAt, assertLeaseOwned });
+    await storePerformanceSnapshot(userId, piuVersion, profile, recentPlays, {
+      observedAt,
+      nextTitle,
+      assertLeaseOwned,
+    });
     await assertLeaseOwned();
     await queueAllPlaysBackfill(userId, piuVersion);
   });
@@ -1368,6 +1379,22 @@ async function getPlayerDataWithPumbility(client: PiuClient, username: string): 
   return pumbilityScore === null ? profile : { ...profile, pumbilityScore };
 }
 
+async function getPlayerDataWithPumbilityAndTitle(
+  client: PiuClient,
+  username: string,
+): Promise<{ profile: PlayerData; nextTitle: NextTitleObjective | null | undefined }> {
+  const [profile, titles] = await Promise.all([
+    getPlayerDataWithPumbility(client, username),
+    client.getTitle(username).catch(() => undefined),
+  ]);
+  return {
+    profile,
+    nextTitle: titles === undefined
+      ? undefined
+      : selectNextTitleObjective(titles, profile.titleName),
+  };
+}
+
 async function storePerformanceSnapshot(
   userId: ObjectId,
   piuVersion: PiuCatalogVersion,
@@ -1377,6 +1404,7 @@ async function storePerformanceSnapshot(
     observedAt?: Date;
     displayName?: string;
     pumpTag?: string | null;
+    nextTitle?: NextTitleObjective | null;
     assertLeaseOwned?: () => Promise<void>;
   } = {},
 ): Promise<MobilePerformanceImportResult & { profileUpdated: boolean }> {
@@ -1389,6 +1417,7 @@ async function storePerformanceSnapshot(
     piuUsername,
     displayName: options.displayName?.trim() || profile.gameIdTag?.trim() || profile.gameId?.trim() || piuUsername,
     titleName: profile.titleName,
+    ...(options.nextTitle === undefined ? {} : { nextTitle: options.nextTitle }),
     gameId: profile.gameId,
     pumpTag: options.pumpTag === undefined ? profile.gameIdTag : options.pumpTag,
     avatarUrl: profile.avatarUrl,
@@ -1919,6 +1948,7 @@ function publicProfile(profile: WithId<PerformanceProfileDocument>): NonNullable
     displayName: profile.displayName,
     piuUsername: profile.piuUsername,
     titleName: profile.titleName,
+    nextTitle: profile.nextTitle ?? null,
     gameId: profile.gameId,
     pumpTag: profile.pumpTag,
     avatarUrl: profile.avatarUrl,
