@@ -37,7 +37,7 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 const COMMUNITY_CHART_KEY_MAX_LENGTH = 80;
 
 export type UserRole = "user" | "moderator" | "admin";
-type AuthProvider = "google" | "discord" | "piugame";
+export type AuthProvider = "google" | "discord" | "apple" | "piugame";
 
 declare global {
   var piuCommunityIndexesPromise: Promise<void> | undefined;
@@ -50,6 +50,7 @@ export interface PublicUser {
   username: string | null;
   imageUrl: string | null;
   provider: AuthProvider;
+  authProviders: AuthProvider[];
   roles: UserRole[];
   mutedUntil: string | null;
   preferences: UserPreferences;
@@ -306,6 +307,10 @@ function syntheticDiscordEmail(discordId: string): string {
   return `discord-${discordId}@piugame.local`;
 }
 
+function syntheticAppleEmail(appleId: string): string {
+  return `apple-${createHash("sha256").update(appleId).digest("hex").slice(0, 24)}@piugame.local`;
+}
+
 function sessionExpiresAt(): Date {
   return new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);
 }
@@ -438,6 +443,7 @@ function publicUser(document: WithId<UserDocument>): PublicUser {
     username: document.username ?? null,
     imageUrl: document.imageUrl,
     provider: document.primaryProvider,
+    authProviders: [...new Set(document.providers.map((identity) => identity.provider))],
     roles,
     mutedUntil: document.mutedUntil && document.mutedUntil > new Date() ? document.mutedUntil.toISOString() : null,
     preferences: publicUserPreferences(document.preferences),
@@ -543,6 +549,106 @@ export async function upsertGoogleUser(profile: {
     );
     if (!updated) {
       throw new Error("Could not link Google.");
+    }
+    return updated;
+  });
+}
+
+export interface AppleProfile {
+  appleId: string;
+  email: string | null;
+  emailVerified: boolean;
+  name: string | null;
+}
+
+export async function upsertAppleUser(profile: AppleProfile, linkToUserId?: string): Promise<WithId<UserDocument>> {
+  const email = profile.email?.toLowerCase() ?? null;
+  const providerIdentity: AuthProviderIdentity = {
+    provider: "apple",
+    providerAccountId: profile.appleId,
+    ...(email ? { email } : {}),
+  };
+  const linkedUserObjectId = linkToUserId ? objectIdFromString(linkToUserId) : null;
+  if (linkToUserId && !linkedUserObjectId) {
+    throw new Error("Could not link Apple to this session.");
+  }
+
+  const { users } = await collections();
+  const providerOwner = await users.findOne({
+    providers: { $elemMatch: { provider: "apple", providerAccountId: profile.appleId } },
+  });
+  const existing = linkedUserObjectId
+    ? await users.findOne({ _id: linkedUserObjectId })
+    : providerOwner ?? (email && profile.emailVerified ? await users.findOne({ email }) : null);
+
+  if (linkedUserObjectId && providerOwner && !providerOwner._id.equals(linkedUserObjectId)) {
+    throw new Error("That Apple account is already linked to another user.");
+  }
+
+  if (!existing) {
+    const now = new Date();
+    const accountEmail = email ?? syntheticAppleEmail(profile.appleId);
+    const inserted = await users.insertOne({
+      email: accountEmail,
+      emailVerified: Boolean(email && profile.emailVerified),
+      name: profile.name || email?.split("@")[0] || "Apple user",
+      username: null,
+      usernameLower: null,
+      imageUrl: null,
+      primaryProvider: "apple",
+      providers: [providerIdentity],
+      roles: ["user"],
+      preferences: DEFAULT_USER_PREFERENCES,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: now,
+    });
+    const created = await users.findOne({ _id: inserted.insertedId });
+    if (!created) {
+      throw new Error("Failed to create user.");
+    }
+    return created;
+  }
+
+  return withActiveAccountWrite([existing._id], async (assertLeaseOwned) => {
+    const { users: lockedUsers } = await collections();
+    await assertLeaseOwned();
+    const [current, currentProviderOwner] = await Promise.all([
+      lockedUsers.findOne({ _id: existing._id }),
+      lockedUsers.findOne({
+        providers: { $elemMatch: { provider: "apple", providerAccountId: profile.appleId } },
+      }),
+    ]);
+    if (!current) {
+      throw new Error("User not found.");
+    }
+    if (currentProviderOwner && !currentProviderOwner._id.equals(current._id)) {
+      throw new Error("That Apple account is already linked to another user.");
+    }
+
+    const now = new Date();
+    const providers = [
+      ...current.providers.filter((provider) => provider.provider !== "apple"),
+      providerIdentity,
+    ];
+    await assertLeaseOwned();
+    const updated = await lockedUsers.findOneAndUpdate(
+      { _id: current._id },
+      {
+        $set: {
+          providers,
+          name: current.name || profile.name || email?.split("@")[0] || "Apple user",
+          emailVerified:
+            email && current.email === email ? current.emailVerified || profile.emailVerified : current.emailVerified,
+          roles: current.roles?.length ? current.roles : ["user"],
+          updatedAt: now,
+          lastLoginAt: now,
+        },
+      },
+      { returnDocument: "after" },
+    );
+    if (!updated) {
+      throw new Error("Could not link Apple.");
     }
     return updated;
   });

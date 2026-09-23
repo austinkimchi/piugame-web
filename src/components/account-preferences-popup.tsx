@@ -13,7 +13,7 @@ const VERSION_OPTIONS: Array<{ value: PiuCatalogVersion; label: string }> = [
   { value: "phoenix2", label: "Phoenix 2" },
 ];
 
-export function AccountPreferencesPopup({ user, discordReady }: { user: PublicUser; discordReady: boolean }) {
+export function AccountPreferencesPopup({ user, appleReady, discordReady }: { user: PublicUser; appleReady: boolean; discordReady: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [performanceAutoRefresh, setPerformanceAutoRefresh] = useState(user.preferences.performanceAutoRefresh);
@@ -166,7 +166,7 @@ export function AccountPreferencesPopup({ user, discordReady }: { user: PublicUs
               {status ? <p className={`mt-2 text-xs font-bold ${status === "Saved" ? "text-[#1b8f40]" : "text-[#9b2b1f]"}`}>{status}</p> : null}
             </div>
             <div className="mt-3">
-              <AccountIntegrationsPanel discordReady={discordReady} user={user} />
+              <AccountIntegrationsPanel appleReady={appleReady} discordReady={discordReady} user={user} />
             </div>
           </div>
         </div>

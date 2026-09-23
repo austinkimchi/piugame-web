@@ -5,11 +5,13 @@ import { AccountSignInPopup } from "@/components/account-sign-in-popup";
 import { AdminViewBadge } from "@/components/admin-view-badge";
 import { UsernamePrompt } from "@/components/username-prompt";
 import { getCurrentUser } from "@/lib/auth";
+import { hasAppleOAuthConfig } from "@/lib/apple-auth";
 import { hasDiscordOAuthConfig } from "@/lib/discord-oauth";
 import { hasGoogleOAuthConfig } from "@/lib/google-oauth";
 
 export async function AccountBar() {
   const user = await getCurrentUser();
+  const appleReady = hasAppleOAuthConfig();
   const googleReady = hasGoogleOAuthConfig();
   const discordReady = hasDiscordOAuthConfig();
 
@@ -18,7 +20,7 @@ export async function AccountBar() {
       {user ? (
         <>
           {user.username ? (
-            <AccountPreferencesPopup discordReady={discordReady} user={user} />
+            <AccountPreferencesPopup appleReady={appleReady} discordReady={discordReady} user={user} />
           ) : (
             <UsernamePrompt variant="modal" />
           )}
@@ -32,7 +34,7 @@ export async function AccountBar() {
           </form>
         </>
       ) : (
-        <AccountSignInPopup discordReady={discordReady} googleReady={googleReady} />
+        <AccountSignInPopup appleReady={appleReady} discordReady={discordReady} googleReady={googleReady} />
       )}
     </div>
   );

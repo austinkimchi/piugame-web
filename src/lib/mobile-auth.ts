@@ -136,14 +136,33 @@ export async function exchangeMobileAuthorizationCode(args: {
   if (!authorization) {
     throw new MobileAuthorizationError("invalid_grant");
   }
+  return issueMobileAccessToken({
+    userId: authorization.userId.toHexString(),
+    clientId: args.clientId,
+    installationId: args.installationId,
+    clientName: args.clientName,
+    platform: args.platform,
+    appVersion: args.appVersion,
+  });
+}
+
+export async function issueMobileAccessToken(args: {
+  userId: string;
+  clientId: "mypiu-ios" | "mypiu-android";
+  installationId: string;
+  clientName: string;
+  platform: "ios" | "android";
+  appVersion: string | null;
+}): Promise<{ accessToken: string; expiresIn: number }> {
+  const userId = objectId(args.userId);
   try {
-    return await withActiveAccountWrite([authorization.userId], async (assertLeaseOwned) => {
+    return await withActiveAccountWrite([userId], async (assertLeaseOwned) => {
       const { tokens } = await mobileCollections();
       const accessToken = `mypiu_${randomBytes(32).toString("base64url")}`;
       const now = new Date();
       await assertLeaseOwned();
       await tokens.insertOne({
-        userId: authorization.userId,
+        userId,
         tokenHash: hashSecret(accessToken),
         clientId: args.clientId,
         installationId: args.installationId,

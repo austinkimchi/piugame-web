@@ -5,11 +5,12 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
 interface AccountSignInPopupProps {
+  appleReady: boolean;
   googleReady: boolean;
   discordReady: boolean;
 }
 
-export function AccountSignInPopup({ googleReady, discordReady }: AccountSignInPopupProps) {
+export function AccountSignInPopup({ appleReady, googleReady, discordReady }: AccountSignInPopupProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -77,6 +78,9 @@ export function AccountSignInPopup({ googleReady, discordReady }: AccountSignInP
               </button>
             </div>
             <div className="grid gap-2">
+              <ProviderLink href={appleReady ? "/api/auth/apple/login?next=/" : "#"} ready={appleReady} provider="apple">
+                Continue with Apple
+              </ProviderLink>
               <ProviderLink href={googleReady ? "/api/auth/google/login?next=/" : "#"} ready={googleReady} provider="google">
                 Sign in with Google
               </ProviderLink>
@@ -91,23 +95,30 @@ export function AccountSignInPopup({ googleReady, discordReady }: AccountSignInP
   );
 }
 
-function ProviderLink({ children, href, provider, ready }: { children: string; href: string; provider: "google" | "discord"; ready: boolean }) {
+function ProviderLink({ children, href, provider, ready }: { children: string; href: string; provider: "apple" | "google" | "discord"; ready: boolean }) {
   const google = provider === "google";
+  const apple = provider === "apple";
 
   return (
     <a
       aria-disabled={!ready}
       className={`inline-flex min-h-12 items-center gap-3 border px-3 text-sm font-black transition ${
-        google
+        apple
+          ? "border-black bg-black text-white hover:bg-[#242424]"
+          : google
           ? "border-[#4285f4] bg-white text-[#174ea6] hover:bg-[#eef4ff]"
           : "border-[#171916] bg-[#171916] text-white hover:bg-[#343b30]"
       } ${ready ? "" : "pointer-events-none opacity-55"}`}
       href={href}
     >
-      {google ? <GoogleMark /> : <DiscordMark />}
+      {apple ? <AppleMark /> : google ? <GoogleMark /> : <DiscordMark />}
       <span>{children}</span>
     </a>
   );
+}
+
+function AppleMark() {
+  return <span aria-hidden="true" className="grid h-7 w-7 place-items-center font-sans text-[1.55rem] leading-none"></span>;
 }
 
 function GoogleMark() {
