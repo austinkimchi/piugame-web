@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "../src/lib/performance-stat-summary.ts";
+import { applyBucketBestSummary, applyRecentPlaySummary, applyTopPlaySummary, combineChartStatSummaries, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "../src/lib/performance-stat-summary.ts";
 
 const NOW = new Date("2026-08-11T12:00:00.000Z");
 const PLAYED_AT = new Date("2026-08-11T11:30:00.000Z");
@@ -185,6 +185,31 @@ test("fetchAllPlays bucket best fills an existing Pumbility shell", () => {
   assert.equal(summary.bestBucketPage, 4);
   assert.equal(summary.topPlayRank, 2);
   assert.equal(summary.topPumbilityScore, 550);
+});
+
+test("combines aliased chart documents without losing the stored best", () => {
+  const pumbilityAlias = summaryFixture({
+    bestScore: null,
+    topPlayRank: 3,
+    topPumbilityScore: 812.34,
+    recentPlayCount: 0,
+  });
+  const scoreAlias = summaryFixture({
+    bestScore: 978765,
+    bestGrade: "sss",
+    bestPlate: "rg",
+    recentPlayCount: 4,
+    latestScore: 940000,
+    latestPlayedAt: PLAYED_AT,
+  });
+
+  const combined = combineChartStatSummaries([pumbilityAlias, scoreAlias]);
+
+  assert.equal(combined?.bestScore, 978765);
+  assert.equal(combined?.bestGrade, "sss");
+  assert.equal(combined?.topPlayRank, 3);
+  assert.equal(combined?.recentPlayCount, 4);
+  assert.equal(combined?.latestScore, 940000);
 });
 
 test("bucket best change preserves previous best score, grade, and plate", () => {

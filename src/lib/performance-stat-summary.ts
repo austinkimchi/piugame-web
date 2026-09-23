@@ -190,6 +190,57 @@ export function applyTopPlaySummary(
   };
 }
 
+export function combineChartStatSummaries(
+  candidates: PerformanceChartStatSummary[],
+): PerformanceChartStatSummary | null {
+  const fallback = candidates[0];
+  if (!fallback) return null;
+
+  const best = candidates
+    .filter((candidate): candidate is PerformanceChartStatSummary & { bestScore: number } => typeof candidate.bestScore === "number")
+    .sort((left, right) => right.bestScore - left.bestScore || dateValue(right.bestSyncedAt) - dateValue(left.bestSyncedAt))[0];
+  const latest = [...candidates].sort((left, right) => dateValue(right.latestPlayedAt) - dateValue(left.latestPlayedAt))[0];
+  const top = candidates
+    .filter((candidate): candidate is PerformanceChartStatSummary & { topPlayRank: number } => typeof candidate.topPlayRank === "number")
+    .sort((left, right) => left.topPlayRank - right.topPlayRank)[0];
+
+  return {
+    ...fallback,
+    ...(best
+      ? {
+          bestScore: best.bestScore,
+          bestGrade: best.bestGrade,
+          bestPlate: best.bestPlate,
+          bestBucketPage: best.bestBucketPage,
+          bestSyncedAt: best.bestSyncedAt,
+          previousBestScore: best.previousBestScore,
+          previousBestGrade: best.previousBestGrade,
+          previousBestPlate: best.previousBestPlate,
+          previousBestSyncedAt: best.previousBestSyncedAt,
+          lastUpscoredAt: best.lastUpscoredAt,
+        }
+      : {}),
+    latestScore: latest.latestScore,
+    latestGrade: latest.latestGrade,
+    latestPlate: latest.latestPlate,
+    latestStageBreak: latest.latestStageBreak,
+    latestJudgments: latest.latestJudgments,
+    latestPlayedAt: latest.latestPlayedAt,
+    recentPlayCount: candidates.reduce((total, candidate) => total + candidate.recentPlayCount, 0),
+    stageBreakCount: candidates.reduce((total, candidate) => total + candidate.stageBreakCount, 0),
+    ...(top
+      ? {
+          topPlayRank: top.topPlayRank,
+          topPumbilityScore: top.topPumbilityScore,
+          topPlayedAt: top.topPlayedAt,
+          topPlaysSyncedAt: top.topPlaysSyncedAt,
+        }
+      : {}),
+    firstSeenAt: new Date(Math.min(...candidates.map((candidate) => candidate.firstSeenAt.getTime()))),
+    updatedAt: new Date(Math.max(...candidates.map((candidate) => candidate.updatedAt.getTime()))),
+  };
+}
+
 function emptySummary(songName: string, mode: string | null, level: string | null, now: Date): PerformanceChartStatSummary {
   return {
     songName,
@@ -230,4 +281,8 @@ function compareStoredRecentPlays(left: StoredRecentPlaySummaryInput, right: Sto
   const playedAtDifference = (left.playedAt?.getTime() ?? 0) - (right.playedAt?.getTime() ?? 0);
   if (playedAtDifference !== 0) return playedAtDifference;
   return (left.ingestedAt?.getTime() ?? 0) - (right.ingestedAt?.getTime() ?? 0);
+}
+
+function dateValue(value: Date | null): number {
+  return value?.getTime() ?? Number.NEGATIVE_INFINITY;
 }
