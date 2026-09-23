@@ -8,8 +8,11 @@ import {
 import {
   MobileAuthorizationError,
   exchangeMobileAuthorizationCode,
+  issueMobileAccessToken,
   revokeMobileAccessToken,
 } from "@/lib/mobile-auth";
+import { verifyAppleNativeIdentityToken } from "@/lib/apple-auth";
+import { upsertAppleUser } from "@/lib/auth";
 import { readRequestText, RequestBodyTooLargeError } from "@/lib/request-body";
 
 export const runtime = "nodejs";
@@ -20,6 +23,8 @@ const CLIENT_NAMES = new Map([
   ["mypiu-android", "MyPIU for Android"],
 ]);
 const MAX_TOKEN_REQUEST_BYTES = 16 * 1024;
+const APPLE_TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange";
+const ID_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:id_token";
 
 export async function POST(request: Request) {
   try {
@@ -34,6 +39,10 @@ export async function POST(request: Request) {
     const clientName = clientId ? CLIENT_NAMES.get(clientId) : null;
     const mobileClientId = clientId === "mypiu-ios" || clientId === "mypiu-android" ? clientId : null;
     const platform = mobileClientId === "mypiu-ios" ? "ios" : mobileClientId === "mypiu-android" ? "android" : null;
+
+    if (grantType === APPLE_TOKEN_EXCHANGE_GRANT) {
+      return exchangeAppleToken({ body, clientId, installationId, appVersion });
+    }
 
     if (
       grantType !== "authorization_code" ||
@@ -76,6 +85,59 @@ export async function POST(request: Request) {
       return oauthError("invalid_request", 400);
     }
     return oauthError("server_error", 500);
+  }
+}
+
+async function exchangeAppleToken(args: {
+  body: Record<string, unknown>;
+  clientId: string | null;
+  installationId: string | null;
+  appVersion: string | null;
+}) {
+  const subjectTokenType = stringValue(args.body.subject_token_type);
+  const identityToken = stringValue(args.body.subject_token);
+  const nonce = stringValue(args.body.nonce);
+  const firstName = optionalStringValue(args.body.first_name, 80);
+  const lastName = optionalStringValue(args.body.last_name, 80);
+  if (
+    args.clientId !== "mypiu-ios" ||
+    subjectTokenType !== ID_TOKEN_TYPE ||
+    !identityToken ||
+    identityToken.length > 8_192 ||
+    !nonce ||
+    !/^[A-Za-z0-9_-]{32,128}$/.test(nonce) ||
+    !args.installationId ||
+    !/^[A-Za-z0-9._:-]{8,128}$/.test(args.installationId)
+  ) {
+    return oauthError("invalid_request", 400);
+  }
+
+  try {
+    const identity = await verifyAppleNativeIdentityToken(identityToken, nonce);
+    const name = [firstName, lastName].filter(Boolean).join(" ").replace(/\s+/g, " ").trim() || null;
+    const user = await upsertAppleUser({
+      appleId: identity.appleId,
+      email: identity.email,
+      emailVerified: identity.emailVerified,
+      name,
+    });
+    const result = await issueMobileAccessToken({
+      userId: user._id.toHexString(),
+      clientId: "mypiu-ios",
+      installationId: args.installationId,
+      clientName: "MyPIU for iOS",
+      platform: "ios",
+      appVersion: args.appVersion,
+    });
+    return NextResponse.json(
+      { access_token: result.accessToken, token_type: "Bearer", expires_in: result.expiresIn },
+      { headers: noStoreHeaders() },
+    );
+  } catch (error) {
+    if (error instanceof MobileAuthorizationError) {
+      throw error;
+    }
+    return oauthError("invalid_grant", 400);
   }
 }
 

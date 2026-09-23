@@ -77,7 +77,7 @@ export default function PrivacyPage() {
             <h2 className="text-2xl font-black text-[#171916]" id="data-we-collect">Data we collect</h2>
             <div className="mt-5 space-y-6">
               <PolicyItem title="Account and sign-in data">
-                Your name, email address, profile image, username, Google or Discord account identifier, linked
+                Your name, email address, profile image, username, Google, Discord, or Apple account identifier, linked
                 provider username, session records, and account preferences.
               </PolicyItem>
               <PolicyItem title="PIUGAME profile and gameplay data">
@@ -131,7 +131,7 @@ export default function PrivacyPage() {
           <section aria-labelledby="sharing">
             <h2 className="text-2xl font-black text-[#171916]" id="sharing">When data is shared</h2>
             <p className="mt-4">
-              MyPIU sends the minimum information needed to Google or Discord when you use those providers to sign
+              MyPIU sends the minimum information needed to Google, Discord, or Apple when you use those providers to sign
               in or link an account. It accesses PIUGAME at your direction to retrieve your profile and plays. Cloud
               hosting, database, and infrastructure providers process data for MyPIU under their service terms.
               Public community posts, display names, and contributions are visible to other users as part of the
