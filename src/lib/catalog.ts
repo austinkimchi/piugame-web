@@ -1263,6 +1263,7 @@ export async function getSongBySlug(slug: string, chartVersion?: PiuSeriesId): P
 export async function getSongsByTitles(
   version: PiuCatalogVersion,
   titles: string[],
+  options: { includeHistorical?: boolean } = {},
 ): Promise<Map<string, PublicSong>> {
   const uniqueTitles = Array.from(new Set(titles.map(cleanText).filter(Boolean)));
   const result = new Map<string, PublicSong>();
@@ -1271,7 +1272,12 @@ export async function getSongsByTitles(
   }
 
   if (!hasMongoConfig()) {
-    const fallback = await fallbackSongs(version, 0, 500);
+    const fallback = options.includeHistorical
+      ? (await Promise.all([
+          fallbackSongs("phoenix2", 0, 500),
+          fallbackSongs("phoenix", 0, 500),
+        ])).flat()
+      : await fallbackSongs(version, 0, 500);
     for (const song of fallback) {
       const key = titleLookupKey(song.title);
       if (uniqueTitles.some((title) => titleLookupKey(title) === key) && !result.has(key)) {
@@ -1285,7 +1291,7 @@ export async function getSongsByTitles(
   const documents = await collection
     .find(
       {
-        supportedVersions: version,
+        ...(options.includeHistorical ? {} : { supportedVersions: version }),
         $or: uniqueTitles.flatMap((title) => {
           const exactTitle = new RegExp(`^${escapeRegex(title)}$`, "i");
           return [{ songName: exactTitle }, { songKey: exactTitle }];

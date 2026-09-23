@@ -689,7 +689,7 @@ export async function getPerformanceSessions(
   });
 
   const songTitles = sessions.flatMap((session) => session.plays.map((play) => play.songName));
-  const catalogSongs = await getSongsByTitles(piuVersion, songTitles);
+  const catalogSongs = await getSongsByTitles(piuVersion, songTitles, { includeHistorical: true });
   const artworkBySong = new Map(
     Array.from(catalogSongs.values()).map((song) => [
       normalizeSongName(song.title),
