@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   countLatestSessionPlays,
+  performanceSessionArcade,
   summarizePerformanceSession,
 } from "../src/lib/performance-session.ts";
 
@@ -71,4 +72,22 @@ test("ignores invalid timestamps and failed scores", () => {
   assert.equal(summary?.stageBreakCount, 0);
   assert.equal(summary?.averageScore, null);
   assert.equal(summary?.bestScore, null);
+});
+
+test("uses the most common recorded arcade and prefers the newest play on ties", () => {
+  const plays = [
+    { arcadeName: "  Arcade A  " },
+    { arcadeName: "Arcade B" },
+    { arcadeName: "Arcade B" },
+    { arcadeName: "Arcade A" },
+    { arcadeName: null },
+  ].map((play) => ({
+    ...play,
+    playedAt: new Date("2026-08-18T22:00:00.000Z"),
+    score: 900_000,
+    stageBreak: false,
+    chartToken: "song:s:18",
+  }));
+
+  assert.equal(performanceSessionArcade(plays), "Arcade A");
 });

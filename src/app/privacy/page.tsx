@@ -84,7 +84,8 @@ export default function PrivacyPage() {
                 Your PIUGAME username, display name, title, game ID, Pump tag, avatar, Pumbility and other profile
                 totals, recent arcade and access information, song and chart identifiers, scores, grades, plates,
                 judgments, clear status, and play timestamps. A recent arcade value may identify a general venue or
-                area and is treated as coarse location data.
+                area and is treated as coarse location data. When available, MyPIU associates that value with newly
+                observed plays in the current session so session history can be grouped by venue.
               </PolicyItem>
               <PolicyItem title="Content and activity">
                 Saved songs, favorites, notes, tag contributions and votes, community posts, moderation records,
