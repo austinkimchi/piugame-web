@@ -16,7 +16,9 @@
     "import:phoenix2-changelog": "node scripts/import-phoenix2-changelog.mjs",
     "migrate:community:chart-keys": "node scripts/migrate-community-chart-keys.mjs",
     "migrate:performance:version": "node scripts/migrate-performance-versioning.mjs",
-    "migrate:performance:version:write": "node scripts/migrate-performance-versioning.mjs --write"
+    "migrate:performance:version:write": "node scripts/migrate-performance-versioning.mjs --write",
+    "migrate:catalog:phoenix2-label": "node scripts/normalize-phoenix2-label.mjs",
+    "migrate:catalog:phoenix2-label:write": "node scripts/normalize-phoenix2-label.mjs --write"
   },
   "dependencies": {
     "@austinkimchi/piugame-sdk": "^1.3.3",

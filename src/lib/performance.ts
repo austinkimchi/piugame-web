@@ -618,14 +618,16 @@ export async function getLatestPerformanceSession(
 
 export async function getPerformanceSessions(
   userIdInput: string | null,
-  args: { limit?: number } = {},
+  args: { offset?: number; limit?: number } = {},
 ): Promise<PerformanceSession[]> {
   const userId = objectIdFromString(userIdInput);
   if (!userId || !hasMongoConfig()) {
     return [];
   }
 
+  const offset = Math.min(Math.max(0, Math.trunc(args.offset ?? 0)), 1000);
   const limit = Math.min(Math.max(1, Math.trunc(args.limit ?? 50)), 100);
+  const requiredSessions = offset + limit;
   const { users, plays } = await collections();
   const piuVersion = await performanceVersionForUser(users, userId);
   const cursor = plays
@@ -642,7 +644,7 @@ export async function getPerformanceSessions(
       }
       if (previous && startsNewSession(previous, play.playedAt)) {
         groupedPlays.push(sessionPlays);
-        if (groupedPlays.length >= limit) {
+        if (groupedPlays.length >= requiredSessions) {
           break;
         }
         sessionPlays = [];
@@ -654,11 +656,11 @@ export async function getPerformanceSessions(
     await cursor.close();
   }
 
-  if (sessionPlays.length > 0 && groupedPlays.length < limit) {
+  if (sessionPlays.length > 0 && groupedPlays.length < requiredSessions) {
     groupedPlays.push(sessionPlays);
   }
 
-  return groupedPlays.flatMap((group) => {
+  return groupedPlays.slice(offset, offset + limit).flatMap((group) => {
     const summary = summarizePerformanceSession(group);
     if (!summary || !group[0]) {
       return [];

@@ -17,8 +17,21 @@ export async function GET(request: Request) {
     );
   }
 
-  const sessions = await getPerformanceSessions(identity.userId);
-  return NextResponse.json({ sessions }, { headers: noStoreHeaders() });
+  const url = new URL(request.url);
+  const offset = boundedInteger(url.searchParams.get("offset"), 0, 0, 1000);
+  const limit = boundedInteger(url.searchParams.get("limit"), 20, 1, 50);
+  const page = await getPerformanceSessions(identity.userId, { offset, limit: limit + 1 });
+  const hasMore = page.length > limit;
+  const sessions = page.slice(0, limit);
+  return NextResponse.json(
+    { sessions, nextOffset: hasMore ? offset + sessions.length : null },
+    { headers: noStoreHeaders() },
+  );
+}
+
+function boundedInteger(value: string | null, fallback: number, minimum: number, maximum: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) ? Math.min(maximum, Math.max(minimum, parsed)) : fallback;
 }
 
 function noStoreHeaders() {

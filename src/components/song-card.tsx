@@ -47,7 +47,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
       : song.title.length > LONG_TITLE_LENGTH
         ? "text-xs sm:text-[13px]"
         : "text-[13px] sm:text-sm";
-  const isNew = song.series === "Phoenix 2";
+  const isNew = song.series?.toUpperCase() === "PHOENIX 2";
   const favoriteBadgePositionClass = isNew
     ? "col-start-2 row-start-2"
     : song.isPremium
@@ -202,10 +202,10 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
               ) : null}
               {isNew ? (
                 <span
-                  aria-label={song.isPremium ? "New in Phoenix 2, premium song" : undefined}
+                  aria-label={song.isPremium ? "New in PHOENIX 2, premium song" : undefined}
                   className="song-new-badge relative col-start-2 row-start-1 inline-flex h-6 items-center bg-[#e3412f]/95 px-2 text-[11px] font-black uppercase text-white xl:col-auto xl:row-auto xl:h-8"
                   role={song.isPremium ? "img" : undefined}
-                  title={song.isPremium ? "New in Phoenix 2, premium song" : undefined}
+                  title={song.isPremium ? "New in PHOENIX 2, premium song" : undefined}
                 >
                   NEW
                   {song.isPremium ? (

@@ -9,7 +9,7 @@ import type { PiuCatalogVersion } from "@/lib/types";
 
 const VERSION_OPTIONS: Array<{ label: string; value: PiuCatalogVersion }> = [
   { label: "Phoenix", value: "phoenix" },
-  { label: "Phoenix 2", value: "phoenix2" },
+  { label: "PHOENIX 2", value: "phoenix2" },
 ];
 
 const heroContainer: Variants = {
@@ -31,7 +31,7 @@ const heroItem: Variants = {
   },
 };
 
-export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel = "Phoenix 2", catalogVersion = "phoenix2" }: { accountSlot?: ReactNode; canChangeVersion?: boolean; catalogLabel?: string; catalogVersion?: PiuCatalogVersion }) {
+export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel = "PHOENIX 2", catalogVersion = "phoenix2" }: { accountSlot?: ReactNode; canChangeVersion?: boolean; catalogLabel?: string; catalogVersion?: PiuCatalogVersion }) {
   const router = useRouter();
   const [openVersionMenu, setOpenVersionMenu] = useState(false);
   const [savingVersion, setSavingVersion] = useState(false);

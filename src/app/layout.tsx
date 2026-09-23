@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     "MyPIU",
     "Pump It Up",
     "PIU",
-    "Pump It Up Phoenix 2",
+    "Pump It Up PHOENIX 2",
     "Pump It Up song catalog",
     "PIU charts",
     "dance game songs",

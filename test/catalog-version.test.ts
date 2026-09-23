@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_CATALOG_SERIES, piuSeriesFromSlug, sortPiuSeries } from "../src/lib/catalog-version.ts";
+import { DEFAULT_CATALOG_SERIES, normalizePiuSeriesLabel, piuSeriesFromSlug, sortPiuSeries } from "../src/lib/catalog-version.ts";
 
 test("defaults the website catalog to Phoenix 2", () => {
   assert.equal(DEFAULT_CATALOG_SERIES, "phoenix2");
@@ -15,4 +15,11 @@ test("parses supported dedicated catalog route slugs", () => {
 
 test("sorts catalog series newest first", () => {
   assert.deepEqual(sortPiuSeries(["prime", "phoenix2", "xx", "phoenix"]), ["phoenix2", "phoenix", "xx", "prime"]);
+});
+
+test("normalizes legacy Phoenix labels without changing the stored version id", () => {
+  assert.equal(normalizePiuSeriesLabel("Phoenix 2"), "PHOENIX 2");
+  assert.equal(normalizePiuSeriesLabel("phoenix2"), "PHOENIX 2");
+  assert.equal(normalizePiuSeriesLabel("Phoenix"), "PHOENIX");
+  assert.equal(DEFAULT_CATALOG_SERIES, "phoenix2");
 });
