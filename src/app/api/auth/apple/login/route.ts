@@ -1,7 +1,9 @@
+import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUserId } from "@/lib/auth";
 import {
+  APPLE_OAUTH_STATE_COOKIE_NAME,
   appleAuthUrl,
   appleOAuthOrigin,
   createAppleOAuthState,
@@ -22,6 +24,13 @@ export async function GET(request: NextRequest) {
   const { state, nonce } = createAppleOAuthState({
     nextPath: request.nextUrl.searchParams.get("next") ?? "/",
     linkUserId,
+  });
+  (await cookies()).set(APPLE_OAUTH_STATE_COOKIE_NAME, state, {
+    httpOnly: true,
+    sameSite: "none",
+    secure: true,
+    path: "/",
+    maxAge: 60 * 10,
   });
   return NextResponse.redirect(appleAuthUrl({ origin, state, nonce }));
 }

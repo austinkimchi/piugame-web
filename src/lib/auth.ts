@@ -89,6 +89,7 @@ interface AuthProviderIdentity {
 }
 
 interface UserDocument {
+  appleId?: string;
   email: string;
   emailVerified: boolean;
   name: string;
@@ -390,6 +391,10 @@ async function ensureIndexes(args: {
   await Promise.all([
     args.users.createIndex({ email: 1 }, { unique: true }),
     args.users.createIndex({ usernameLower: 1 }, { unique: true, partialFilterExpression: { usernameLower: { $type: "string" } } }),
+    args.users.createIndex(
+      { appleId: 1 },
+      { unique: true, partialFilterExpression: { appleId: { $type: "string" } } },
+    ),
     args.users.createIndex({ "providers.provider": 1, "providers.providerAccountId": 1 }),
     args.sessions.createIndex({ tokenHash: 1 }, { unique: true }),
     args.sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
@@ -574,9 +579,13 @@ export async function upsertAppleUser(profile: AppleProfile, linkToUserId?: stri
   }
 
   const { users } = await collections();
-  const providerOwner = await users.findOne({
-    providers: { $elemMatch: { provider: "apple", providerAccountId: profile.appleId } },
-  });
+  const appleOwnerQuery = {
+    $or: [
+      { appleId: profile.appleId },
+      { providers: { $elemMatch: { provider: "apple" as const, providerAccountId: profile.appleId } } },
+    ],
+  };
+  const providerOwner = await users.findOne(appleOwnerQuery);
   const existing = linkedUserObjectId
     ? await users.findOne({ _id: linkedUserObjectId })
     : providerOwner ?? (email && profile.emailVerified ? await users.findOne({ email }) : null);
@@ -589,6 +598,7 @@ export async function upsertAppleUser(profile: AppleProfile, linkToUserId?: stri
     const now = new Date();
     const accountEmail = email ?? syntheticAppleEmail(profile.appleId);
     const inserted = await users.insertOne({
+      appleId: profile.appleId,
       email: accountEmail,
       emailVerified: Boolean(email && profile.emailVerified),
       name: profile.name || email?.split("@")[0] || "Apple user",
@@ -616,7 +626,10 @@ export async function upsertAppleUser(profile: AppleProfile, linkToUserId?: stri
     const [current, currentProviderOwner] = await Promise.all([
       lockedUsers.findOne({ _id: existing._id }),
       lockedUsers.findOne({
-        providers: { $elemMatch: { provider: "apple", providerAccountId: profile.appleId } },
+        $or: [
+          { appleId: profile.appleId },
+          { providers: { $elemMatch: { provider: "apple", providerAccountId: profile.appleId } } },
+        ],
       }),
     ]);
     if (!current) {
@@ -636,6 +649,7 @@ export async function upsertAppleUser(profile: AppleProfile, linkToUserId?: stri
       { _id: current._id },
       {
         $set: {
+          appleId: profile.appleId,
           providers,
           name: current.name || profile.name || email?.split("@")[0] || "Apple user",
           emailVerified:

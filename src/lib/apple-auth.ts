@@ -9,11 +9,14 @@ import {
   verifyAppleIdentityTokenWithKeys,
 } from "@/lib/apple-auth-core";
 import { resolveOAuthOrigin } from "@/lib/oauth-origin";
+import { safeInternalRedirectPath } from "@/lib/redirect-path";
 
 const APPLE_AUTHORIZATION_URL = "https://appleid.apple.com/auth/authorize";
 const APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys";
 const APPLE_STATE_TTL_SECONDS = 10 * 60;
 const APPLE_JWKS_TTL_MS = 6 * 60 * 60 * 1000;
+
+export const APPLE_OAUTH_STATE_COOKIE_NAME = "piu_apple_oauth_state";
 
 interface AppleOAuthState {
   nonce: string;
@@ -69,7 +72,7 @@ export function createAppleOAuthState(args: { nextPath: string; linkUserId: stri
 } {
   const payload: AppleOAuthState = {
     nonce: randomBytes(32).toString("base64url"),
-    next: safeNextPath(args.nextPath),
+    next: safeInternalRedirectPath(args.nextPath),
     linkUserId: args.linkUserId,
     expiresAt: Math.floor(Date.now() / 1000) + APPLE_STATE_TTL_SECONDS,
   };
@@ -104,7 +107,7 @@ export function verifyAppleOAuthState(value: string): AppleOAuthState {
   ) {
     throw new Error("Apple sign-in state expired or was invalid.");
   }
-  return { ...payload, next: safeNextPath(payload.next) };
+  return { ...payload, next: safeInternalRedirectPath(payload.next) };
 }
 
 export async function exchangeAppleWebCode(args: {
@@ -201,8 +204,4 @@ function requireAppleEnv(key: "APPLE_WEB_CLIENT_ID" | "APPLE_OAUTH_STATE_SECRET"
     throw new Error(`Missing or invalid ${key}`);
   }
   return value;
-}
-
-function safeNextPath(value: string): string {
-  return value.startsWith("/") && !value.startsWith("//") ? value : "/";
 }

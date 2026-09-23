@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth";
 import { discordOAuthOrigin, exchangeDiscordCode } from "@/lib/discord-oauth";
 import { publicRequestOrigin } from "@/lib/oauth-origin";
+import { safeInternalRedirectPath } from "@/lib/redirect-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,15 +38,8 @@ export async function GET(request: NextRequest) {
     const user = await upsertDiscordUser(profile, existingUserId ?? undefined);
     const sessionToken = await createSession(user._id);
     cookieStore.set(SESSION_COOKIE_NAME, sessionToken, sessionCookieOptions());
-    return NextResponse.redirect(new URL(safeNextPath(nextPath), publicOrigin));
+    return NextResponse.redirect(new URL(safeInternalRedirectPath(nextPath), publicOrigin));
   } catch {
     return NextResponse.redirect(new URL("/?auth=failed", publicOrigin));
   }
-}
-
-function safeNextPath(value: string): string {
-  if (!value.startsWith("/") || value.startsWith("//")) {
-    return "/";
-  }
-  return value;
 }

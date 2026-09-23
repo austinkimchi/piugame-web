@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { SESSION_COOKIE_NAME, createSession, sessionCookieOptions, upsertAppleUser } from "@/lib/auth";
 import {
+  APPLE_OAUTH_STATE_COOKIE_NAME,
   appleOAuthOrigin,
   exchangeAppleWebCode,
   verifyAppleOAuthState,
@@ -14,6 +15,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   const origin = appleOAuthOrigin(publicRequestOrigin(request.headers, request.nextUrl.origin));
+  const cookieStore = await cookies();
+  const expectedState = cookieStore.get(APPLE_OAUTH_STATE_COOKIE_NAME)?.value;
+  cookieStore.delete(APPLE_OAUTH_STATE_COOKIE_NAME);
   try {
     const form = await request.formData();
     if (form.get("error")) {
@@ -21,7 +25,13 @@ export async function POST(request: NextRequest) {
     }
     const stateValue = form.get("state");
     const code = form.get("code");
-    if (typeof stateValue !== "string" || typeof code !== "string" || code.length > 2_048) {
+    if (
+      typeof stateValue !== "string" ||
+      !expectedState ||
+      stateValue !== expectedState ||
+      typeof code !== "string" ||
+      code.length > 2_048
+    ) {
       return authFailure(origin);
     }
 
@@ -38,7 +48,7 @@ export async function POST(request: NextRequest) {
       state.linkUserId ?? undefined,
     );
     const sessionToken = await createSession(user._id);
-    (await cookies()).set(SESSION_COOKIE_NAME, sessionToken, sessionCookieOptions());
+    cookieStore.set(SESSION_COOKIE_NAME, sessionToken, sessionCookieOptions());
     return NextResponse.redirect(new URL(state.next, origin), { status: 303 });
   } catch {
     return authFailure(origin);
