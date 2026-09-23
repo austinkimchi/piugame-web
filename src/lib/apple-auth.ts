@@ -15,6 +15,7 @@ const APPLE_AUTHORIZATION_URL = "https://appleid.apple.com/auth/authorize";
 const APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys";
 const APPLE_STATE_TTL_SECONDS = 10 * 60;
 const APPLE_JWKS_TTL_MS = 6 * 60 * 60 * 1000;
+const APPLE_JWKS_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 
 export const APPLE_OAUTH_STATE_COOKIE_NAME = "piu_apple_oauth_state";
 
@@ -36,7 +37,9 @@ interface AppleTokenResponse {
 }
 
 declare global {
-  var appleJwksCache: { keys: AppleJsonWebKey[]; expiresAt: number } | undefined;
+  var appleJwksCache: { keys: AppleJsonWebKey[]; expiresAt: number; fetchedAt?: number } | undefined;
+  var appleJwksLastForcedRefreshAt: number | undefined;
+  var appleJwksRefreshPromise: Promise<AppleJsonWebKey[]> | undefined;
 }
 
 export function hasAppleOAuthConfig(): boolean {
@@ -169,16 +172,47 @@ async function verifyAppleIdentityToken(identityToken: string, audience: string,
 
 async function appleSigningKeys(forceRefresh: boolean): Promise<AppleJsonWebKey[]> {
   const cached = globalThis.appleJwksCache;
-  if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+  const now = Date.now();
+  if (!forceRefresh && cached && cached.expiresAt > now) {
     return cached.keys;
   }
-  const response = await fetch(APPLE_JWKS_URL, { cache: "no-store" });
-  const body = (await response.json()) as AppleJwksResponse;
-  if (!response.ok || !Array.isArray(body.keys) || body.keys.length === 0) {
-    throw new Error("Apple signing keys could not be loaded.");
+  if (
+    forceRefresh &&
+    cached &&
+    Math.max(cached.fetchedAt ?? 0, globalThis.appleJwksLastForcedRefreshAt ?? 0) >
+      now - APPLE_JWKS_REFRESH_COOLDOWN_MS
+  ) {
+    return cached.keys;
   }
-  globalThis.appleJwksCache = { keys: body.keys, expiresAt: Date.now() + APPLE_JWKS_TTL_MS };
-  return body.keys;
+  if (globalThis.appleJwksRefreshPromise) {
+    return globalThis.appleJwksRefreshPromise;
+  }
+  if (forceRefresh) {
+    globalThis.appleJwksLastForcedRefreshAt = now;
+  }
+
+  const refresh = (async () => {
+    const response = await fetch(APPLE_JWKS_URL, { cache: "no-store" });
+    const body = (await response.json()) as AppleJwksResponse;
+    if (!response.ok || !Array.isArray(body.keys) || body.keys.length === 0) {
+      throw new Error("Apple signing keys could not be loaded.");
+    }
+    const fetchedAt = Date.now();
+    globalThis.appleJwksCache = {
+      keys: body.keys,
+      expiresAt: fetchedAt + APPLE_JWKS_TTL_MS,
+      fetchedAt,
+    };
+    return body.keys;
+  })();
+  globalThis.appleJwksRefreshPromise = refresh;
+  try {
+    return await refresh;
+  } finally {
+    if (globalThis.appleJwksRefreshPromise === refresh) {
+      globalThis.appleJwksRefreshPromise = undefined;
+    }
+  }
 }
 
 function signAppleState(value: string): string {

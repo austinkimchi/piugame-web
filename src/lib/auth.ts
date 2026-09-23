@@ -585,10 +585,13 @@ export async function upsertAppleUser(profile: AppleProfile, linkToUserId?: stri
       { providers: { $elemMatch: { provider: "apple" as const, providerAccountId: profile.appleId } } },
     ],
   };
-  const providerOwner = await users.findOne(appleOwnerQuery);
+  const [providerOwner, emailOwner] = await Promise.all([
+    users.findOne(appleOwnerQuery),
+    email ? users.findOne({ email }) : null,
+  ]);
   const existing = linkedUserObjectId
     ? await users.findOne({ _id: linkedUserObjectId })
-    : providerOwner ?? (email && profile.emailVerified ? await users.findOne({ email }) : null);
+    : providerOwner ?? (profile.emailVerified && emailOwner?.emailVerified ? emailOwner : null);
 
   if (linkedUserObjectId && providerOwner && !providerOwner._id.equals(linkedUserObjectId)) {
     throw new Error("That Apple account is already linked to another user.");
@@ -596,11 +599,11 @@ export async function upsertAppleUser(profile: AppleProfile, linkToUserId?: stri
 
   if (!existing) {
     const now = new Date();
-    const accountEmail = email ?? syntheticAppleEmail(profile.appleId);
+    const accountEmail = email && !emailOwner ? email : syntheticAppleEmail(profile.appleId);
     const inserted = await users.insertOne({
       appleId: profile.appleId,
       email: accountEmail,
-      emailVerified: Boolean(email && profile.emailVerified),
+      emailVerified: Boolean(email && profile.emailVerified && !emailOwner),
       name: profile.name || email?.split("@")[0] || "Apple user",
       username: null,
       usernameLower: null,

@@ -23,4 +23,4 @@ MyPIU verifies Apple identity tokens on the server and stores Apple's stable sub
 
 The web callback uses `form_post`, so the registered return URL must use HTTPS. Apple supplies a name only on the first authorization; MyPIU stores it immediately and relies on the verified email and Apple subject on later sign-ins.
 
-Existing signed-in users can link Apple from Account preferences. Signed-out users are matched to an existing MyPIU account only when Apple supplies the same verified email address; otherwise MyPIU creates a new account that the user can link explicitly while signed in.
+Existing signed-in users can link Apple from Account preferences. Signed-out users are matched to an existing MyPIU account only when Apple supplies the same verified email address and that address was already verified on MyPIU. An unverified email collision receives a separate Apple-backed account so it cannot take ownership of either identity.
