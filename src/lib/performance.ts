@@ -5,6 +5,7 @@ import { MongoServerError, ObjectId, type Collection, type Filter, type Sort, ty
 import { PiuClient, type BestPlay, type PlayerData, type RecentPlay, type TopPlay } from "@austinkimchi/piugame-sdk";
 
 import { normalizeSongName, recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
+import { getSongsByTitles } from "@/lib/catalog";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
@@ -24,6 +25,7 @@ import { fetchPumbilityScore } from "@/lib/piu-pumbility";
 import { fetchPumbilityTopPlays } from "@/lib/piu-top-plays";
 import { selectNextTitleObjective, type NextTitleObjective } from "@/lib/piu-next-title";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
+import { absoluteSiteUrl } from "@/lib/site";
 import type { PiuCatalogVersion, PublicSong } from "@/lib/types";
 
 const COMMUNITY_DB_NAME = process.env.COMMUNITY_DB_NAME ?? "piugame_web";
@@ -193,6 +195,7 @@ export interface PerformanceDashboard {
     stageBreak: boolean;
     arcadeName: string | null;
     judgments: RecentPlay["judgments"];
+    songImageUrl: string | null;
   }>;
   topCharts: Array<{
     songName: string;
@@ -660,7 +663,7 @@ export async function getPerformanceSessions(
     groupedPlays.push(sessionPlays);
   }
 
-  return groupedPlays.slice(offset, offset + limit).flatMap((group) => {
+  const sessions = groupedPlays.slice(offset, offset + limit).flatMap((group) => {
     const summary = summarizePerformanceSession(group);
     if (!summary || !group[0]) {
       return [];
@@ -681,9 +684,26 @@ export async function getPerformanceSessions(
         endedAt: summary.endedAt.toISOString(),
         durationMinutes: summary.durationMinutes,
       },
-      plays: group.map(publicRecentPlay),
+      plays: group.map((play) => publicRecentPlay(play)),
     }];
   });
+
+  const songTitles = sessions.flatMap((session) => session.plays.map((play) => play.songName));
+  const catalogSongs = await getSongsByTitles(piuVersion, songTitles);
+  const artworkBySong = new Map(
+    Array.from(catalogSongs.values()).map((song) => [
+      normalizeSongName(song.title),
+      song.imageUrl ? absoluteSiteUrl(song.imageUrl) : null,
+    ]),
+  );
+
+  return sessions.map((session) => ({
+    ...session,
+    plays: session.plays.map((play) => ({
+      ...play,
+      songImageUrl: artworkBySong.get(normalizeSongName(play.songName)) ?? null,
+    })),
+  }));
 }
 
 export async function addChartRecommendationsToSongs(
@@ -1990,6 +2010,7 @@ function publicRecentPlay(play: WithId<PerformancePlayEventDocument>): Performan
     stageBreak: play.stageBreak,
     arcadeName: play.arcadeName ?? null,
     judgments: play.judgments,
+    songImageUrl: null,
   };
 }
 
