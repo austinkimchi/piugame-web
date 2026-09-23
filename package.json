@@ -19,7 +19,7 @@
     "migrate:performance:version:write": "node scripts/migrate-performance-versioning.mjs --write"
   },
   "dependencies": {
-    "@austinkimchi/piugame-sdk": "^1.3.2",
+    "@austinkimchi/piugame-sdk": "^1.3.3",
     "cheerio": "^1.0.0",
     "lucide-react": "^1.27.0",
     "mongodb": "^7.5.0",
