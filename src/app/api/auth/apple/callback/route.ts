@@ -9,9 +9,12 @@ import {
   verifyAppleOAuthState,
 } from "@/lib/apple-auth";
 import { publicRequestOrigin } from "@/lib/oauth-origin";
+import { readRequestText } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const MAX_APPLE_CALLBACK_BYTES = 16 * 1024;
 
 export async function POST(request: NextRequest) {
   const origin = appleOAuthOrigin(publicRequestOrigin(request.headers, request.nextUrl.origin));
@@ -19,7 +22,11 @@ export async function POST(request: NextRequest) {
   const expectedState = cookieStore.get(APPLE_OAUTH_STATE_COOKIE_NAME)?.value;
   cookieStore.delete(APPLE_OAUTH_STATE_COOKIE_NAME);
   try {
-    const form = await request.formData();
+    const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+    if (!contentType.startsWith("application/x-www-form-urlencoded")) {
+      return authFailure(origin);
+    }
+    const form = new URLSearchParams(await readRequestText(request, MAX_APPLE_CALLBACK_BYTES));
     if (form.get("error")) {
       return authFailure(origin);
     }
@@ -55,8 +62,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function appleDisplayName(value: FormDataEntryValue | null): string | null {
-  if (typeof value !== "string" || value.length > 4_000) {
+function appleDisplayName(value: string | null): string | null {
+  if (!value || value.length > 4_000) {
     return null;
   }
   try {
