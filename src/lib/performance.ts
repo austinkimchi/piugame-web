@@ -21,6 +21,7 @@ import { applyBucketBestSummary, applyTopPlaySummary, combineChartStatSummaries,
 import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
+import { fetchPumbilityTopPlays } from "@/lib/piu-top-plays";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 import type { PiuCatalogVersion, PublicSong } from "@/lib/types";
 
@@ -35,6 +36,7 @@ const PERFORMANCE_TOP_PLAYS_REFRESH_HOURS = Number(process.env.PERFORMANCE_TOP_P
 const PERFORMANCE_SYNC_BATCH_SIZE = Number(process.env.PERFORMANCE_SYNC_BATCH_SIZE ?? "5");
 const PERFORMANCE_RECENT_PLAYS_PAGE_SIZE = 35;
 const PERFORMANCE_TOP_CHARTS_PAGE_SIZE = 35;
+const PERFORMANCE_TOP_PLAYS_PARSER_VERSION = 2;
 
 declare global {
   var piuPerformanceIndexesPromise: Promise<void> | undefined;
@@ -88,6 +90,7 @@ interface PerformanceProfileDocument {
   allPlaysSyncedAt?: Date | null;
   allPlaysLeaseUntil?: Date | null;
   topPlaysSyncedAt?: Date | null;
+  topPlaysParserVersion?: number | null;
   nextTopPlaysRefreshAt?: Date | null;
   nextRefreshAt: Date;
   syncLeaseUntil: Date | null;
@@ -1584,7 +1587,7 @@ async function syncTopPlaysForUserIfDue(
   const password = decryptCredential(encryptedPassword);
   const client = new PiuClient({ version: piuVersion });
   await client.login(piuUsername, password);
-  const topPlays = await client.getTopPlays(piuUsername);
+  const topPlays = await fetchPumbilityTopPlays(client, piuUsername, piuVersion);
   await withPerformanceUserLease(userId, async (assertLeaseOwned) => {
     const currentUser = await users.findOne({ _id: userId });
     if (currentUser?.piuLink?.piuUsername?.trim() !== piuUsername) {
@@ -1598,6 +1601,7 @@ async function syncTopPlaysForUserIfDue(
         $set: {
           syncError: null,
           topPlaysSyncedAt: now,
+          topPlaysParserVersion: PERFORMANCE_TOP_PLAYS_PARSER_VERSION,
           nextTopPlaysRefreshAt: nextTopPlaysRefreshDate(now),
           updatedAt: now,
         },
@@ -1621,6 +1625,7 @@ async function findDueTopPlaysProfile(
       { nextTopPlaysRefreshAt: { $lte: now } },
       { topPlaysSyncedAt: null },
       { topPlaysSyncedAt: { $exists: false } },
+      { topPlaysParserVersion: { $ne: PERFORMANCE_TOP_PLAYS_PARSER_VERSION } },
     ],
   });
 }
