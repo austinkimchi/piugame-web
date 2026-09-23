@@ -16,7 +16,7 @@ import { PERFORMANCE_CHART_STATS_POPULATION_INDEX } from "@/lib/performance-inde
 import { performancePlayKey } from "@/lib/performance-play-key";
 import { PerformanceUserBusyError, withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
-import { startsNewSession, summarizePerformanceSession } from "@/lib/performance-session";
+import { performanceSessionArcade, startsNewSession, summarizePerformanceSession } from "@/lib/performance-session";
 import { applyBucketBestSummary, applyTopPlaySummary, combineChartStatSummaries, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
@@ -109,6 +109,7 @@ interface PerformancePlayEventDocument {
   grade: string | null;
   plate: string | null;
   stageBreak: boolean;
+  arcadeName: string | null;
   judgments: RecentPlay["judgments"];
   playedAt: Date | null;
   playedAtRaw: string | null;
@@ -184,6 +185,8 @@ export interface PerformanceDashboard {
     level: string | null;
     playedAt: string | null;
     stageBreak: boolean;
+    arcadeName: string | null;
+    judgments: RecentPlay["judgments"];
   }>;
   topCharts: Array<{
     songName: string;
@@ -221,6 +224,8 @@ export interface PerformanceRecentPlaysPage {
 }
 
 export interface PerformanceSession {
+  id: string;
+  arcadeName: string | null;
   summary: {
     playCount: number;
     clearCount: number;
@@ -601,17 +606,27 @@ export async function getPerformanceRecentPlays(
 export async function getLatestPerformanceSession(
   userIdInput: string | null,
 ): Promise<PerformanceSession | null> {
+  const sessions = await getPerformanceSessions(userIdInput, { limit: 1 });
+  return sessions[0] ?? null;
+}
+
+export async function getPerformanceSessions(
+  userIdInput: string | null,
+  args: { limit?: number } = {},
+): Promise<PerformanceSession[]> {
   const userId = objectIdFromString(userIdInput);
   if (!userId || !hasMongoConfig()) {
-    return null;
+    return [];
   }
 
+  const limit = Math.min(Math.max(1, Math.trunc(args.limit ?? 50)), 100);
   const { users, plays } = await collections();
   const piuVersion = await performanceVersionForUser(users, userId);
   const cursor = plays
     .find({ userId, piuVersion, playedAt: { $type: "date" } })
     .sort(recentPlaySort());
-  const sessionPlays: Array<WithId<PerformancePlayEventDocument>> = [];
+  const groupedPlays: Array<Array<WithId<PerformancePlayEventDocument>>> = [];
+  let sessionPlays: Array<WithId<PerformancePlayEventDocument>> = [];
   let previous: Date | null = null;
 
   try {
@@ -620,7 +635,11 @@ export async function getLatestPerformanceSession(
         continue;
       }
       if (previous && startsNewSession(previous, play.playedAt)) {
-        break;
+        groupedPlays.push(sessionPlays);
+        if (groupedPlays.length >= limit) {
+          break;
+        }
+        sessionPlays = [];
       }
       sessionPlays.push(play);
       previous = play.playedAt;
@@ -629,26 +648,34 @@ export async function getLatestPerformanceSession(
     await cursor.close();
   }
 
-  const summary = summarizePerformanceSession(sessionPlays);
-  if (!summary) {
-    return null;
+  if (sessionPlays.length > 0 && groupedPlays.length < limit) {
+    groupedPlays.push(sessionPlays);
   }
 
-  return {
-    summary: {
-      playCount: summary.playCount,
-      clearCount: summary.clearCount,
-      failedCount: summary.failedCount,
-      stageBreakCount: summary.stageBreakCount,
-      averageScore: summary.averageScore,
-      bestScore: summary.bestScore,
-      distinctCharts: summary.distinctCharts,
-      startedAt: summary.startedAt.toISOString(),
-      endedAt: summary.endedAt.toISOString(),
-      durationMinutes: summary.durationMinutes,
-    },
-    plays: sessionPlays.map(publicRecentPlay),
-  };
+  return groupedPlays.flatMap((group) => {
+    const summary = summarizePerformanceSession(group);
+    if (!summary || !group[0]) {
+      return [];
+    }
+
+    return [{
+      id: group[0]._id.toHexString(),
+      arcadeName: performanceSessionArcade(group),
+      summary: {
+        playCount: summary.playCount,
+        clearCount: summary.clearCount,
+        failedCount: summary.failedCount,
+        stageBreakCount: summary.stageBreakCount,
+        averageScore: summary.averageScore,
+        bestScore: summary.bestScore,
+        distinctCharts: summary.distinctCharts,
+        startedAt: summary.startedAt.toISOString(),
+        endedAt: summary.endedAt.toISOString(),
+        durationMinutes: summary.durationMinutes,
+      },
+      plays: group.map(publicRecentPlay),
+    }];
+  });
 }
 
 export async function addChartRecommendationsToSongs(
@@ -1411,8 +1438,28 @@ async function storePerformanceSnapshot(
   let importedRecentPlays = 0;
   let duplicateRecentPlays = 0;
   const affectedCharts = new Map<string, PerformancePlayEventDocument>();
+  const datedRecentPlays = recentPlays
+    .map((play) => ({ play, playedAt: parsePlayDate(play.playedAt) }))
+    .filter((entry): entry is { play: RecentPlay; playedAt: Date } => entry.playedAt !== null)
+    .sort((left, right) => right.playedAt.getTime() - left.playedAt.getTime());
+  const latestSessionPlays = new Set<RecentPlay>();
+  let latestSessionPreviousPlay: Date | null = null;
+  for (const entry of datedRecentPlays) {
+    if (latestSessionPreviousPlay && startsNewSession(latestSessionPreviousPlay, entry.playedAt)) {
+      break;
+    }
+    latestSessionPlays.add(entry.play);
+    latestSessionPreviousPlay = entry.playedAt;
+  }
   for (const play of recentPlays) {
-    const playDoc = playEventDocument(userId, piuVersion, piuUsername, play, now);
+    const playDoc = playEventDocument(
+      userId,
+      piuVersion,
+      piuUsername,
+      play,
+      latestSessionPlays.has(play) ? profile.recentArcade : null,
+      now,
+    );
     const { inserted, canonicalPlay } = await upsertRecentPlayEvent(plays, playDoc, options.assertLeaseOwned);
     affectedCharts.set(canonicalPlay.chartToken, canonicalPlay);
 
@@ -1752,7 +1799,14 @@ async function markAllPlaysBackfillFailed(userId: ObjectId, piuVersion: PiuCatal
   );
 }
 
-function playEventDocument(userId: ObjectId, piuVersion: PiuCatalogVersion, piuUsername: string, play: RecentPlay, now: Date): PerformancePlayEventDocument {
+function playEventDocument(
+  userId: ObjectId,
+  piuVersion: PiuCatalogVersion,
+  piuUsername: string,
+  play: RecentPlay,
+  arcadeName: string | null,
+  now: Date,
+): PerformancePlayEventDocument {
   const chartToken = chartTokenFromPlay(play);
   const playedAt = parsePlayDate(play.playedAt);
   const playKey = performancePlayKey({ playedAt, playedAtRaw: play.playedAt });
@@ -1774,6 +1828,7 @@ function playEventDocument(userId: ObjectId, piuVersion: PiuCatalogVersion, piuU
     grade: play.grade,
     plate: play.plate,
     stageBreak: play.stageBreak,
+    arcadeName: arcadeName?.trim() || null,
     judgments: play.judgments,
     playedAt,
     playedAtRaw: play.playedAt,
@@ -1825,12 +1880,16 @@ async function upsertRecentPlayEvent(
     await assertLeaseOwned?.();
     await plays.deleteMany({ _id: { $in: duplicateIds } });
   }
+  const updatedPlay = {
+    ...play,
+    arcadeName: canonicalPlay.arcadeName?.trim() || null,
+  };
   await assertLeaseOwned?.();
-  await plays.updateOne({ _id: canonicalPlay._id }, { $set: play });
+  await plays.updateOne({ _id: canonicalPlay._id }, { $set: updatedPlay });
   return {
     inserted: false,
     removedDuplicates: duplicateIds.length,
-    canonicalPlay: { ...canonicalPlay, ...play },
+    canonicalPlay: { ...canonicalPlay, ...updatedPlay },
   };
 }
 
@@ -1892,6 +1951,8 @@ function publicRecentPlay(play: WithId<PerformancePlayEventDocument>): Performan
     level: play.level,
     playedAt: playedAtFromRaw?.toISOString() ?? play.playedAt?.toISOString() ?? play.playedAtRaw,
     stageBreak: play.stageBreak,
+    arcadeName: play.arcadeName ?? null,
+    judgments: play.judgments,
   };
 }
 

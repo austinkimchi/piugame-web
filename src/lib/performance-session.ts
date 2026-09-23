@@ -8,6 +8,7 @@ export interface PerformanceSessionPlay {
   grade?: string | null;
   stageBreak: boolean;
   chartToken: string;
+  arcadeName?: string | null;
 }
 
 export interface PerformanceSessionSummary {
@@ -113,4 +114,29 @@ export function summarizePerformanceSession(
     endedAt,
     durationMinutes: Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 60_000)),
   };
+}
+
+/** Returns the most frequently recorded arcade in a session, preferring the newest play on ties. */
+export function performanceSessionArcade(plays: Iterable<PerformanceSessionPlay>): string | null {
+  const counts = new Map<string, number>();
+
+  for (const play of plays) {
+    const arcadeName = play.arcadeName?.trim();
+    if (!arcadeName) {
+      continue;
+    }
+
+    const count = (counts.get(arcadeName) ?? 0) + 1;
+    counts.set(arcadeName, count);
+  }
+
+  let selected: string | null = null;
+  let selectedCount = 0;
+  for (const [arcadeName, count] of counts) {
+    if (count > selectedCount) {
+      selected = arcadeName;
+      selectedCount = count;
+    }
+  }
+  return selected;
 }
