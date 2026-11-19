@@ -129,7 +129,7 @@ function sessionsFixture(rows: Row[], catalog = catalogFixture().catalog) {
   };
   const dependencies: Record<string, unknown> = {
     "server-only": {}, "node:crypto": require("node:crypto"), mongodb: { ObjectId },
-    "@austinkimchi/piugame-sdk": {},
+    "@/lib/piu-client": { createPiuClient: () => { throw new Error("Session reads must not contact PIUGAME"); } },
     "@/lib/chart-recommendation": chartRecommendation,
     "@/lib/catalog": catalog,
     "@/lib/mongodb": { hasMongoConfig: () => true, getMongoClient: async () => ({ db: () => ({ collection: () => collection }) }) },

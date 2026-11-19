@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { MongoServerError, ObjectId, type Collection, type Filter, type Sort, type WithId } from "mongodb";
-import { PiuClient, type BestPlay, type PlayerData, type RecentPlay, type TopPlay } from "@austinkimchi/piugame-sdk";
+import type { PiuClient, BestPlay, PlayerData, RecentPlay, TopPlay } from "@austinkimchi/piugame-sdk";
 
 import { catalogChartRecommendationMap, normalizeSongName, recommendChartToken, type CatalogChartRecommendations, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
 import { getSongsByTitles } from "@/lib/catalog";
@@ -25,6 +25,7 @@ import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
 import { fetchPumbilityScore } from "@/lib/piu-pumbility";
 import { fetchPumbilityTopPlays } from "@/lib/piu-top-plays";
 import { selectNextTitleObjective, type NextTitleObjective } from "@/lib/piu-next-title";
+import { createPiuClient } from "@/lib/piu-client";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 import { absoluteSiteUrl } from "@/lib/site";
 import type { PiuCatalogVersion, PublicSong } from "@/lib/types";
@@ -1243,7 +1244,7 @@ export async function fetchCurrentUserRecentPlays(userIdInput: string | null): P
     throw new Error("A linked PIU account with saved credentials is required.");
   }
 
-  const client = new PiuClient({ version: piuVersion });
+  const client = createPiuClient(piuVersion);
   await client.login(piuUsername, decryptCredential(encryptedPassword));
   const profileResultPromise = getPlayerDataWithPumbilityAndTitle(client, piuUsername)
     .then((snapshot) => ({ ok: true as const, ...snapshot, observedAt: new Date() }))
@@ -1368,7 +1369,7 @@ async function syncSingleUserPerformance(userId: ObjectId, user: WithId<MinimalU
   }
 
   const password = decryptCredential(encryptedPassword);
-  const client = new PiuClient({ version: piuVersion });
+  const client = createPiuClient(piuVersion);
   await client.login(piuUsername, password);
   const profilePromise = getPlayerDataWithPumbilityAndTitle(client, piuUsername)
     .then((snapshot) => ({ ...snapshot, observedAt: new Date() }));
@@ -1614,7 +1615,7 @@ async function backfillAllPlaysForUser(
   }
 
   const password = decryptCredential(encryptedPassword);
-  const client = new PiuClient({ version: piuVersion });
+  const client = createPiuClient(piuVersion);
   await client.login(piuUsername, password);
   const result = await client.fetchAllPlays(piuUsername);
   const now = new Date();
@@ -1666,7 +1667,7 @@ async function syncTopPlaysForUserIfDue(
   }
 
   const password = decryptCredential(encryptedPassword);
-  const client = new PiuClient({ version: piuVersion });
+  const client = createPiuClient(piuVersion);
   await client.login(piuUsername, password);
   const topPlays = await fetchPumbilityTopPlays(client, piuUsername, piuVersion);
   await withPerformanceUserLease(userId, async (assertLeaseOwned) => {
