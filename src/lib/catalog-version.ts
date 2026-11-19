@@ -12,8 +12,8 @@ export const DEFAULT_CATALOG_SERIES: PiuSeriesId = "phoenix2";
 export const REMOVED_FROM_PHOENIX2_SLUG = "removed-from-phoenix2";
 
 export const SUPPORTED_PIU_SERIES: PiuSeriesMetadata[] = [
-  { id: "phoenix2", slug: "phoenix-2", label: "Phoenix 2", shortLabel: "PHX2", rank: 0 },
-  { id: "phoenix", slug: "phoenix", label: "Phoenix", shortLabel: "PHX", rank: 1 },
+  { id: "phoenix2", slug: "phoenix-2", label: "PHOENIX 2", shortLabel: "PHX2", rank: 0 },
+  { id: "phoenix", slug: "phoenix", label: "PHOENIX", shortLabel: "PHX", rank: 1 },
   { id: "xx", slug: "xx", label: "XX", shortLabel: "XX", rank: 2 },
   { id: "prime2", slug: "prime-2", label: "Prime 2", shortLabel: "PR2", rank: 3 },
   { id: "prime", slug: "prime", label: "Prime", shortLabel: "PR", rank: 4 },
@@ -47,4 +47,23 @@ export function piuSeriesRank(id: PiuSeriesId | null | undefined): number {
 
 export function sortPiuSeries(values: PiuSeriesId[]): PiuSeriesId[] {
   return [...values].sort((left, right) => piuSeriesRank(left) - piuSeriesRank(right));
+}
+
+export function normalizePiuSeriesLabel(value: string): string {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (/^phoenix\s*2$/i.test(cleaned)) {
+    return "PHOENIX 2";
+  }
+  if (/^phoenix$/i.test(cleaned)) {
+    return "PHOENIX";
+  }
+  return cleaned;
+}
+
+/** Match the same legacy labels that the display normalizer accepts. */
+export function piuSeriesLabelPattern(value: string): RegExp {
+  const label = normalizePiuSeriesLabel(value);
+  if (label === "PHOENIX 2") return /^\s*phoenix\s*2\s*$/i;
+  if (label === "PHOENIX") return /^\s*phoenix\s*$/i;
+  return new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
 }

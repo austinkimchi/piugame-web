@@ -5,6 +5,7 @@ import { MongoServerError, ObjectId, type Collection, type Filter, type Sort, ty
 import { PiuClient, type BestPlay, type PlayerData, type RecentPlay, type TopPlay } from "@austinkimchi/piugame-sdk";
 
 import { normalizeSongName, recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
+import { getSongsByTitles } from "@/lib/catalog";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
@@ -17,6 +18,7 @@ import { performancePlayKey } from "@/lib/performance-play-key";
 import { PerformanceUserBusyError, withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { performanceSessionArcade, startsNewSession, summarizePerformanceSession } from "@/lib/performance-session";
+import { sessionLimit, sessionOffset } from "@/lib/performance-session-pagination";
 import { applyBucketBestSummary, applyTopPlaySummary, combineChartStatSummaries, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
@@ -24,6 +26,7 @@ import { fetchPumbilityScore } from "@/lib/piu-pumbility";
 import { fetchPumbilityTopPlays } from "@/lib/piu-top-plays";
 import { selectNextTitleObjective, type NextTitleObjective } from "@/lib/piu-next-title";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
+import { absoluteSiteUrl } from "@/lib/site";
 import type { PiuCatalogVersion, PublicSong } from "@/lib/types";
 
 const COMMUNITY_DB_NAME = process.env.COMMUNITY_DB_NAME ?? "piugame_web";
@@ -193,6 +196,7 @@ export interface PerformanceDashboard {
     stageBreak: boolean;
     arcadeName: string | null;
     judgments: RecentPlay["judgments"];
+    songImageUrl: string | null;
   }>;
   topCharts: Array<{
     songName: string;
@@ -618,14 +622,15 @@ export async function getLatestPerformanceSession(
 
 export async function getPerformanceSessions(
   userIdInput: string | null,
-  args: { limit?: number } = {},
+  args: { offset?: number; limit?: number } = {},
 ): Promise<PerformanceSession[]> {
   const userId = objectIdFromString(userIdInput);
   if (!userId || !hasMongoConfig()) {
     return [];
   }
 
-  const limit = Math.min(Math.max(1, Math.trunc(args.limit ?? 50)), 100);
+  const offset = sessionOffset(args.offset);
+  const limit = sessionLimit(args.limit);
   const { users, plays } = await collections();
   const piuVersion = await performanceVersionForUser(users, userId);
   const cursor = plays
@@ -633,6 +638,7 @@ export async function getPerformanceSessions(
     .sort(recentPlaySort());
   const groupedPlays: Array<Array<WithId<PerformancePlayEventDocument>>> = [];
   let sessionPlays: Array<WithId<PerformancePlayEventDocument>> = [];
+  let sessionIndex = 0;
   let previous: Date | null = null;
 
   try {
@@ -641,7 +647,8 @@ export async function getPerformanceSessions(
         continue;
       }
       if (previous && startsNewSession(previous, play.playedAt)) {
-        groupedPlays.push(sessionPlays);
+        if (sessionIndex >= offset) groupedPlays.push(sessionPlays);
+        sessionIndex += 1;
         if (groupedPlays.length >= limit) {
           break;
         }
@@ -654,11 +661,11 @@ export async function getPerformanceSessions(
     await cursor.close();
   }
 
-  if (sessionPlays.length > 0 && groupedPlays.length < limit) {
+  if (sessionPlays.length > 0 && sessionIndex >= offset && groupedPlays.length < limit) {
     groupedPlays.push(sessionPlays);
   }
 
-  return groupedPlays.flatMap((group) => {
+  const sessions = groupedPlays.flatMap((group) => {
     const summary = summarizePerformanceSession(group);
     if (!summary || !group[0]) {
       return [];
@@ -679,9 +686,26 @@ export async function getPerformanceSessions(
         endedAt: summary.endedAt.toISOString(),
         durationMinutes: summary.durationMinutes,
       },
-      plays: group.map(publicRecentPlay),
+      plays: group.map((play) => publicRecentPlay(play)),
     }];
   });
+
+  const songTitles = sessions.flatMap((session) => session.plays.map((play) => play.songName));
+  const catalogSongs = await getSongsByTitles(piuVersion, songTitles, { includeHistorical: true });
+  const artworkBySong = new Map(
+    Array.from(catalogSongs.values()).map((song) => [
+      normalizeSongName(song.title),
+      song.imageUrl ? absoluteSiteUrl(song.imageUrl) : null,
+    ]),
+  );
+
+  return sessions.map((session) => ({
+    ...session,
+    plays: session.plays.map((play) => ({
+      ...play,
+      songImageUrl: artworkBySong.get(normalizeSongName(play.songName)) ?? null,
+    })),
+  }));
 }
 
 export async function addChartRecommendationsToSongs(
@@ -1988,6 +2012,7 @@ function publicRecentPlay(play: WithId<PerformancePlayEventDocument>): Performan
     stageBreak: play.stageBreak,
     arcadeName: play.arcadeName ?? null,
     judgments: play.judgments,
+    songImageUrl: null,
   };
 }
 

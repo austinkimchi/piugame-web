@@ -10,7 +10,7 @@ import { AccountIntegrationsPanel } from "@/components/account-integrations";
 
 const VERSION_OPTIONS: Array<{ value: PiuCatalogVersion; label: string }> = [
   { value: "phoenix", label: "Phoenix" },
-  { value: "phoenix2", label: "Phoenix 2" },
+  { value: "phoenix2", label: "PHOENIX 2" },
 ];
 
 export function AccountPreferencesPopup({ user, appleReady, discordReady }: { user: PublicUser; appleReady: boolean; discordReady: boolean }) {
