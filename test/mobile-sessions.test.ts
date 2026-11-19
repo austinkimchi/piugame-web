@@ -105,16 +105,16 @@ function play(session: number, minute = 0, overrides: Row = {}): Row {
   };
 }
 
-function sessionsFixture(rows: Row[], catalog = catalogFixture().catalog) {
+function sessionsFixture(rows: Row[], catalog = catalogFixture().catalog, selectedVersion: "phoenix" | "phoenix2" = "phoenix2") {
   const cursors: Array<{ closed: boolean; reads: number }> = [];
   const requests: Array<{ offset?: number; limit?: number }> = [];
   let failCursor = false;
   const collection = {
     createIndex: async () => "test-index", indexes: async () => [],
-    findOne: async () => ({ preferences: { piuGameVersion: "phoenix2" } }),
+    findOne: async () => ({ preferences: { piuGameVersion: selectedVersion } }),
     find(filter: Row) {
       assert.ok((filter.userId as ObjectId).equals(userId));
-      assert.equal(filter.piuVersion, "phoenix2");
+      assert.equal(filter.piuVersion, selectedVersion);
       const state = { closed: false, reads: 0 };
       cursors.push(state);
       return {
@@ -248,7 +248,33 @@ test("page boundaries exclude other accounts and versions without splitting the 
 test("empty pages and exact final pages do not manufacture a continuation", async () => {
   const fixture = sessionsFixture(Array.from({ length: 20 }, (_, index) => play(index)));
   assert.equal((await (await fixture.request("?limit=20")).json()).nextOffset, null);
-  assert.deepEqual(await (await fixture.request("?offset=20&limit=20")).json(), { sessions: [], nextOffset: null });
+  assert.deepEqual(await (await fixture.request("?offset=20&limit=20")).json(), { sessions: [], nextOffset: null, selectedVersion: "phoenix2" });
+});
+
+test("session page reports the version used for play filtering and artwork on both editions", async () => {
+  for (const version of ["phoenix", "phoenix2"] as const) {
+    const artworkVersions: string[] = [];
+    const catalog = {
+      ...catalogFixture().catalog,
+      getSongsByTitles: async (selected: string) => {
+        artworkVersions.push(selected);
+        return new Map();
+      },
+    };
+    const fixture = sessionsFixture([play(0, 0, { piuVersion: version })], catalog, version);
+    const first = await (await fixture.request("?limit=1")).json() as { selectedVersion: string; sessions: Session[] };
+    const empty = await (await fixture.request("?offset=1&limit=1")).json() as { selectedVersion: string; sessions: Session[] };
+    assert.equal(first.selectedVersion, version);
+    assert.equal(first.sessions.length, 1);
+    assert.equal(empty.selectedVersion, version);
+    assert.deepEqual(empty.sessions, []);
+    assert.deepEqual(artworkVersions, [version, version]);
+  }
+});
+
+test("session helper does not invent a version when user identity is invalid", async () => {
+  const fixture = sessionsFixture([]);
+  assert.deepEqual(await fixture.performance.getPerformanceSessionsPage(null), { sessions: [], nextOffset: null, selectedVersion: null });
 });
 
 test("invalid pagination inputs use bounded defaults consistently in route and data helper", async () => {

@@ -631,10 +631,10 @@ export async function getPerformanceSessions(
 export async function getPerformanceSessionsPage(
   userIdInput: string | null,
   args: { offset?: number; limit?: number } = {},
-): Promise<{ sessions: PerformanceSession[]; nextOffset: number | null }> {
+): Promise<{ sessions: PerformanceSession[]; nextOffset: number | null; selectedVersion: PiuCatalogVersion | null }> {
   const userId = objectIdFromString(userIdInput);
   if (!userId || !hasMongoConfig()) {
-    return { sessions: [], nextOffset: null };
+    return { sessions: [], nextOffset: null, selectedVersion: null };
   }
 
   const offset = sessionOffset(args.offset);
@@ -712,6 +712,7 @@ export async function getPerformanceSessionsPage(
   );
 
   return {
+    selectedVersion: piuVersion,
     sessions: sessions.map((session) => ({
       ...session,
       plays: session.plays.map((play) => ({
