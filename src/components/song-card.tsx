@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import { type MouseEvent, useState } from "react";
 
 import { formatPerformanceGrade, isFailedPerformanceGrade } from "@/lib/performance-format";
+import { isLatestReleaseSong, LATEST_CATALOG_RELEASE } from "@/lib/catalog-release";
 import { usePreviewUnavailable } from "@/lib/preview-availability";
 import type { PublicSong } from "@/lib/types";
 
@@ -50,7 +51,8 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
       : song.title.length > LONG_TITLE_LENGTH
         ? "text-xs sm:text-[13px]"
         : "text-[13px] sm:text-sm";
-  const isNew = song.series?.toUpperCase() === "PHOENIX 2";
+  const isNew = isLatestReleaseSong(song);
+  const newBadgeLabel = `New in ${LATEST_CATALOG_RELEASE.label}${song.isPremium ? ", premium song" : ""}`;
   const favoriteBadgePositionClass = isNew
     ? "col-start-2 row-start-2"
     : song.isPremium
@@ -210,10 +212,10 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
               ) : null}
               {isNew ? (
                 <span
-                  aria-label={song.isPremium ? "New in PHOENIX 2, premium song" : undefined}
+                  aria-label={newBadgeLabel}
                   className="song-new-badge relative col-start-2 row-start-1 inline-flex h-6 items-center bg-[#e3412f]/95 px-2 text-[11px] font-black uppercase text-white xl:col-auto xl:row-auto xl:h-8"
-                  role={song.isPremium ? "img" : undefined}
-                  title={song.isPremium ? "New in PHOENIX 2, premium song" : undefined}
+                  role="img"
+                  title={newBadgeLabel}
                 >
                   NEW
                   {song.isPremium ? (
