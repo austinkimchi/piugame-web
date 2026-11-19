@@ -7,6 +7,7 @@ import ts from "typescript";
 
 import * as chartRecommendation from "../src/lib/chart-recommendation.ts";
 import * as catalogVersion from "../src/lib/catalog-version.ts";
+import * as catalogSearchAliases from "../src/lib/catalog-search-aliases.ts";
 import * as mobileAuthCore from "../src/lib/mobile-auth-core.ts";
 import * as performanceFormat from "../src/lib/performance-format.ts";
 import * as sessionCore from "../src/lib/performance-session.ts";
@@ -43,6 +44,11 @@ function matches(row: Row, filter: Row): boolean {
     const actual = row[key];
     if (expected instanceof ObjectId) return expected.equals(actual as ObjectId);
     if (expected instanceof RegExp) return typeof actual === "string" && expected.test(actual);
+    if (expected && typeof expected === "object" && "$regex" in expected) {
+      const expression = expected as { $regex: string | RegExp; $options?: string };
+      const regex = new RegExp(expression.$regex, expression.$options);
+      return (Array.isArray(actual) ? actual : [actual]).some((value) => typeof value === "string" && regex.test(value));
+    }
     if (expected && typeof expected === "object" && "$in" in expected) {
       return (expected.$in as unknown[]).some((entry) => matches(row, { [key]: entry }));
     }
@@ -78,6 +84,7 @@ function catalogFixture(rows: Row[] = []) {
     "@/lib/mongodb": { hasMongoConfig: () => true, getMongoClient: async () => ({ db: () => ({ collection: () => collection }) }) },
     "@/lib/audio-preview": { audioFileUrlForPath: (path: string) => `/api/audio-files/${path}` },
     "@/lib/catalog-version": catalogVersion,
+    "@/lib/catalog-search-aliases": catalogSearchAliases,
     "@/lib/premium-songs": { isPremiumSong: () => false },
     "@/lib/song-chart-filters": {}, "@/lib/song-slug-filter": {},
     "@/lib/public-catalog": {},
@@ -260,4 +267,27 @@ test("unrelated catalog series labels remain literal even when they contain rege
   const result = await fixture.catalog.searchSongs({ query: "", series: ["Custom (A+B)"] });
   assert.equal(result.total, 1);
   assert.equal(result.songs[0].series, "Custom (A+B)");
+});
+
+test("legacy Mongo search shares title aliases without renaming songs or bypassing filters", async () => {
+  const examples = JSON.parse(readFileSync(new URL("./fixtures/catalog-search-aliases.json", import.meta.url), "utf8")) as {
+    songs: Array<{ title: string; artist: string; slug: string }>;
+    cases: Array<{ query: string; expectedSlugs: string[] }>;
+  };
+  const fixture = catalogFixture(examples.songs.map((song) => ({
+    _id: new ObjectId(), songName: song.title, artist: song.artist, piuVersion: "phoenix2",
+    supportedVersions: ["phoenix2"], folder: "WORLD MUSIC",
+  })));
+  for (const example of examples.cases) {
+    const result = await fixture.catalog.searchSongs({ query: example.query });
+    assert.equal(result.total, example.expectedSlugs.length, example.query);
+    assert.deepEqual(result.songs.map((song) => song.slug).sort(), [...example.expectedSlugs].sort(), example.query);
+    for (const found of result.songs) {
+      const original = examples.songs.find((song) => song.slug === found.slug)!;
+      assert.equal(found.title, original.title);
+      assert.equal(found.artist, original.artist);
+    }
+  }
+  assert.equal((await fixture.catalog.searchSongs({ query: "because", folders: ["K-POP"] })).total, 0);
+  assert.equal((await fixture.catalog.searchSongs({ query: "because", supportedVersion: "phoenix" })).total, 0);
 });

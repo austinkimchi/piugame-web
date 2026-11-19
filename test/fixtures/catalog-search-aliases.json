@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "https://www.youtube.com/watch?v=3zxlreV_NH8",
+    "https://tanoc.bandcamp.com/track/becouse-of-you"
+  ],
+  "songs": [
+    { "title": "Becouse of You", "artist": "Srav3R & USAO", "slug": "becouse-of-you-srav3r-usao-phoenix2" },
+    { "title": "Becouse of You", "artist": "Other Artist", "slug": "becouse-of-you-other-artist-phoenix2" },
+    { "title": "Because of You", "artist": "Another Artist", "slug": "because-of-you-another-artist-phoenix2" },
+    { "title": "Unrelated Title", "artist": "Because of You Ensemble", "slug": "unrelated-title-because-of-you-ensemble-phoenix2" }
+  ],
+  "cases": [
+    { "query": "because of you", "expectedSlugs": ["becouse-of-you-srav3r-usao-phoenix2", "because-of-you-another-artist-phoenix2", "unrelated-title-because-of-you-ensemble-phoenix2"] },
+    { "query": "  BECAUSE   OF YOU  ", "expectedSlugs": ["becouse-of-you-srav3r-usao-phoenix2", "because-of-you-another-artist-phoenix2", "unrelated-title-because-of-you-ensemble-phoenix2"] },
+    { "query": "because", "expectedSlugs": ["becouse-of-you-srav3r-usao-phoenix2", "because-of-you-another-artist-phoenix2", "unrelated-title-because-of-you-ensemble-phoenix2"] },
+    { "query": "because of y", "expectedSlugs": ["becouse-of-you-srav3r-usao-phoenix2", "because-of-you-another-artist-phoenix2", "unrelated-title-because-of-you-ensemble-phoenix2"] },
+    { "query": "becouse of you", "expectedSlugs": ["becouse-of-you-srav3r-usao-phoenix2", "becouse-of-you-other-artist-phoenix2"] },
+    { "query": "because.*", "expectedSlugs": [] },
+    { "query": "becauseofyou", "expectedSlugs": [] },
+    { "query": "because of you remix", "expectedSlugs": [] }
+  ]
+}

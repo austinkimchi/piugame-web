@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { queryCatalog, type CatalogQuerySong } from "../src/lib/catalog-client-query.ts";
 import { catalogFilterOptionsForSelection } from "../src/lib/catalog-filter-options.ts";
@@ -7,6 +8,21 @@ function song(slug: string, values: Partial<CatalogQuerySong> = {}): CatalogQuer
   return { slug, title: slug, artist: "Artist", folder: "ORIGINAL", folderPosition: 1, series: "PHOENIX 2", tags: [], chartSummary: ["S16"], ...values };
 }
 const ids = (songs: CatalogQuerySong[]) => songs.map((song) => song.slug);
+
+test("verified title aliases preserve identity, literal matches, and artist boundaries", () => {
+  const fixture = JSON.parse(readFileSync(new URL("./fixtures/catalog-search-aliases.json", import.meta.url), "utf8")) as {
+    songs: Array<Pick<CatalogQuerySong, "title" | "artist" | "slug">>;
+    cases: Array<{ query: string; expectedSlugs: string[] }>;
+  };
+  const songs = fixture.songs.map((entry) => Object.freeze(song(entry.slug, entry)));
+  for (const example of fixture.cases) {
+    const result = queryCatalog(songs, { query: example.query }).songs;
+    assert.deepEqual(ids(result).sort(), [...example.expectedSlugs].sort(), example.query);
+    for (const found of result) assert.strictEqual(found, songs.find((entry) => entry.slug === found.slug));
+  }
+  assert.equal(queryCatalog(songs, { query: "because", folders: ["K-POP"] }).songs.length, 0);
+  assert.equal(queryCatalog(songs, { query: "because", levels: ["17"] }).songs.length, 0);
+});
 
 test("literal search includes alternate song keys and tags, without matching across field boundaries", () => {
   const songs = [song("one", { title: "Visible", songKey: "Hidden alias", tags: ["fast [mix]"], artist: "Artist" }), song("two", { title: "fast remix" })];
