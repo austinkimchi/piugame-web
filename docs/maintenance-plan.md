@@ -17,7 +17,7 @@ The current verified website release is `bd3c718` ([web #39](https://github.com/
 - Existing PIUGAME credentials may be used if required; do not expose them or retrieve/decrypt them unnecessarily.
 - Preserve curated audio, Mongo identifiers/manual overrides, later legitimate user writes, original Xcode signing edits, unrelated services and retained recovery backups.
 - Keep storage bounded. Reuse installed simulators, remove disposable build outputs after use, and do not remove retained backups or uncertain work to save space.
-- At most one authorized free usage reset expires December 1 at 11:46 PM GMT+1. No reset has been used in this maintenance run. Do not infer permission for paid credits or a second reset.
+- At most one authorized free usage reset expires December 1 at 11:46 PM GMT+1. No reset was redeemed by this maintenance agent. After the usage-limit interruption, a fresh account check allowed ordinary usage again and listed one remaining reset expiring December 12; do not redeem that different reset or infer permission for paid credits or a second reset. Check current account state before any further reset action.
 
 Finish the active catalog/mobile performance changes through their review and release gates. In parallel, return to the earliest unfinished original work: verified audio completion, asset usage/completeness, and remaining architecture/Workers mapping. Future Apple Watch and database redesign must not displace those tasks.
 
