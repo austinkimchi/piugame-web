@@ -1166,7 +1166,7 @@ export async function getSongBySlug(slug: string, chartVersion?: PiuSeriesId): P
 
   const fallbackVersion = piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION);
   const [document, stats] = await Promise.all([
-    getCatalogDocumentBySlug(slug),
+    getCatalogDocumentBySlug(slug, chartVersion),
     getCatalogStats(MAIN_CATALOG_VERSION),
   ]);
   return document ? publicSongFromDocument(document, fallbackVersion, stats, chartVersion) : null;
@@ -1246,7 +1246,7 @@ export async function getRecommendationCandidateSongs(version: PiuCatalogVersion
   }));
 }
 
-async function getCatalogDocumentBySlug(slug: string): Promise<WithId<CatalogDocument> | null> {
+async function getCatalogDocumentBySlug(slug: string, preferredVersion?: PiuSeriesId): Promise<WithId<CatalogDocument> | null> {
   const collection = await collectionFor(MAIN_CATALOG_VERSION);
   const fallbackVersion = piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION);
   const candidates = await collection
@@ -1259,18 +1259,25 @@ async function getCatalogDocumentBySlug(slug: string): Promise<WithId<CatalogDoc
           artist: 1,
           piuVersion: 1,
           catalogVersion: 1,
+          supportedVersions: 1,
         },
       },
     )
     .limit(5000)
     .toArray();
-  const candidate = candidates.find((document) => {
+  const matching = candidates.filter((document) => {
     // Keep legacy search/favorite URLs valid, and also accept source-version
     // slugs emitted by the public snapshot for records originating in PHOENIX.
     if (catalogDocumentSlug(document, fallbackVersion) === slug) return true;
     const sourceVersion = cleanText(document.piuVersion ?? document.catalogVersion);
     return sourceVersion === "phoenix" && catalogDocumentSlug(document, "phoenix") === slug;
   });
+  // Transliteration can give separate historical/current records the same
+  // legacy slug. Versioned page links must resolve their requested membership;
+  // unversioned community/editor callers retain the original first match.
+  const candidate = (preferredVersion
+    ? matching.find((document) => catalogVersionsFromDocument(document).includes(preferredVersion))
+    : undefined) ?? matching[0];
 
   return candidate ? collection.findOne({ _id: candidate._id }, { projection: projection() }) : null;
 }

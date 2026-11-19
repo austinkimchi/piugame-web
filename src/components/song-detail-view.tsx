@@ -8,6 +8,8 @@ import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties }
 
 import { CatalogAdminEditor } from "@/components/catalog-admin-editor";
 import { SongCommunityPanel } from "@/components/song-community-panel";
+import { SongChartLink } from "@/components/song-chart-link";
+import { songPagePath } from "@/lib/song-page-url";
 import { PerformanceResultBadge } from "@/components/performance-result-badge";
 import { performanceResultBadges } from "@/lib/performance-result-badges";
 import { SongPreviewPlayButton } from "@/components/song-preview-play-button";
@@ -393,11 +395,11 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
         <motion.section {...sectionMotion} className="mt-8 border-y border-[#d9ded2] py-6">
           <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase text-[#596153]">
             <Music2 aria-hidden="true" size={17} />
-            Charts
+            Charts · {piuSeriesMetadata(catalogVersion).label}
           </div>
           <div className="flex flex-wrap gap-2">
             {currentSong.chartSummary.length > 0 ? (
-              currentSong.chartSummary.map((chart) => (
+              currentSong.chartSummary.map((chart) => isNotebook ? (
                 <motion.button
                   key={chart}
                   className={`border px-3 py-1.5 text-sm font-black transition ${selectedChartToken === chart ? "border-[#171916] bg-[#171916] text-white shadow-[0_10px_24px_rgba(29,35,24,0.14)]" : "border-[#d8dfd1] bg-white text-[#3d4638] hover:border-[#28c950] hover:text-[#28c950]"}`}
@@ -411,6 +413,17 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
                 >
                   {chart}
                 </motion.button>
+              ) : (
+                <SongChartLink
+                  key={chart}
+                  href={songPagePath(currentSong, catalogVersion, chart)}
+                  selected={selectedChartToken === chart}
+                  className={`border px-3 py-1.5 text-sm font-black transition ${selectedChartToken === chart ? "border-[#171916] bg-[#171916] text-white shadow-[0_10px_24px_rgba(29,35,24,0.14)]" : "border-[#d8dfd1] bg-white text-[#3d4638] hover:border-[#28c950] hover:text-[#28c950]"}`}
+                  onSelect={() => {
+                    setSelectedChartToken(chart);
+                    onSelectedChartTokenChange?.(chart);
+                  }}
+                >{chart}</SongChartLink>
               ))
             ) : (
               <p className="text-sm font-medium text-[#66705f]">Chart metadata is ready to appear here once available.</p>

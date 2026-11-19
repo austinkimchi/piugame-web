@@ -4,6 +4,7 @@ import test from "node:test";
 import ts from "typescript";
 
 import { createPublicCatalogStore, PublicCatalogUnavailableError, PUBLIC_CATALOG_TTL_MS } from "../src/lib/public-catalog-cache.ts";
+import * as songPageUrl from "../src/lib/song-page-url.ts";
 import type { PublicCatalogDocument } from "../src/lib/public-catalog-core.ts";
 
 type SitemapModule = typeof import("../src/app/sitemap.ts");
@@ -30,6 +31,7 @@ function fixture() {
   }, () => now);
   const dependencies: Record<string, unknown> = {
     "@/lib/public-catalog": { getPublicCatalogSnapshot: store.getSnapshot },
+    "@/lib/song-page-url": songPageUrl,
     "@/lib/site": { absoluteSiteUrl: (value: string) => new URL(value, "https://example.com").href },
   };
   const loaded = { exports: {} };
@@ -52,7 +54,7 @@ test("sitemap stays dynamic and emits complete catalog slugs instead of build-ti
   const entries = await f.module.default();
   assert.equal(entries.length, 677);
   assert.deepEqual(entries.slice(0, 2).map((entry) => entry.url), ["https://example.com/", "https://example.com/privacy"]);
-  assert.ok(entries.some((entry) => entry.url === "https://example.com/songs/catalog-song-674-fixture-artist-phoenix2"));
+  assert.ok(entries.some((entry) => entry.url === "https://example.com/songs/catalog-song-674-fixture-artist-phoenix2?version=phoenix2"));
   assert.ok(entries.every((entry) => !entry.url.includes("/songs/phoenix2-jacket-")));
   assert.ok(entries.every((entry) => entry.lastModified === undefined), "generation time is not a catalog modification timestamp");
   assert.ok(entries.some((entry) => entry.images?.includes("https://example.com/assets/piu/phoenix2/song_img2/jacket-674.png")));
@@ -66,7 +68,7 @@ test("sitemap reuses the public cache, refreshes after writes or expiry, and nev
   assert.equal(f.reads(), 1);
   f.documents[0].songName = "Changed catalog title";
   f.store.invalidate();
-  assert.ok((await f.module.default()).some((entry) => entry.url.endsWith("/changed-catalog-title-fixture-artist-phoenix2")));
+  assert.ok((await f.module.default()).some((entry) => entry.url.endsWith("/changed-catalog-title-fixture-artist-phoenix2?version=phoenix2")));
   assert.equal(f.reads(), 2);
   f.expire();
   await f.module.default();
