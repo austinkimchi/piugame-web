@@ -308,6 +308,10 @@ function syntheticDiscordEmail(discordId: string): string {
   return `discord-${discordId}@piugame.local`;
 }
 
+function syntheticGoogleEmail(googleId: string): string {
+  return `google-${createHash("sha256").update(googleId).digest("hex").slice(0, 24)}@piugame.local`;
+}
+
 function syntheticAppleEmail(appleId: string): string {
   return `apple-${createHash("sha256").update(appleId).digest("hex").slice(0, 24)}@piugame.local`;
 }
@@ -480,23 +484,29 @@ export async function upsertGoogleUser(profile: {
   name: string;
   imageUrl: string | null;
 }): Promise<WithId<UserDocument>> {
+  if (profile.emailVerified !== true || !profile.email.trim()) {
+    throw new Error("Google identity email was not verified.");
+  }
   const { users } = await collections();
-  const email = profile.email.toLowerCase();
+  const email = profile.email.trim().toLowerCase();
   const providerIdentity: AuthProviderIdentity = {
     provider: "google",
     providerAccountId: profile.googleId,
     email,
   };
 
-  const existing = await users.findOne({
-    $or: [{ email }, { providers: { $elemMatch: { provider: "google", providerAccountId: profile.googleId } } }],
-  });
+  const [providerOwner, emailOwner] = await Promise.all([
+    users.findOne({ providers: { $elemMatch: { provider: "google", providerAccountId: profile.googleId } } }),
+    users.findOne({ email }),
+  ]);
+  // A verified provider email must not claim an account created with an unverified address.
+  const existing = providerOwner ?? (emailOwner?.emailVerified === true ? emailOwner : null);
 
   if (!existing) {
     const now = new Date();
     const inserted = await users.insertOne({
-      email,
-      emailVerified: profile.emailVerified,
+      email: emailOwner ? syntheticGoogleEmail(profile.googleId) : email,
+      emailVerified: !emailOwner,
       name: profile.name || email,
       username: null,
       usernameLower: null,
@@ -531,24 +541,35 @@ export async function upsertGoogleUser(profile: {
     if (providerOwner && !providerOwner._id.equals(current._id)) {
       throw new Error("That Google account is already linked to another user.");
     }
+    if (!providerOwner && (current.email !== email || current.emailVerified !== true)) {
+      throw new Error("That email is no longer verified for this account.");
+    }
 
-    const hasGoogleProvider = current.providers.some(
-      (provider) => provider.provider === "google" && provider.providerAccountId === profile.googleId,
-    );
+    let accountEmail = current.email;
+    if (current.email === syntheticGoogleEmail(profile.googleId) && !(await lockedUsers.findOne({ email }))) {
+      accountEmail = email;
+    }
+    const providers = [
+      ...current.providers.filter(
+        (provider) => provider.provider !== "google" || provider.providerAccountId !== profile.googleId,
+      ),
+      providerIdentity,
+    ];
     const now = new Date();
     await assertLeaseOwned();
     const updated = await lockedUsers.findOneAndUpdate(
       { _id: current._id },
       {
         $set: {
-          emailVerified: profile.emailVerified,
+          email: accountEmail,
+          emailVerified: accountEmail === email ? true : current.emailVerified,
           name: profile.name || current.name,
           imageUrl: profile.imageUrl ?? current.imageUrl,
           roles: current.roles?.length ? current.roles : ["user"],
+          providers,
           updatedAt: now,
           lastLoginAt: now,
         },
-        ...(hasGoogleProvider ? {} : { $push: { providers: providerIdentity } }),
       },
       { returnDocument: "after" },
     );
@@ -672,10 +693,11 @@ export async function upsertAppleUser(profile: AppleProfile, linkToUserId?: stri
 }
 
 export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: string): Promise<WithId<UserDocument>> {
+  const verifiedEmail = profile.emailVerified === true ? profile.email?.trim().toLowerCase() || null : null;
   const providerIdentity: AuthProviderIdentity = {
     provider: "discord",
     providerAccountId: profile.discordId,
-    email: profile.email ?? undefined,
+    email: verifiedEmail ?? undefined,
     username: profile.username,
   };
   const linkedUserObjectId = linkToUserId ? objectIdFromString(linkToUserId) : null;
@@ -692,23 +714,24 @@ export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: 
         profile,
         providerIdentity,
         loginEmail: null,
+        isExplicitLink: true,
         assertLeaseOwned,
       });
     });
   }
 
   const { users } = await collections();
-  const email = profile.email?.toLowerCase() ?? syntheticDiscordEmail(profile.discordId);
   const providerOwner = await users.findOne({
     providers: { $elemMatch: { provider: "discord", providerAccountId: profile.discordId } },
   });
-  const existing = providerOwner ?? (profile.email ? await users.findOne({ email }) : null);
+  const emailOwner = verifiedEmail ? await users.findOne({ email: verifiedEmail }) : null;
+  const existing = providerOwner ?? (emailOwner?.emailVerified === true ? emailOwner : null);
 
   if (!existing) {
     const now = new Date();
     const inserted = await users.insertOne({
-      email,
-      emailVerified: profile.emailVerified,
+      email: verifiedEmail && !emailOwner ? verifiedEmail : syntheticDiscordEmail(profile.discordId),
+      emailVerified: Boolean(verifiedEmail && !emailOwner),
       name: profile.displayName,
       username: null,
       usernameLower: null,
@@ -740,7 +763,8 @@ export async function upsertDiscordUser(profile: DiscordProfile, linkToUserId?: 
       userId: existing._id,
       profile,
       providerIdentity,
-      loginEmail: email,
+      loginEmail: verifiedEmail,
+      isExplicitLink: false,
       assertLeaseOwned,
     });
   });
@@ -752,9 +776,10 @@ async function updateExistingDiscordUser(args: {
   profile: DiscordProfile;
   providerIdentity: AuthProviderIdentity;
   loginEmail: string | null;
+  isExplicitLink: boolean;
   assertLeaseOwned: () => Promise<void>;
 }): Promise<WithId<UserDocument>> {
-  const { users, userId, profile, providerIdentity, loginEmail, assertLeaseOwned } = args;
+  const { users, userId, profile, providerIdentity, loginEmail, isExplicitLink, assertLeaseOwned } = args;
   await assertLeaseOwned();
   const [existing, providerOwner] = await Promise.all([
     users.findOne({ _id: userId }),
@@ -767,6 +792,15 @@ async function updateExistingDiscordUser(args: {
   }
   if (providerOwner && !providerOwner._id.equals(existing._id)) {
     throw new Error("That Discord account is already linked to another user.");
+  }
+  if (!isExplicitLink && !providerOwner && (!loginEmail || existing.email !== loginEmail || existing.emailVerified !== true)) {
+    throw new Error("That email is no longer verified for this account.");
+  }
+
+  let accountEmail = existing.email;
+  // Promote this provider's placeholder only when no other account owns the verified address.
+  if (loginEmail && existing.email === syntheticDiscordEmail(profile.discordId) && !(await users.findOne({ email: loginEmail }))) {
+    accountEmail = loginEmail;
   }
 
   const priorDiscordUserIds = discordUserIdsForDocument(existing)
@@ -790,9 +824,10 @@ async function updateExistingDiscordUser(args: {
     { _id: existing._id },
     {
       $set: {
-        ...(loginEmail
+        ...(!isExplicitLink
           ? {
-              emailVerified: existing.email === loginEmail ? profile.emailVerified : existing.emailVerified,
+              email: accountEmail,
+              emailVerified: accountEmail === loginEmail ? true : existing.emailVerified,
               name: existing.name || profile.displayName,
             }
           : {}),
@@ -1750,7 +1785,7 @@ function publicRoles(document: WithId<UserDocument>): UserRole[] {
       roles.add("moderator");
     }
   }
-  if (adminEmailSet().has(document.email.toLowerCase())) {
+  if (document.emailVerified === true && adminEmailSet().has(document.email.toLowerCase())) {
     roles.add("admin");
     roles.add("moderator");
   }
