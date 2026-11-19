@@ -94,35 +94,34 @@ class FakeDB {
   }
   listCollections({ name }) { return { toArray: async () => [{ name, info: { uuid: this.uuids[name] }, options: {} }] }; }
   collection(name) {
-    const db = this;
     return {
-      listIndexes: () => ({ toArray: async () => [{ key: { _id: 1 }, unique: true }, ...(db.unique ? [{ key: { songKey: 1, artist: 1 }, unique: true }] : [])] }),
+      listIndexes: () => ({ toArray: async () => [{ key: { _id: 1 }, unique: true }, ...(this.unique ? [{ key: { songKey: 1, artist: 1 }, unique: true }] : [])] }),
       findOne: async (query, options) => {
         // Exercise the real BSON wire decoder with the options passed by the
         // writer, not an EJSON clone that already preserves numeric wrappers.
-        const document = db.documents[name].find(d => matches(d, query));
+        const document = this.documents[name].find(d => matches(d, query));
         return document ? BSON.deserialize(BSON.serialize(document), options) : null;
       },
       insertOne: async (document, options) => {
-        await db.onWrite?.('insert', name, document);
+        await this.onWrite?.('insert', name, document);
         assert.deepEqual(options.writeConcern, { w: 'majority', j: true });
-        if (db.documents[name].some(d => same(d._id, document._id) || (d.songKey === document.songKey && d.artist === document.artist))) throw Object.assign(new Error('duplicate key'), { code: 11000 });
-        db.documents[name].push(copy(document));
-        db.writes.push({ action: 'insert', name, id: document._id });
-        db.acknowledge('insert');
+        if (this.documents[name].some(d => same(d._id, document._id) || (d.songKey === document.songKey && d.artist === document.artist))) throw Object.assign(new Error('duplicate key'), { code: 11000 });
+        this.documents[name].push(copy(document));
+        this.writes.push({ action: 'insert', name, id: document._id });
+        this.acknowledge('insert');
         return { acknowledged: true, insertedId: document._id };
       },
       updateOne: async (query, update, options) => {
-        await db.onWrite?.('update', name, query);
+        await this.onWrite?.('update', name, query);
         assert.equal(options.upsert, false);
         assert.deepEqual(options.writeConcern, { w: 'majority', j: true });
         assert.deepEqual(Object.keys(update), ['$set']);
         assert.deepEqual(Object.keys(update.$set), ['chartHistory']);
-        const document = db.documents[name].find(d => matches(d, query));
+        const document = this.documents[name].find(d => matches(d, query));
         if (!document) return { acknowledged: true, matchedCount: 0, modifiedCount: 0 };
         Object.assign(document, copy(update.$set));
-        db.writes.push({ action: 'update', name, id: document._id });
-        db.acknowledge('update');
+        this.writes.push({ action: 'update', name, id: document._id });
+        this.acknowledge('update');
         return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
       },
     };

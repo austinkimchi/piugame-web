@@ -9,6 +9,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'next.config.*'
+      - 'eslint.config.*'
       - 'tsconfig*.json'
       - '.npmrc'
       - '.nvmrc'
@@ -23,6 +24,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'next.config.*'
+      - 'eslint.config.*'
       - 'tsconfig*.json'
       - '.npmrc'
       - '.nvmrc'
@@ -59,6 +61,8 @@ jobs:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Test
         run: npm test
+      - name: Lint
+        run: npm run lint
       - name: Generate Next.js route types
         run: npx --no-install next typegen
       - name: Check TypeScript
