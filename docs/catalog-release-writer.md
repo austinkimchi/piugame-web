@@ -51,6 +51,10 @@ a durable intent record, an individual acknowledged MongoDB operation with
 `w: majority, j: true`, an after-state check, and a durable result record. Each
 journal save writes a private temporary file, fsyncs it, atomically renames it,
 and fsyncs the parent directory. BSON EJSON retains ObjectIds and other BSON types.
+The client and every document read explicitly disable BSON value/Long promotion,
+request `BSONRegExp`, and retain Binary wrappers. This preserves small Int64 values,
+integral Doubles, regex options, and Binary subtypes before EJSON serialization;
+EJSON alone cannot recover types already promoted to ordinary JavaScript values.
 
 The existing song update uses one atomic compare-and-set covering its identity,
 history, Phoenix 2 availability, and chart links. An indexed `_id` predicate is
@@ -67,8 +71,11 @@ the standalone server; a failure can leave a partially applied release.
 On interruption, inspect the existing journal and resume with the **same exact
 plan, hash, database, and journal path** plus `--resume`. Never create a new journal
 to retry a partially applied release. Do not edit the journal or delete its lock
-file. The kernel lock is released automatically when the owning process dies;
-the persistent lock file itself is harmless.
+file. The writer retains the locked open file description itself. A short-lived
+`flock` utility acquires the lock through an inherited descriptor and exits before
+the write callback starts, so helper death cannot silently unlock active writes.
+The kernel releases the lock when the owning writer closes its descriptor or
+dies; the persistent lock file itself is harmless.
 
 ```sh
 node scripts/catalog-release-write.mjs --plan /secure/catalog-release-plan.json \
@@ -106,7 +113,22 @@ part of an inserted payload are preserved. Review conflicts manually against
 the journal and backups; there is no automatic rollback or journal reset.
 
 The tests inject a fake MongoDB implementation and use temporary local journals.
-They cover partial failures, both crash-after-write windows, BSON identities,
+They cover partial failures, both crash-after-write windows, BSON wire decoding,
 missing-versus-null CAS, relevant and unrelated concurrent edits, collisions,
 collection replacement, duplicate writers, and process-death lock recovery.
 No test connects to production or assumes multi-document transactions.
+
+An optional real-server CAS check is in
+`test/catalog-release-write.integration.test.mjs`. It is skipped by default and
+never starts or downloads a server. Supply a disposable MongoDB **5.0.8** standalone
+on an ephemeral loopback port (the normal port 27017 is refused), with no host data
+mounts. The test creates and drops only its uniquely named scratch database.
+
+```sh
+CATALOG_WRITER_RUN_MONGO_INTEGRATION=1 \
+CATALOG_WRITER_TEST_MONGODB_URI=mongodb://127.0.0.1:EPHEMERAL_PORT \
+node --test test/catalog-release-write.integration.test.mjs
+```
+
+Remove only the dedicated test container and its temporary image afterward;
+never stop or delete another MongoDB service or reuse application credentials.

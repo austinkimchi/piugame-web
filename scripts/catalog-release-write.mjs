@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { planCatalogRelease } from './catalog-release-plan.mjs';
 
 const { EJSON } = BSON;
+export const BSON_READ_OPTIONS = Object.freeze({ promoteValues: false, promoteLongs: false, bsonRegExp: true, promoteBuffers: false });
 const release = JSON.parse(await readFile(new URL('./releases/phoenix2-v1.02.0.json', import.meta.url), 'utf8'));
 const schema = 'piugame-october-release-journal/v2';
 const collections = ['catalog', 'song_catalog_2'];
@@ -15,7 +16,6 @@ const guardedFields = ['_id', 'songKey', 'songName', 'artist', 'chartHistory', '
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const fail = message => { throw new Error(message); };
 const own = (value, field) => Object.hasOwn(value, field);
-const clone = value => EJSON.deserialize(EJSON.serialize(value, { relaxed: false }), { relaxed: false });
 const sorted = value => Array.isArray(value) ? value.map(sorted) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, sorted(value[k])])) : value;
 const canonical = value => JSON.stringify(sorted(EJSON.serialize(value, { relaxed: false })));
 const equal = (a, b) => canonical(a) === canonical(b);
@@ -60,7 +60,7 @@ function fieldState(document, field) {
   return { present: true, value };
 }
 function relevant(document) { return Object.fromEntries(guardedFields.map(f => [f, fieldState(document, f)])); }
-function casFilter(states) {
+export function casFilter(states) {
   const expressions = [];
   for (const [field, state] of Object.entries(states)) {
     // Aggregation field paths can traverse arrays in intermediate positions.
@@ -99,8 +99,8 @@ async function targetIdentity(db) {
 
 async function readInsert(db, operation) {
   const c = db.collection(operation.collection);
-  const byId = await c.findOne({ _id: operation.document._id });
-  const byIdentity = await c.findOne(operation.identity);
+  const byId = await c.findOne({ _id: operation.document._id }, BSON_READ_OPTIONS);
+  const byIdentity = await c.findOne(operation.identity, BSON_READ_OPTIONS);
   if (!byId && !byIdentity) {
     if (operation.phase === 'done') fail(`Completed insert disappeared: ${operation.key}`);
     return { state: 'before', document: null };
@@ -110,7 +110,7 @@ async function readInsert(db, operation) {
 }
 
 async function readUpdate(db, operation) {
-  const document = await db.collection(operation.collection).findOne({ _id: operation.identity._id });
+  const document = await db.collection(operation.collection).findOne({ _id: operation.identity._id }, BSON_READ_OPTIONS);
   if (!document) fail('Hello William disappeared.');
   const observed = relevant(document);
   if (equal(observed, operation.after)) {
@@ -135,7 +135,7 @@ async function prepare(db, parsed, target, idFactory) {
       await readInsert(db, operation);
       operations.push(operation);
     } else {
-      const document = await db.collection(change.collection).findOne({ _id: change.identity._id });
+      const document = await db.collection(change.collection).findOne({ _id: change.identity._id }, BSON_READ_OPTIONS);
       if (!document || document.songKey !== change.identity.songKey || document.artist !== change.identity.artist || !equal(document.chartHistory ?? null, change.before.chartHistory)) fail('Hello William identity/history no longer matches the reviewed before state.');
       if (!document.supportedVersions?.includes('phoenix2') || document.removedFromVersions?.includes('phoenix2') || !document.chartTokensByVersion?.phoenix2?.includes('D20')) fail('Hello William D20 is no longer available in Phoenix 2.');
       const chartId = document.chartLinks?.find(link => link.tokens?.phoenix2 === 'D20')?.id ?? 'phoenix2:D20';
@@ -172,29 +172,19 @@ async function journalExists(filename) {
   } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
-// Linux flock owns an inode, not a removable lock directory. The helper exits on
-// pipe EOF, so a killed parent releases the lock without stale-lock deletion.
+// Linux flock is attached to the shared open file description. The short-lived
+// utility acquires it through inherited fd 3; the parent retains the descriptor
+// throughout the callback. No live helper can die and silently release the lock.
 export async function withJournalLock(filename, callback) {
   const lockfile = `${filename}.lock`;
   const lockHandle = await open(lockfile, 'a', 0o600);
-  await lockHandle.close();
-  const child = spawn('flock', ['--exclusive', '--nonblock', lockfile, process.execPath, '-e', 'process.stdin.resume();process.stdin.on("end",()=>process.exit(0));process.stdout.write("LOCKED\\n");'], { stdio: ['pipe', 'pipe', 'pipe'] });
-  child.stdin.on('error', () => {}); // A failed lock helper can close this pipe first.
-  let acquired = false;
   try {
-    await new Promise((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', () => reject(new Error('Another writer holds the journal lock, or flock is unavailable.')));
-      child.stdout.once('data', data => {
-        if (data.toString().trim() === 'LOCKED') { acquired = true; resolve(); }
-        else reject(new Error('Unexpected flock helper response.'));
-      });
-    });
+    const child = spawn('flock', ['--exclusive', '--nonblock', '3'], { stdio: ['ignore', 'ignore', 'pipe', lockHandle.fd] });
+    child.stderr.resume();
+    const [code, signal] = await once(child, 'exit');
+    if (code !== 0 || signal) fail('Another writer holds the journal lock, or flock could not acquire it.');
     return await callback();
-  } finally {
-    child.stdin.end();
-    if (acquired && child.exitCode === null) await once(child, 'exit');
-  }
+  } finally { await lockHandle.close(); }
 }
 
 function validateResume(journal, parsed, target) {
@@ -307,7 +297,7 @@ async function cli() {
     if (directory === repository || directory.startsWith(repository + path.sep)) fail('Journal must stay outside the Git checkout.');
     options['--journal'] = path.join(directory, path.basename(options['--journal']));
   }
-  const client = new MongoClient(process.env.CATALOG_RELEASE_MONGODB_URI, { directConnection: true, retryWrites: false, readPreference: 'primary', serverSelectionTimeoutMS: 10000 });
+  const client = new MongoClient(process.env.CATALOG_RELEASE_MONGODB_URI, { ...BSON_READ_OPTIONS, directConnection: true, retryWrites: false, readPreference: 'primary', serverSelectionTimeoutMS: 10000 });
   try {
     await client.connect();
     console.log(JSON.stringify(await executeRelease({ db: client.db(options['--database']), planBytes, reviewedHash: options['--reviewed-sha256'], journalPath: options['--journal'], apply: !!options['--apply'], resume: !!options['--resume'] })));

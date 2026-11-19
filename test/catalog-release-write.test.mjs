@@ -8,7 +8,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createHash } from 'node:crypto';
 import { planCatalogRelease } from '../scripts/catalog-release-plan.mjs';
-import { executeRelease, parsePlan, withJournalLock } from '../scripts/catalog-release-write.mjs';
+import { BSON_READ_OPTIONS, executeRelease, parsePlan, withJournalLock } from '../scripts/catalog-release-write.mjs';
 
 const { EJSON } = BSON;
 const release = JSON.parse(await readFile(new URL('../scripts/releases/phoenix2-v1.02.0.json', import.meta.url), 'utf8'));
@@ -97,7 +97,12 @@ class FakeDB {
     const db = this;
     return {
       listIndexes: () => ({ toArray: async () => [{ key: { _id: 1 }, unique: true }, ...(db.unique ? [{ key: { songKey: 1, artist: 1 }, unique: true }] : [])] }),
-      findOne: async query => copy(db.documents[name].find(d => matches(d, query)) ?? null),
+      findOne: async (query, options) => {
+        // Exercise the real BSON wire decoder with the options passed by the
+        // writer, not an EJSON clone that already preserves numeric wrappers.
+        const document = db.documents[name].find(d => matches(d, query));
+        return document ? BSON.deserialize(BSON.serialize(document), options) : null;
+      },
       insertOne: async (document, options) => {
         await db.onWrite?.('insert', name, document);
         assert.deepEqual(options.writeConcern, { w: 'majority', j: true });
@@ -132,7 +137,9 @@ async function fixture(t, extra = {}) {
     _id: new ObjectId(), songKey: 'Hello William', songName: 'Hello William', artist: 'Banya Production',
     supportedVersions: ['phoenix', 'phoenix2'], removedFromVersions: [], chartTokensByVersion: { phoenix: ['D20'], phoenix2: ['D20'] },
     audioPath: 'manual/precisely-aligned.wav', tags: ['curated'], folderPosition: 17,
-    chartsFull: [{ mode: 'D', level: '20', links: [{ url: 'curated-chart-link' }] }], unrelatedBson: BSON.Long.fromString('9223372036854775807'), ...extra,
+    chartsFull: [{ mode: 'D', level: '20', links: [{ url: 'curated-chart-link' }] }],
+    smallLong: BSON.Long.fromNumber(17), integralDouble: new BSON.Double(2), bsonRegex: new BSON.BSONRegExp('^chart', 'imx'),
+    binary: new BSON.Binary(Buffer.from([1, 2, 3]), BSON.Binary.SUBTYPE_USER_DEFINED), ...extra,
   };
   db.documents.catalog.push(copy(hello));
   db.durableDocuments = copy(db.documents);
@@ -151,6 +158,22 @@ test('EJSON retains ObjectIds and rejects altered manifests, arbitrary setters a
     const changed = copy(f.plan); edit(changed);
     assert.throws(() => parsePlan(Buffer.from(serialize(changed))));
   }
+});
+
+test('BSON wire reads retain small Long, integral Double, regex options, and Binary subtype', () => {
+  const document = { smallLong: BSON.Long.fromNumber(17), integralDouble: new BSON.Double(2), regex: new BSON.BSONRegExp('^chart', 'imx'), binary: new BSON.Binary(Buffer.from([1, 2, 3]), BSON.Binary.SUBTYPE_USER_DEFINED) };
+  const wire = BSON.serialize(document);
+  const promoted = BSON.deserialize(wire);
+  assert.equal(promoted.smallLong, 17);
+  assert.equal(promoted.integralDouble, 2);
+  assert.ok(promoted.regex instanceof RegExp);
+  assert.equal(BSON.serialize(promoted).equals(wire), false, 'Default promotion cannot produce a lossless audit.');
+  const decoded = BSON.deserialize(wire, BSON_READ_OPTIONS);
+  assert.ok(decoded.smallLong instanceof BSON.Long);
+  assert.ok(decoded.integralDouble instanceof BSON.Double);
+  assert.ok(decoded.regex instanceof BSON.BSONRegExp);
+  assert.ok(decoded.binary instanceof BSON.Binary);
+  assert.equal(BSON.serialize(decoded).equals(wire), true);
 });
 
 test('default and read-only preflight never write a database or journal', async t => {
@@ -194,7 +217,15 @@ test('durable IDs and before/after audit precede writes; only one existing field
   assert.equal(operation.after.chartHistory.present, true);
   const { chartHistory, ...unchanged } = f.db.documents.catalog[0];
   assert.equal(chartHistory.length, 1); assert.ok(same(unchanged, before));
-  assert.ok(operation.audits.at(-1).afterDocument.unrelatedBson instanceof BSON.Long);
+  for (const auditDocument of [operation.beforeDocument, operation.audits.at(-1).afterDocument]) {
+    assert.ok(auditDocument.smallLong instanceof BSON.Long);
+    assert.equal(auditDocument.smallLong.toString(), '17');
+    assert.ok(auditDocument.integralDouble instanceof BSON.Double);
+    assert.equal(auditDocument.integralDouble.valueOf(), 2);
+    assert.ok(auditDocument.bsonRegex instanceof BSON.BSONRegExp);
+    assert.equal(auditDocument.bsonRegex.options, 'imx');
+    assert.equal(auditDocument.binary.sub_type, BSON.Binary.SUBTYPE_USER_DEFINED);
+  }
   assert.equal((await executeRelease({ ...f.options, resume: true })).phase, 'complete');
   assert.equal(f.db.writes.length, 43);
 });
@@ -363,13 +394,13 @@ test('resume refuses collection replacement or changed plan bytes before further
   assert.equal(f.db.writes.length, 0);
 });
 
-test('journal lock excludes another writer and recovers automatically after process death', async t => {
+test('parent-owned lock survives flock utility exit and releases on parent process death', async t => {
   const f = await fixture(t);
   await withJournalLock(f.journalPath, async () => {
     await assert.rejects(withJournalLock(f.journalPath, () => assert.fail('second writer entered')), /lock/);
   });
   const moduleUrl = new URL('../scripts/catalog-release-write.mjs', import.meta.url).href;
-  const script = `import {withJournalLock} from ${JSON.stringify(moduleUrl)}; await withJournalLock(${JSON.stringify(f.journalPath)},async()=>{console.log('HOLDING');await new Promise(()=>{});});`;
+  const script = `import {withJournalLock} from ${JSON.stringify(moduleUrl)}; await withJournalLock(${JSON.stringify(f.journalPath)},async()=>{console.log('HOLDING');setInterval(()=>{},1000);await new Promise(()=>{});});`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(() => child.kill('SIGKILL'));
   await once(child.stdout, 'data');
