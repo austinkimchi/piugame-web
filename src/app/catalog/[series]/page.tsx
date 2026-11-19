@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 import { AccountBar } from "@/components/account-bar";
 import { HomeHero } from "@/components/home-hero";
 import { SongExplorer } from "@/components/song-explorer";
-import { getCurrentUser, getFavoriteSongSlugSet, isAdmin } from "@/lib/auth";
-import { getCatalogFilterOptions, searchSongs } from "@/lib/catalog";
+import { getCurrentUser, getAllFavoriteSongSlugs, isAdmin } from "@/lib/auth";
+import { getCatalogPage } from "@/lib/catalog-page";
+import { queryCatalog } from "@/lib/catalog-client-query";
+import { catalogFavoriteSlugs } from "@/lib/catalog-private-overlay";
 import { DEFAULT_CATALOG_SERIES, piuSeriesFromSlug, REMOVED_FROM_PHOENIX2_SLUG } from "@/lib/catalog-version";
-import { addChartRecommendationsToSongs } from "@/lib/performance";
+import { getCatalogChartRecommendations } from "@/lib/performance";
 import { performanceVersionForCatalog } from "@/lib/piu-version";
 
 export const runtime = "nodejs";
@@ -26,22 +28,20 @@ export default async function CatalogSeriesPage({ params }: CatalogSeriesPagePro
 
   const supportedVersion = series?.id ?? DEFAULT_CATALOG_SERIES;
   const removedFromVersion = removedFromPhoenix2 ? DEFAULT_CATALOG_SERIES : undefined;
-  const [result, filterOptions, user] = await Promise.all([
-    searchSongs({
-      query: "",
-      charts: ["singles"],
-      supportedVersion,
-      removedFromVersion,
-      sortBy: "series",
-      sortDirection: "desc",
-    }),
-    getCatalogFilterOptions(supportedVersion, {}, undefined, removedFromVersion),
+  const [catalogPage, user] = await Promise.all([
+    getCatalogPage(supportedVersion, { removed: removedFromPhoenix2 }),
     getCurrentUser(),
   ]);
   const performanceVersion = performanceVersionForCatalog(supportedVersion, removedFromVersion);
-  const recommendedSongs = await addChartRecommendationsToSongs(user?.id ?? null, performanceVersion, result.songs, ["S"]);
-  const favoriteSlugs = await getFavoriteSongSlugSet(user, recommendedSongs.map((song) => song.slug));
-  const songsWithFavorites = recommendedSongs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) }));
+  const songs = catalogPage.songs;
+  const [chartRecommendations, storedFavoriteSlugs] = await Promise.all([
+    getCatalogChartRecommendations(user?.id ?? null, performanceVersion, songs),
+    getAllFavoriteSongSlugs(user),
+  ]);
+  const favoriteSlugs = catalogFavoriteSlugs(songs, storedFavoriteSlugs);
+  const initialSortBy = user?.preferences.songExplorerSortBy ?? "series";
+  const initialSortDirection = user?.preferences.songExplorerSortDirection ?? "desc";
+  const sortedSongs = queryCatalog(songs, { query: "", charts: ["singles"], sortBy: initialSortBy, sortDirection: initialSortDirection });
   return (
     <main className="min-h-screen bg-[#f7f8f2] text-[#171916]">
       <HomeHero accountSlot={<AccountBar />} />
@@ -49,16 +49,17 @@ export default async function CatalogSeriesPage({ params }: CatalogSeriesPagePro
         canFavorite={Boolean(user)}
         communityUser={user}
         catalogVersion={supportedVersion}
-        featureSong={songsWithFavorites[0] ?? null}
-        filterOptions={filterOptions}
+        featureSong={sortedSongs.songs[0] ?? null}
+        filterOptions={catalogPage.filterOptions}
+        localCatalogPreview={catalogPage.localPreview}
+        initialFavoriteSlugs={[...favoriteSlugs]}
+        chartRecommendations={chartRecommendations}
         initialFavoritesFirst={user?.preferences.songExplorerFavoritesFirst ?? false}
-        initialNextCursor={result.nextCursor}
         initialPreviewMuted={user?.preferences.songPreviewMuted ?? true}
         initialPreviewVolume={user?.preferences.songPreviewVolume ?? 0.5}
-        initialSortBy={user?.preferences.songExplorerSortBy ?? "series"}
-        initialSortDirection={user?.preferences.songExplorerSortDirection ?? "desc"}
-        initialSongs={songsWithFavorites}
-        initialTotalResults={result.total}
+        initialSortBy={initialSortBy}
+        initialSortDirection={initialSortDirection}
+        initialSongs={songs}
         removedFromVersion={removedFromVersion}
         showLanding={false}
         userIsAdmin={isAdmin(user)}

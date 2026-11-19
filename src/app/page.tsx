@@ -3,10 +3,12 @@ import { HomeHero } from "@/components/home-hero";
 import { HomePerformanceRefresh } from "@/components/home-performance-refresh";
 import { HomePerformanceSummary } from "@/components/home-performance-summary";
 import { SongExplorer } from "@/components/song-explorer";
-import { getAllFavoriteSongSlugs, getCurrentUser, getFavoriteSongSlugSet, isAdmin } from "@/lib/auth";
-import { getSongBySlug, searchSongs } from "@/lib/catalog";
+import { getAllFavoriteSongSlugs, getCurrentUser, isAdmin } from "@/lib/auth";
+import { getCatalogPage } from "@/lib/catalog-page";
+import { queryCatalog } from "@/lib/catalog-client-query";
+import { catalogFavoriteSlugs } from "@/lib/catalog-private-overlay";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
-import { addChartRecommendationsToSongs, getPerformanceDashboard } from "@/lib/performance";
+import { getCatalogChartRecommendations, getPerformanceDashboard } from "@/lib/performance";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 
 export const runtime = "nodejs";
@@ -20,25 +22,18 @@ export default async function Home() {
   const initialSortBy = user?.preferences.songExplorerSortBy ?? "series";
   const initialSortDirection = user?.preferences.songExplorerSortDirection ?? "desc";
   const initialFavoritesFirst = user?.preferences.songExplorerFavoritesFirst ?? false;
-  const favoriteSlugsForSort = initialFavoritesFirst ? await getAllFavoriteSongSlugs(user) : undefined;
-  const [catalogSearch, featuredSong, performance] = await Promise.all([
-    searchSongs({
-      query: "",
-      charts: ["singles"],
-      sortBy: initialSortBy,
-      sortDirection: initialSortDirection,
-      favoriteSlugs: favoriteSlugsForSort,
-      supportedVersion: catalogVersion,
-    }),
-    getSongBySlug(FEATURED_SHOWCASE_SONG_SLUG),
+  const [catalogPage, performance, storedFavoriteSlugs] = await Promise.all([
+    getCatalogPage(catalogVersion),
     getPerformanceDashboard(user?.id ?? null),
+    getAllFavoriteSongSlugs(user),
   ]);
-  const songs = await addChartRecommendationsToSongs(user?.id ?? null, catalogVersion, catalogSearch.songs, ["S"]);
-  const filterOptions = catalogSearch.filterOptions;
-  const favoriteSlugs = await getFavoriteSongSlugSet(user, songs.map((song) => song.slug));
-  const songsWithFavorites = songs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) }));
+  const songs = catalogPage.songs;
+  const favoriteSlugs = catalogFavoriteSlugs(songs, storedFavoriteSlugs);
+  const featuredSong = songs.find((song) => song.slug === FEATURED_SHOWCASE_SONG_SLUG);
+  const chartRecommendations = await getCatalogChartRecommendations(user?.id ?? null, catalogVersion, songs);
+  const sortedSongs = queryCatalog(songs, { query: "", charts: ["singles"], sortBy: initialSortBy, sortDirection: initialSortDirection });
   const catalog = piuSeriesMetadata(catalogVersion);
-  const catalogFeatureSong = featuredSong?.supportedVersions.includes(catalogVersion) ? featuredSong : songsWithFavorites[0] ?? null;
+  const catalogFeatureSong = featuredSong?.supportedVersions.includes(catalogVersion) ? featuredSong : sortedSongs.songs[0] ?? null;
 
   return (
     <main className="min-h-screen bg-[#f7f8f2] text-[#171916]">
@@ -64,15 +59,16 @@ export default async function Home() {
         communityUser={user}
         catalogVersion={catalogVersion}
         featureSong={catalogFeatureSong}
-        filterOptions={filterOptions}
+        filterOptions={catalogPage.filterOptions}
+        localCatalogPreview={catalogPage.localPreview}
+        initialFavoriteSlugs={[...favoriteSlugs]}
+        chartRecommendations={chartRecommendations}
         initialPreviewMuted={user?.preferences.songPreviewMuted ?? true}
         initialPreviewVolume={user?.preferences.songPreviewVolume ?? 0.5}
         initialFavoritesFirst={initialFavoritesFirst}
-        initialNextCursor={catalogSearch.nextCursor}
         initialSortBy={initialSortBy}
         initialSortDirection={initialSortDirection}
-        initialSongs={songsWithFavorites}
-        initialTotalResults={catalogSearch.total}
+        initialSongs={songs}
         key={catalogVersion}
         guestPerformanceSummary={
           !user

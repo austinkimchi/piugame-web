@@ -5,16 +5,21 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CatalogAdminEditor } from "@/components/catalog-admin-editor";
+import { CatalogSongGrid } from "@/components/catalog-song-grid";
 import { GuestFeatureShowcase } from "@/components/guest-feature-showcase";
 import { HomePerformanceSummary } from "@/components/home-performance-summary";
 import { SongCard } from "@/components/song-card";
 import { SongDetailView } from "@/components/song-detail-view";
 import type { PublicUser, SongCommunityState } from "@/lib/auth";
 import { catalogFilterOptionsForSelection } from "@/lib/catalog-filter-options";
+import { queryCatalog } from "@/lib/catalog-client-query";
+import { catalogCommunitySlug, catalogFavoriteSlugs, updateCatalogFavoriteSlugs } from "@/lib/catalog-private-overlay";
+import { chartRecommendationModeKey, type CatalogChartRecommendations } from "@/lib/chart-recommendation";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
 import { canLoadMoreSongs } from "@/lib/song-pagination";
 import { performanceVersionForCatalog } from "@/lib/piu-version";
 import { confirmPreviewMediaFailure, isPreviewUnavailable } from "@/lib/preview-availability";
+import type { PublicCatalogSnapshot } from "@/lib/public-catalog-types";
 import type { CatalogFilterOptions, LevelFilterMode, PiuSeriesId, PublicSong, SongSortOption, SortDirection } from "@/lib/types";
 
 interface SearchResponse {
@@ -26,7 +31,10 @@ interface SearchResponse {
 }
 
 interface SongExplorerProps {
-  initialSongs: PublicSong[];
+  initialSongs: Array<PublicSong & { songKey?: string }>;
+  initialFavoriteSlugs: string[];
+  chartRecommendations: CatalogChartRecommendations;
+  localCatalogPreview?: boolean;
   featureSong: PublicSong | null;
   filterOptions: CatalogFilterOptions;
   canFavorite: boolean;
@@ -35,8 +43,6 @@ interface SongExplorerProps {
   initialSortBy: SongSortOption;
   initialSortDirection: SortDirection;
   initialFavoritesFirst: boolean;
-  initialNextCursor?: string | null;
-  initialTotalResults?: number;
   guestPerformanceSummary?: {
     averageBestScore: number | null;
     averageBestScoreChange24Hours: number | null;
@@ -72,6 +78,7 @@ const SORT_OPTIONS: Array<{ value: SongSortOption; label: string }> = [
   { value: "folder", label: "Folder" },
 ];
 const SEARCH_HASH = "#search";
+const NO_CHART_FILTERS: string[] = [];
 const NOTEBOOK_RESIZE_HANDLE_SIZE = 40;
 const NOTEBOOK_SIZE_STORAGE_KEY = "mypiu-song-notebook-size:v2";
 const PREVIEW_FADE_IN_MS = 50;
@@ -104,6 +111,9 @@ interface PreviewVoice {
 
 export function SongExplorer({
   initialSongs,
+  initialFavoriteSlugs,
+  chartRecommendations,
+  localCatalogPreview = false,
   featureSong,
   filterOptions,
   canFavorite,
@@ -112,8 +122,6 @@ export function SongExplorer({
   initialSortBy,
   initialSortDirection,
   initialFavoritesFirst,
-  initialNextCursor = null,
-  initialTotalResults = initialSongs.length,
   guestPerformanceSummary,
   userIsAdmin,
   communityUser = null,
@@ -121,13 +129,20 @@ export function SongExplorer({
   removedFromVersion,
   showLanding = true,
 }: SongExplorerProps) {
+  const defaultCharts = localCatalogPreview ? NO_CHART_FILTERS : DEFAULT_FILTERS.charts;
   const searchSectionRef = useRef<HTMLElement | null>(null);
+  const catalogSongsRef = useRef(initialSongs);
+  const acceptedInitialSongsRef = useRef(initialSongs);
+  const catalogFilterOptionsRef = useRef(filterOptions);
+  const favoriteSlugsRef = useRef(new Set(initialFavoriteSlugs));
+  const snapshotRequestRef = useRef<AbortController | null>(null);
+  const snapshotCheckedAtRef = useRef(0);
   const songsRef = useRef(initialSongs);
   const filterPanelRef = useRef<HTMLElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const selectedFiltersRef = useRef<Record<FilterKey, string[]>>({
     ...DEFAULT_FILTERS,
-    charts: [...DEFAULT_FILTERS.charts],
+    charts: [...defaultCharts],
   });
   const levelModeRef = useRef<LevelFilterMode>("and");
   const sortByRef = useRef<SongSortOption>(initialSortBy);
@@ -157,14 +172,19 @@ export function SongExplorer({
   const searchPlaceholder = `Search ${piuSeriesMetadata(catalogVersion).label.toUpperCase()}'s title, artists, folder, tag, series, or chart.`;
   const [selectedFilters, setSelectedFilters] = useState<Record<FilterKey, string[]>>({
     ...DEFAULT_FILTERS,
-    charts: [...DEFAULT_FILTERS.charts],
+    charts: [...defaultCharts],
   });
-  const [songs, setSongs] = useState<PublicSong[]>(initialSongs);
+  const initialResult = useMemo(() => queryCatalog(initialSongs, {
+    query: "", charts: defaultCharts, levelMode: "and", sortBy: initialSortBy, sortDirection: initialSortDirection,
+    favoriteSlugs: initialFavoritesFirst ? new Set(initialFavoriteSlugs) : undefined,
+  }), [initialSongs, initialSortBy, initialSortDirection, initialFavoritesFirst, initialFavoriteSlugs, defaultCharts]);
+  const [songs, setSongs] = useState<PublicSong[]>(() => decorateCatalogSongs(initialResult.songs, new Set(initialFavoriteSlugs), chartRecommendations, defaultCharts));
   const [favoriteSlugs, setFavoriteSlugs] = useState<Set<string>>(
-    () => new Set(initialSongs.filter((song) => song.isFavorite).map((song) => song.slug)),
+    () => new Set(initialFavoriteSlugs),
   );
-  const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
-  const [totalResults, setTotalResults] = useState(initialTotalResults);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [totalResults, setTotalResults] = useState(initialResult.songs.length);
+  const [displayingPrivateFeed, setDisplayingPrivateFeed] = useState(false);
   const [status, setStatus] = useState("");
   const [loadingMode, setLoadingMode] = useState<LoadingMode>(null);
   const [resultBatch, setResultBatch] = useState(0);
@@ -185,15 +205,15 @@ export function SongExplorer({
   const canResetFilters = useMemo(
     () =>
       (Object.keys(DEFAULT_FILTERS) as FilterKey[]).some((key) => {
-        const defaultValues = DEFAULT_FILTERS[key];
+        const defaultValues = key === "charts" ? defaultCharts : DEFAULT_FILTERS[key];
         const selectedValues = selectedFilters[key];
         return selectedValues.length !== defaultValues.length || selectedValues.some((value) => !defaultValues.includes(value));
       }),
-    [selectedFilters],
+    [selectedFilters, defaultCharts],
   );
   const favoritedInitialSongs = useMemo(
-    () => initialSongs.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
-    [favoriteSlugs, initialSongs],
+    () => decorateCatalogSongs(initialResult.songs.slice(0, 24), favoriteSlugs, chartRecommendations, defaultCharts),
+    [favoriteSlugs, initialResult.songs, chartRecommendations, defaultCharts],
   );
   const previewMuted = preferredPreviewMuted;
   const previewEnabled = !previewMuted;
@@ -284,6 +304,24 @@ export function SongExplorer({
       const requestId = searchRequestIdRef.current + 1;
       searchRequestIdRef.current = requestId;
       searchAbortControllerRef.current?.abort();
+      if (!isPrivateCatalogQuery(searchQuery)) {
+        searchAbortControllerRef.current = null;
+        appendSearchRef.current = false;
+        lastAutoLoadedCursorRef.current = null;
+        const result = queryCatalog(catalogSongsRef.current, {
+          query: searchQuery, ...filters, levelMode: mode, sortBy: sort, sortDirection: direction,
+          favoriteSlugs: preferFavorites ? favoriteSlugsRef.current : undefined,
+        });
+        setSongs(decorateCatalogSongs(result.songs, favoriteSlugsRef.current, chartRecommendations, filters.charts));
+        setFavoriteSlugs(favoriteSlugsRef.current);
+        setCompatibleFilterOptions(catalogFilterOptionsForSelection(result.filterOptions, catalogFilterOptionsRef.current, filters));
+        setTotalResults(result.songs.length);
+        setNextCursor(null);
+        setDisplayingPrivateFeed(false);
+        setLoadingMode(null);
+        setStatus(result.songs.length ? "" : "No songs matched those filters.");
+        return;
+      }
       const controller = new AbortController();
       searchAbortControllerRef.current = controller;
 
@@ -324,20 +362,21 @@ export function SongExplorer({
         if (!recentUnchanged) {
           setSongs((current) => (cursor ? [...current, ...body.songs] : body.songs));
         }
+        setDisplayingPrivateFeed(true);
         setFavoriteSlugs((current) => {
-          const next = new Set(current);
+          let next = new Set(current);
           for (const song of body.songs) {
-            if (song.isFavorite) next.add(song.slug);
-            else next.delete(song.slug);
+            next = updateCatalogFavoriteSlugs(next, catalogSongsRef.current, song.slug, Boolean(song.isFavorite));
           }
+          favoriteSlugsRef.current = next;
           return next;
         });
         if (!cursor && !recentUnchanged) {
           setResultBatch((current) => current + 1);
           setCompatibleFilterOptions(
             isSpecialFeedQuery
-              ? filterOptions
-              : catalogFilterOptionsForSelection(body.filterOptions, filterOptions, requestFilters),
+              ? catalogFilterOptionsRef.current
+              : catalogFilterOptionsForSelection(body.filterOptions, catalogFilterOptionsRef.current, requestFilters),
           );
         }
         setNextCursor(body.nextCursor);
@@ -361,10 +400,56 @@ export function SongExplorer({
         setLoadingMode(null);
       }
     },
-    [endpoint, filterOptions],
+    [endpoint, chartRecommendations],
   );
 
+  useEffect(() => {
+    // A router refresh after account/performance changes supplies a new private
+    // overlay and snapshot; retain the user's current query and filter controls.
+    if (acceptedInitialSongsRef.current === initialSongs) return;
+    acceptedInitialSongsRef.current = initialSongs;
+    catalogSongsRef.current = initialSongs;
+    catalogFilterOptionsRef.current = filterOptions;
+    favoriteSlugsRef.current = new Set(initialFavoriteSlugs);
+    void runSearch(queryRef.current);
+  }, [initialSongs, initialFavoriteSlugs, filterOptions, runSearch]);
+
+  const refreshCatalog = useCallback(async () => {
+    if (localCatalogPreview) return;
+    snapshotRequestRef.current?.abort();
+    const controller = new AbortController();
+    snapshotRequestRef.current = controller;
+    snapshotCheckedAtRef.current = Date.now();
+    try {
+      const response = await fetch(`/api/catalog/v1/${catalogVersion}${removedFromVersion ? "?removed=1" : ""}`, { credentials: "omit", signal: controller.signal });
+      if (!response.ok) return;
+      const snapshot = await response.json() as PublicCatalogSnapshot;
+      if (controller.signal.aborted || snapshot.schemaVersion !== 1 || snapshot.selectedVersion !== catalogVersion || snapshot.view !== (removedFromVersion ? "removed" : "supported") || snapshot.total !== snapshot.songs.length) return;
+      catalogSongsRef.current = snapshot.songs.map((song) => ({ ...song, audioPath: null }));
+      favoriteSlugsRef.current = catalogFavoriteSlugs(catalogSongsRef.current, favoriteSlugsRef.current);
+      catalogFilterOptionsRef.current = snapshot.filterOptions;
+      if (!isPrivateCatalogQuery(queryRef.current)) void runSearch(queryRef.current);
+    } catch {
+      // Keep the already loaded complete catalog during a transient refresh failure.
+    } finally {
+      if (snapshotRequestRef.current === controller) snapshotRequestRef.current = null;
+    }
+  }, [catalogVersion, removedFromVersion, runSearch, localCatalogPreview]);
+
+  useEffect(() => {
+    if (snapshotCheckedAtRef.current === 0) snapshotCheckedAtRef.current = Date.now();
+    const refreshOnReturn = () => {
+      if (Date.now() - snapshotCheckedAtRef.current >= 30_000) void refreshCatalog();
+    };
+    window.addEventListener("focus", refreshOnReturn);
+    return () => {
+      window.removeEventListener("focus", refreshOnReturn);
+      snapshotRequestRef.current?.abort();
+    };
+  }, [refreshCatalog]);
+
   const loadNextPage = useCallback(() => {
+    if (!isPrivateCatalogQuery(queryRef.current)) return;
     if (!canLoadMoreSongs({
       appendInFlight: appendSearchRef.current,
       loading: searchAbortControllerRef.current !== null,
@@ -448,18 +533,13 @@ export function SongExplorer({
   }, []);
 
   const updateSongFavorite = useCallback((songSlug: string, isFavorite: boolean) => {
-    setFavoriteSlugs((current) => {
-      const next = new Set(current);
-      if (isFavorite) {
-        next.add(songSlug);
-      } else {
-        next.delete(songSlug);
-      }
-      return next;
-    });
-    setSongs((current) => current.map((song) => (song.slug === songSlug ? { ...song, isFavorite } : song)));
-    setOpenSong((current) => (current?.slug === songSlug ? { ...current, isFavorite } : current));
-  }, []);
+    const next = updateCatalogFavoriteSlugs(favoriteSlugsRef.current, catalogSongsRef.current, songSlug, isFavorite);
+    favoriteSlugsRef.current = next;
+    setFavoriteSlugs(next);
+    if (isPrivateCatalogQuery(queryRef.current)) setSongs((current) => current.map((song) => ({ ...song, isFavorite: next.has(song.slug) })));
+    else void runSearch(queryRef.current);
+    setOpenSong((current) => current ? { ...current, isFavorite: next.has(current.slug) } : current);
+  }, [runSearch]);
 
   const toggleFavorite = useCallback(
     async (song: PublicSong) => {
@@ -497,7 +577,19 @@ export function SongExplorer({
   const handleCatalogSongSaved = useCallback(
     (updatedSong: PublicSong) => {
       const previousSlug = openSong?.slug;
+      catalogSongsRef.current = catalogSongsRef.current.map((song) => {
+        if (song.slug !== previousSlug && catalogCommunitySlug(song) !== updatedSong.slug) return song;
+        // Admin responses retain community storage identity. Keep the public
+        // source-version identity until the fresh snapshot replaces this copy.
+        const slug = song.version === "phoenix" ? updatedSong.slug.replace(/-phoenix2$/, "-phoenix") : updatedSong.slug;
+        return { ...updatedSong, slug, version: song.version, songKey: song.songKey };
+      });
       setOpenSong(updatedSong);
+      void refreshCatalog();
+      if (!isPrivateCatalogQuery(queryRef.current)) {
+        void runSearch(queryRef.current);
+        return;
+      }
       setSongs((current) =>
         current.map((song) =>
           song.slug === previousSlug || song.slug === updatedSong.slug
@@ -506,7 +598,7 @@ export function SongExplorer({
         ),
       );
     },
-    [favoriteSlugs, openSong?.slug],
+    [favoriteSlugs, openSong?.slug, runSearch, refreshCatalog],
   );
 
   const removePreviewVoice = useCallback((voice: PreviewVoice) => {
@@ -835,6 +927,10 @@ export function SongExplorer({
       return;
     }
     hasSearchedQueryRef.current = true;
+    if (!isPrivateCatalogQuery(query)) {
+      void runSearch(query, null, selectedFiltersRef.current, levelModeRef.current, sortByRef.current, sortDirectionRef.current, favoritesFirstRef.current);
+      return;
+    }
     const timeout = window.setTimeout(() => {
       void runSearch(query, null, selectedFiltersRef.current, levelModeRef.current, sortByRef.current, sortDirectionRef.current, favoritesFirstRef.current);
     }, 260);
@@ -980,9 +1076,8 @@ export function SongExplorer({
   }
 
   function clearFilters() {
-    const nextFilters = { ...DEFAULT_FILTERS, charts: isRecentSearch ? [] : [...DEFAULT_FILTERS.charts] };
-    setCompatibleFilterOptions(filterOptions);
-    setTotalResults(initialSongs.length);
+    const nextFilters = { ...DEFAULT_FILTERS, charts: isRecentSearch ? [] : [...defaultCharts] };
+    setCompatibleFilterOptions(catalogFilterOptionsRef.current);
     setLevelMode("and");
     setSelectedFilters(nextFilters);
     void runSearch(query, null, nextFilters, "and");
@@ -1068,6 +1163,7 @@ export function SongExplorer({
         viewport={{ once: true, amount: 0.08 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       >
+        {localCatalogPreview ? <p className="mx-auto max-w-7xl px-5 pt-6 text-sm text-[#697362]" role="status">Limited local jacket preview. Connect a development database to load catalog metadata.</p> : null}
         <div className="mx-auto grid max-w-7xl gap-5 px-5 py-8 sm:px-8 lg:grid-cols-[260px_minmax(0,1fr)] lg:px-10">
           <motion.aside
             ref={filterPanelRef}
@@ -1263,7 +1359,19 @@ export function SongExplorer({
             </div>
 
             <div className="relative min-h-[520px]">
-              <motion.div
+              {!displayingPrivateFeed ? (
+                <CatalogSongGrid songs={songs} renderSong={(song) => (
+                  <SongCard
+                    onOpen={openSongDetail}
+                    isPreviewActive={Boolean(song.previewUrl && activePreviewUrl === song.previewUrl)}
+                    previewEnabled={previewEnabled}
+                    onPreviewStart={playSongPreview}
+                    onPreviewStop={() => stopSongPreview(song.previewUrl)}
+                    song={song}
+                    animateEntry={false}
+                  />
+                )} />
+              ) : <motion.div
                 key={`songs-${resultBatch}`}
                 className="grid grid-cols-3 gap-0 md:gap-3 md:grid-cols-4 xl:grid-cols-5"
                 initial={{ opacity: 0, y: 10 }}
@@ -1285,7 +1393,7 @@ export function SongExplorer({
                   />
                 ))}
                 {loadingMode === "append" ? <SongSkeletonGrid count={5} /> : null}
-              </motion.div>
+              </motion.div>}
 
               <AnimatePresence>
                 {loadingMode === "replace" ? (
@@ -1354,6 +1462,18 @@ export function SongExplorer({
       />
     </MotionConfig>
   );
+}
+
+function isPrivateCatalogQuery(query: string): boolean {
+  return ["recent", "recommendation", "favorites"].includes(query.trim().toLowerCase());
+}
+
+function decorateCatalogSongs(songs: PublicSong[], favorites: ReadonlySet<string>, recommendations: CatalogChartRecommendations, charts: string[]): PublicSong[] {
+  const mode = chartRecommendationModeKey(charts);
+  return songs.map((song) => {
+    const token = recommendations[song.slug]?.[mode] ?? null;
+    return { ...song, isFavorite: favorites.has(song.slug), recommendedChartToken: token && song.chartSummary.includes(token) ? token : null };
+  });
 }
 
 function clampPreviewVolume(volume: number): number {

@@ -24,9 +24,10 @@ interface SongCardProps {
   onPreviewStart: (song: PublicSong) => void;
   onPreviewStop: () => void;
   showManualUploadState?: boolean;
+  animateEntry?: boolean;
 }
 
-export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, onOpen, onPreviewStart, onPreviewStop }: SongCardProps) {
+export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, onOpen, onPreviewStart, onPreviewStop, animateEntry = true }: SongCardProps) {
   const previewUnavailable = usePreviewUnavailable(song.previewUrl);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
@@ -94,10 +95,10 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
   return (
     <motion.div
       className="h-full"
-      initial={{ opacity: 0, y: 16, scale: 0.985 }}
+      initial={animateEntry ? { opacity: 0, y: 16, scale: 0.985 } : false}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ delay: entryDelay, duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-      layout
+      layout={animateEntry}
     >
       <motion.article
         className="song-card-surface group relative flex h-full flex-col overflow-hidden border border-[#d6ddcf] bg-white shadow-[0_10px_30px_rgba(30,34,26,0.06)] transition-colors duration-300 ease-out hover:border-[#28c950] focus-within:border-[#28c950]"
@@ -120,6 +121,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
         <Link
           className="absolute inset-0 z-10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#28c950]/45"
           href={`/songs/${song.slug}`}
+          prefetch={false}
           onBlur={onPreviewStop}
           onFocus={() => {
             if (supportsPreviewHover()) {

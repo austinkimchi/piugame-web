@@ -4,6 +4,8 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { getRecommendationCandidateSongs, getSongsByTitles, searchSongs } from "@/lib/catalog";
 import { getAllFavoriteSongSlugs, getCurrentUser, getFavoriteSongSlugSet, getUserById, type PublicUser } from "@/lib/auth";
 import { isPiuSeriesId } from "@/lib/catalog-version";
+import { catalogCommunitySlug, catalogFavoriteSlugs } from "@/lib/catalog-private-overlay";
+import { getPublicCatalogSnapshot } from "@/lib/public-catalog";
 import { chartModesFromFilters } from "@/lib/chart-recommendation";
 import { authenticateMobileAccessToken } from "@/lib/mobile-auth";
 import { bearerTokenFromAuthorization } from "@/lib/mobile-auth-core";
@@ -11,7 +13,7 @@ import { addChartRecommendationsToSongs, getPerformanceChartRecommendations, get
 import { catalogChartTokenFromPlay } from "@/lib/performance-chart-key";
 import { normalizePiuGameVersion, performanceVersionForCatalog } from "@/lib/piu-version";
 import { songMatchesChartFilters } from "@/lib/song-chart-filters";
-import type { LevelFilterMode, PiuSeriesId, SongSortOption, SortDirection } from "@/lib/types";
+import type { LevelFilterMode, PiuSeriesId, PublicSong, SongSortOption, SortDirection } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,8 +64,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "invalid_token" }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   }
   const user = requestUser.user;
+  const supportedVersion = parseSeriesId(request.nextUrl.searchParams.get("supportedVersion"));
+  const removedFromVersion = parseSeriesId(request.nextUrl.searchParams.get("removedFromVersion"));
+  const privateFeed = ["favorites", "recent", "recommendation"].includes(query.toLowerCase());
+  const favoriteVersion = privateFeed ? normalizePiuGameVersion(user?.preferences.piuGameVersion) : supportedVersion ?? "phoenix2";
   const favoritesFirst = parseBoolean(request.nextUrl.searchParams.get("favoritesFirst"));
-  const favoriteSlugsForSort = favoritesFirst ? await getAllFavoriteSongSlugs(user) : undefined;
+  const favoriteSlugsForSort = favoritesFirst ? await favoriteSlugsForCatalog(user, favoriteVersion, privateFeed ? undefined : removedFromVersion) : undefined;
   const chartFilters = parseList(request.nextUrl.searchParams, "chart");
   if (query.toLowerCase() === "favorites") {
     if (!user) {
@@ -74,7 +80,7 @@ export async function GET(request: NextRequest) {
     }
 
     const version = normalizePiuGameVersion(user.preferences.piuGameVersion);
-    const favoriteSlugs = await getAllFavoriteSongSlugs(user);
+    const favoriteSlugs = favoriteSlugsForSort ?? await favoriteSlugsForCatalog(user, version);
     const result = await searchSongs({
       query: "",
       cursor: request.nextUrl.searchParams.get("cursor"),
@@ -135,7 +141,7 @@ export async function GET(request: NextRequest) {
           },
         }];
       });
-    const recentFavoriteSlugs = favoriteSlugsForSort ?? await getFavoriteSongSlugSet(user, songs.map((song) => song.slug));
+    const recentFavoriteSlugs = await favoriteSlugsForSongs(user, songs, favoriteSlugsForSort);
     const orderedSongs = favoriteSlugsForSort?.size ? [...songs].sort((left, right) => Number(recentFavoriteSlugs.has(right.slug)) - Number(recentFavoriteSlugs.has(left.slug))) : songs;
     return NextResponse.json({
       songs: orderedSongs.map((song) => ({ ...song, isFavorite: recentFavoriteSlugs.has(song.slug) })),
@@ -183,7 +189,7 @@ export async function GET(request: NextRequest) {
       if (!song) return [];
       return [{ ...song, recommendedChartToken: recommendation.chartToken, recommendation: { chartToken: recommendation.chartToken } }];
     });
-    const favoriteSlugs = await getFavoriteSongSlugSet(user, page.map((song) => song.slug));
+    const favoriteSlugs = await favoriteSlugsForSongs(user, page, favoriteSlugsForSort);
 
     return NextResponse.json({
       songs: page.map((song) => ({ ...song, isFavorite: favoriteSlugs.has(song.slug) })),
@@ -192,8 +198,6 @@ export async function GET(request: NextRequest) {
       filterOptions: { folders: [], series: [], levels: [], charts: [] },
     }, { headers: { "Cache-Control": "private, no-store" } });
   }
-  const supportedVersion = parseSeriesId(request.nextUrl.searchParams.get("supportedVersion"));
-  const removedFromVersion = parseSeriesId(request.nextUrl.searchParams.get("removedFromVersion"));
   const result = await searchSongs({
     query,
     cursor: request.nextUrl.searchParams.get("cursor"),
@@ -209,7 +213,7 @@ export async function GET(request: NextRequest) {
     supportedVersion,
     removedFromVersion,
   });
-  const favoriteSlugs = favoriteSlugsForSort ?? (await getFavoriteSongSlugSet(user, result.songs.map((song) => song.slug)));
+  const favoriteSlugs = await favoriteSlugsForSongs(user, result.songs, favoriteSlugsForSort);
   const performanceVersion = performanceVersionForCatalog(supportedVersion ?? "phoenix2", removedFromVersion);
   const recommendedSongs = await addChartRecommendationsToSongs(
     user?.id ?? null,
@@ -227,6 +231,18 @@ export async function GET(request: NextRequest) {
       "Cache-Control": "private, no-store",
     },
   });
+}
+
+async function favoriteSlugsForCatalog(user: PublicUser | null, version: PiuSeriesId, removedFromVersion?: PiuSeriesId): Promise<Set<string>> {
+  const stored = await getAllFavoriteSongSlugs(user);
+  if (stored.size === 0) return stored;
+  const snapshot = await getPublicCatalogSnapshot(removedFromVersion ?? version, { removed: Boolean(removedFromVersion) });
+  return catalogFavoriteSlugs(snapshot.songs, stored);
+}
+
+async function favoriteSlugsForSongs(user: PublicUser | null, songs: Array<Pick<PublicSong, "slug" | "version">>, known?: Set<string>): Promise<Set<string>> {
+  const stored = known ?? await getFavoriteSongSlugSet(user, [...new Set(songs.flatMap((song) => [song.slug, catalogCommunitySlug(song)]))]);
+  return catalogFavoriteSlugs(songs, stored);
 }
 
 async function userForRequest(request: NextRequest): Promise<{ user: PublicUser | null; invalidToken: boolean }> {

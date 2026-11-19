@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { MongoServerError, ObjectId, type Collection, type Filter, type Sort, type WithId } from "mongodb";
 import { PiuClient, type BestPlay, type PlayerData, type RecentPlay, type TopPlay } from "@austinkimchi/piugame-sdk";
 
-import { normalizeSongName, recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
+import { catalogChartRecommendationMap, normalizeSongName, recommendChartToken, type CatalogChartRecommendations, type ChartMode, type ChartSelectionEvidence } from "@/lib/chart-recommendation";
 import { getSongsByTitles } from "@/lib/catalog";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
@@ -706,6 +706,20 @@ export async function getPerformanceSessions(
       songImageUrl: artworkBySong.get(normalizeSongName(play.songName)) ?? null,
     })),
   }));
+}
+
+export async function getCatalogChartRecommendations(
+  userIdInput: string | null,
+  piuVersion: PiuCatalogVersion,
+  songs: ReadonlyArray<Pick<PublicSong, "slug" | "title" | "chartSummary">>,
+): Promise<CatalogChartRecommendations> {
+  const userId = objectIdFromString(userIdInput);
+  if (!userId || !hasMongoConfig() || songs.length === 0) return {};
+  const { chartStats } = await collections();
+  const evidence = await chartStats.find({ userId, piuVersion }, { projection: {
+    _id: 0, songName: 1, mode: 1, level: 1, bestScore: 1, latestPlayedAt: 1,
+  } }).toArray();
+  return catalogChartRecommendationMap(songs, evidence);
 }
 
 export async function addChartRecommendationsToSongs(
