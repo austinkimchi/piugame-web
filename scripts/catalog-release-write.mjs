@@ -9,7 +9,7 @@ import { planCatalogRelease } from './catalog-release-plan.mjs';
 
 const { EJSON } = BSON;
 const release = JSON.parse(await readFile(new URL('./releases/phoenix2-v1.02.0.json', import.meta.url), 'utf8'));
-const schema = 'piugame-october-release-journal/v1';
+const schema = 'piugame-october-release-journal/v2';
 const collections = ['catalog', 'song_catalog_2'];
 const guardedFields = ['_id', 'songKey', 'songName', 'artist', 'chartHistory', 'chartTokensByVersion.phoenix2', 'supportedVersions', 'removedFromVersions', 'chartLinks'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -61,14 +61,31 @@ function fieldState(document, field) {
 }
 function relevant(document) { return Object.fromEntries(guardedFields.map(f => [f, fieldState(document, f)])); }
 function casFilter(states) {
-  return Object.fromEntries(Object.entries(states).map(([field, state]) => [field, state.present ? { $exists: true, $eq: state.value } : { $exists: false }]));
+  const expressions = [];
+  for (const [field, state] of Object.entries(states)) {
+    // Aggregation field paths can traverse arrays in intermediate positions.
+    // Require object parents so a scalar parent replaced by an array fails CAS.
+    const parts = field.split('.');
+    for (let i = 1; i < parts.length; i++) expressions.push({ $eq: [{ $type: `$${parts.slice(0, i).join('.')}` }, { $literal: 'object' }] });
+    const reference = `$${field}`;
+    if (!state.present) expressions.push({ $eq: [{ $type: reference }, { $literal: 'missing' }] });
+    else {
+      const literal = { $literal: state.value };
+      expressions.push({ $eq: [{ $type: reference }, { $type: literal }] }, { $eq: [reference, literal] });
+    }
+  }
+  // Query $eq traverses arrays (e.g. [] matches [[]]); aggregation $eq compares
+  // the complete value. Retain the ordinary indexed _id predicate as well.
+  return { _id: states._id.value, $expr: { $and: expressions } };
 }
 function matchesFields(document, expected) {
   return document && Object.entries(expected).every(([field, value]) => own(document, field) && equal(document[field], value));
 }
 
 async function targetIdentity(db) {
-  const result = { database: db.databaseName, collections: {} };
+  const hello = await db.admin().command({ hello: 1 });
+  if (hello.isWritablePrimary !== true || hello.setName || hello.isreplicaset || hello.msg === 'isdbgrid' || hello.hosts || hello.secondary) fail('This writer requires a writable standalone MongoDB server; replica sets and mongos are unsupported.');
+  const result = { database: db.databaseName, topology: 'standalone', collections: {} };
   for (const name of collections) {
     const info = await db.listCollections({ name }, { nameOnly: false }).toArray();
     if (info.length !== 1 || !info[0].info?.uuid || (info[0].options?.collation && info[0].options.collation.locale !== 'simple')) fail(`Missing collection UUID or unsupported collation: ${name}`);
@@ -187,6 +204,8 @@ function validateResume(journal, parsed, target) {
     const operation = journal.operations[i], change = parsed.plan.changes[i];
     if (operation.key !== keyFor(change) || operation.action !== change.action || operation.collection !== change.collection || !equal(operation.identity, change.identity) || !['pending', 'prepared', 'done'].includes(operation.phase)) fail('Invalid journal operation identity or phase.');
     if (!Array.isArray(operation.audits) || (operation.phase !== 'pending' && !operation.audits.some(a => a.outcome === 'write-intent')) || (operation.phase === 'done' && !['acknowledged', 'recovered-after-write'].includes(operation.audits.at(-1)?.outcome)) || (journal.phase === 'complete' && operation.phase !== 'done')) fail('Invalid journal audit/phase transition.');
+    const lastAudit = operation.audits.at(-1);
+    if (lastAudit?.outcome === 'recovered-after-write' && (lastAudit.durability?.method !== 'fsync' || lastAudit.durability.lock !== false || lastAudit.durability.confirmed !== true)) fail('Recovered operation lacks a successful durability barrier.');
     if (change.action === 'insert') {
       const { _id, ...document } = operation.document;
       if (!(_id instanceof ObjectId) || generatedIds.has(_id.toHexString()) || !equal(document, change.document) || !equal(operation.expectedAfterDocument, operation.document) || operation.beforeDocument !== null) fail('Invalid journal insert payload.');
@@ -220,8 +239,17 @@ export async function executeRelease({ db, planBytes, reviewedHash, journalPath,
       let observed = await inspect(db, operation);
       if (observed.state === 'after') {
         if (operation.phase !== 'done') {
+          // A readable result does not prove the lost write acknowledgement's
+          // j:true guarantee. On this explicitly standalone target, flush first,
+          // then recheck the same collection UUIDs and exact after state.
+          if (!equal(await targetIdentity(db), journal.target)) fail('Target changed before recovery durability barrier.');
+          const result = await db.admin().command({ fsync: 1, lock: false });
+          if (Number(result.ok) !== 1 || result.writeConcernError) fail('Recovery durability barrier failed; operation remains prepared.');
+          if (!equal(await targetIdentity(db), journal.target)) fail('Target changed after recovery durability barrier.');
+          observed = await inspect(db, operation);
+          if (observed.state !== 'after') fail('Recovered state changed after durability barrier; operation remains prepared.');
           operation.phase = 'done';
-          operation.audits.push({ at: new Date().toISOString(), outcome: 'recovered-after-write', afterDocument: observed.document });
+          operation.audits.push({ at: new Date().toISOString(), outcome: 'recovered-after-write', durability: { method: 'fsync', lock: false, confirmed: true }, afterDocument: observed.document });
           await saveJournal(journalPath, journal);
         }
         continue;
@@ -279,7 +307,7 @@ async function cli() {
     if (directory === repository || directory.startsWith(repository + path.sep)) fail('Journal must stay outside the Git checkout.');
     options['--journal'] = path.join(directory, path.basename(options['--journal']));
   }
-  const client = new MongoClient(process.env.CATALOG_RELEASE_MONGODB_URI, { retryWrites: false, readPreference: 'primary', serverSelectionTimeoutMS: 10000 });
+  const client = new MongoClient(process.env.CATALOG_RELEASE_MONGODB_URI, { directConnection: true, retryWrites: false, readPreference: 'primary', serverSelectionTimeoutMS: 10000 });
   try {
     await client.connect();
     console.log(JSON.stringify(await executeRelease({ db: client.db(options['--database']), planBytes, reviewedHash: options['--reviewed-sha256'], journalPath: options['--journal'], apply: !!options['--apply'], resume: !!options['--resume'] })));

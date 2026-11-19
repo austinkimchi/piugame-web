@@ -27,7 +27,9 @@ Before an approved application, re-export and review the exact plan and deployed
 jackets. The target must already have a non-partial, non-sparse unique compound
 index on `songKey` and `artist` in both collections, with simple collation. The
 writer never creates indexes. Missing indexes require separate review before use.
-Both collection UUIDs and the database name are bound into the journal so a
+Only a writable standalone MongoDB server is supported. The CLI connects directly
+to one server; replica sets and `mongos` are rejected during preflight. Both
+collection UUIDs, the standalone topology and the database name are bound into the journal so a
 resume cannot silently target replacement collections.
 
 Application is opt-in and requires the exact reviewed plan byte hash and an
@@ -51,8 +53,11 @@ journal save writes a private temporary file, fsyncs it, atomically renames it,
 and fsyncs the parent directory. BSON EJSON retains ObjectIds and other BSON types.
 
 The existing song update uses one atomic compare-and-set covering its identity,
-history, Phoenix 2 availability, and chart links. Missing fields and explicit
-nulls have different predicates. Only `chartHistory` is set: concurrent audio,
+history, Phoenix 2 availability, and chart links. An indexed `_id` predicate is
+combined with aggregation `$expr` equality over complete values, protected by
+`$literal`. `$type` distinguishes missing fields and explicit nulls; object-parent
+checks prevent nested field paths from silently traversing arrays. Query `$eq`
+alone is insufficient because it can match array elements. Only `chartHistory` is set: concurrent audio,
 tags, chart-video links, folder positions, and other unrelated metadata survive.
 The journal records the full observed document after the operation, including
 those unrelated changes. Inserts use reserved IDs and the existing unique song
@@ -71,9 +76,27 @@ node scripts/catalog-release-write.mjs --plan /secure/catalog-release-plan.json 
   --database piugame_sdk --journal /secure/october-release-journal.ejson
 ```
 
-Resume preflights every operation again. A prepared operation whose reserved ID
-and planned after fields match is recorded as recovered without repeating the
-write. A pending operation never claims an already-present row as its own. A
+Resume preflights every operation again. A readable prepared result does **not**
+prove a lost write acknowledgement was durable. When the reserved ID and planned
+after fields match, recovery runs the admin command `{ fsync: 1, lock: false }`
+using the credential's existing privilege, then rechecks the same standalone
+target, collection UUIDs, and exact after state. Only a successful barrier and
+matching reread allow a durable recovered record without repeating the write.
+The journal includes the barrier evidence. A denied or failed barrier leaves the
+operation prepared and stops; the writer never grants privileges or falls back
+to a normal read or standalone `readConcern: majority` as a durability substitute.
+Read-only preflight never runs `fsync`. Version 2 journals require this evidence;
+the writer refuses old version 1 journals rather than trusting old recovery marks.
+
+MongoDB documents [`fsync`](https://www.mongodb.com/docs/v5.0/reference/command/fsync/)
+as flushing pending storage writes to disk; `lock: false` avoids a persistent
+server write lock. This barrier adds I/O and needs the existing `fsync` privilege.
+It does not serialize other clients' writes. Concurrent external edits, including
+an after→other→after (ABA) sequence during the barrier, remain outside a serializable
+guarantee, as with concurrent edits following an ordinary acknowledged write.
+The writer adds no global write lock, revision field, or auxiliary collection.
+
+A pending operation never claims an already-present row as its own. A
 different ID, missing completed row, altered relevant fields, changed plan, or
 replacement collection stops the run. A prepared update that matches neither
 its exact before state nor its exact after state is ambiguous and stops. Even a

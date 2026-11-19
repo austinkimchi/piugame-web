@@ -24,11 +24,43 @@ function get(document, field) {
   }
   return { present: true, value };
 }
+const missing = Symbol('missing');
+function expressionPath(value, parts) {
+  if (!parts.length) return value;
+  if (Array.isArray(value)) return value.map(item => expressionPath(item, parts)).filter(item => item !== missing);
+  if (!value || !Object.hasOwn(value, parts[0])) return missing;
+  return expressionPath(value[parts[0]], parts.slice(1));
+}
+function expression(document, value) {
+  if (typeof value === 'string' && value.startsWith('$')) return expressionPath(document, value.slice(1).split('.'));
+  if (!value || typeof value !== 'object') return value;
+  if (Object.hasOwn(value, '$literal')) return value.$literal;
+  if (Object.hasOwn(value, '$and')) return value.$and.every(part => expression(document, part) === true);
+  if (Object.hasOwn(value, '$eq')) {
+    const [a, b] = value.$eq.map(part => expression(document, part));
+    return a === missing || b === missing ? a === b : same(a, b);
+  }
+  if (Object.hasOwn(value, '$type')) {
+    const actual = expression(document, value.$type);
+    if (actual === missing) return 'missing';
+    if (actual === null) return 'null';
+    if (Array.isArray(actual)) return 'array';
+    if (actual instanceof ObjectId) return 'objectId';
+    if (actual instanceof BSON.Int32) return 'int';
+    if (actual instanceof BSON.Long) return 'long';
+    return typeof actual === 'boolean' ? 'bool' : typeof actual;
+  }
+  throw new Error('Unsupported fake aggregation expression: ' + JSON.stringify(value));
+}
+// MongoDB query equality can match an element of an array, including nested
+// arrays. Do not make the fake's query $eq stronger than the real server's.
+const queryEqual = (actual, expected) => same(actual, expected) || (Array.isArray(actual) && actual.some(item => same(item, expected)));
 function matches(document, query) {
   return Object.entries(query).every(([field, expected]) => {
+    if (field === '$expr') return expression(document, expected) === true;
     const actual = get(document, field);
-    if (expected && Object.hasOwn(expected, '$exists')) return actual.present === expected.$exists && (!Object.hasOwn(expected, '$eq') || same(actual.value, expected.$eq));
-    return actual.present && same(actual.value, expected);
+    if (expected && Object.hasOwn(expected, '$exists')) return actual.present === expected.$exists && (!Object.hasOwn(expected, '$eq') || queryEqual(actual.value, expected.$eq));
+    return actual.present && queryEqual(actual.value, expected);
   });
 }
 
@@ -38,6 +70,28 @@ class FakeDB {
   uuids = { catalog: new BSON.UUID(), song_catalog_2: new BSON.UUID() };
   writes = [];
   unique = true;
+  hello = { ok: 1, isWritablePrimary: true };
+  durableDocuments = { catalog: [], song_catalog_2: [] };
+  fsyncCalls = 0;
+  admin() {
+    return { command: async command => {
+      if (command.hello === 1) return copy(this.hello);
+      assert.deepEqual(command, { fsync: 1, lock: false });
+      this.fsyncCalls++;
+      if (this.barrierError) throw this.barrierError;
+      if (this.barrierFails) return { ok: 0 };
+      this.durableDocuments = copy(this.documents);
+      await this.afterFsync?.();
+      return { ok: 1 };
+    } };
+  }
+  acknowledge(action) {
+    if (this.loseAcknowledgementOnce === action) {
+      this.loseAcknowledgementOnce = null;
+      throw new Error('Acknowledgement lost while write is visible but not durable.');
+    }
+    this.durableDocuments = copy(this.documents);
+  }
   listCollections({ name }) { return { toArray: async () => [{ name, info: { uuid: this.uuids[name] }, options: {} }] }; }
   collection(name) {
     const db = this;
@@ -50,6 +104,7 @@ class FakeDB {
         if (db.documents[name].some(d => same(d._id, document._id) || (d.songKey === document.songKey && d.artist === document.artist))) throw Object.assign(new Error('duplicate key'), { code: 11000 });
         db.documents[name].push(copy(document));
         db.writes.push({ action: 'insert', name, id: document._id });
+        db.acknowledge('insert');
         return { acknowledged: true, insertedId: document._id };
       },
       updateOne: async (query, update, options) => {
@@ -62,13 +117,14 @@ class FakeDB {
         if (!document) return { acknowledged: true, matchedCount: 0, modifiedCount: 0 };
         Object.assign(document, copy(update.$set));
         db.writes.push({ action: 'update', name, id: document._id });
+        db.acknowledge('update');
         return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
       },
     };
   }
 }
 
-async function fixture(t) {
+async function fixture(t, extra = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'catalog-writer-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const db = new FakeDB();
@@ -76,9 +132,10 @@ async function fixture(t) {
     _id: new ObjectId(), songKey: 'Hello William', songName: 'Hello William', artist: 'Banya Production',
     supportedVersions: ['phoenix', 'phoenix2'], removedFromVersions: [], chartTokensByVersion: { phoenix: ['D20'], phoenix2: ['D20'] },
     audioPath: 'manual/precisely-aligned.wav', tags: ['curated'], folderPosition: 17,
-    chartsFull: [{ mode: 'D', level: '20', links: [{ url: 'curated-chart-link' }] }], unrelatedBson: BSON.Long.fromString('9223372036854775807'),
+    chartsFull: [{ mode: 'D', level: '20', links: [{ url: 'curated-chart-link' }] }], unrelatedBson: BSON.Long.fromString('9223372036854775807'), ...extra,
   };
   db.documents.catalog.push(copy(hello));
+  db.durableDocuments = copy(db.documents);
   const plan = planCatalogRelease(release, { documents: [hello] }, { documents: [] }, { asOf: '2026-11-19' });
   const planBytes = Buffer.from(serialize(plan));
   const journalPath = path.join(directory, 'journal.ejson');
@@ -167,6 +224,62 @@ for (const action of ['insert', 'update']) {
   });
 }
 
+for (const action of ['insert', 'update']) {
+  test(`visible unacknowledged ${action} stays prepared until recovery fsync confirms durability`, async t => {
+    const f = await fixture(t);
+    f.db.loseAcknowledgementOnce = action;
+    await assert.rejects(executeRelease(f.options), /Acknowledgement lost/);
+    const interrupted = (await f.journal()).operations.find(o => o.phase === 'prepared');
+    assert.equal(interrupted.action, action);
+    const durableBefore = f.db.durableDocuments[interrupted.collection].find(d => same(d._id, action === 'insert' ? interrupted.document._id : interrupted.identity._id));
+    if (action === 'insert') assert.equal(durableBefore, undefined);
+    else assert.equal(Object.hasOwn(durableBefore, 'chartHistory'), false);
+    const writesBefore = f.db.writes.length;
+    f.db.barrierError = new Error('fsync privilege denied');
+    await assert.rejects(executeRelease({ ...f.options, resume: true }), /privilege denied/);
+    assert.equal((await f.journal()).operations.find(o => o.key === interrupted.key).phase, 'prepared');
+    assert.equal(f.db.writes.length, writesBefore);
+    f.db.barrierError = null; f.db.barrierFails = true;
+    await assert.rejects(executeRelease({ ...f.options, resume: true }), /durability barrier failed/);
+    assert.equal((await f.journal()).operations.find(o => o.key === interrupted.key).phase, 'prepared');
+    f.db.barrierFails = false;
+    let observedDurable = false;
+    f.db.afterFsync = async () => {
+      const durable = f.db.durableDocuments[interrupted.collection].find(d => same(d._id, action === 'insert' ? interrupted.document._id : interrupted.identity._id));
+      assert.ok(durable);
+      if (action === 'update') assert.ok(same(durable.chartHistory, interrupted.set.chartHistory));
+      assert.equal((await f.journal()).operations.find(o => o.key === interrupted.key).phase, 'prepared');
+      observedDurable = true;
+    };
+    await executeRelease({ ...f.options, resume: true });
+    assert.equal(observedDurable, true); assert.equal(f.db.fsyncCalls, 3); assert.equal(f.db.writes.length, 43);
+    const audit = (await f.journal()).operations.find(o => o.key === interrupted.key).audits.at(-1);
+    assert.equal(audit.outcome, 'recovered-after-write');
+    assert.deepEqual(audit.durability, { method: 'fsync', lock: false, confirmed: true });
+  });
+}
+
+test('a conflicting state after recovery fsync prevents marking the operation done', async t => {
+  const f = await fixture(t);
+  f.db.loseAcknowledgementOnce = 'insert';
+  await assert.rejects(executeRelease(f.options), /Acknowledgement lost/);
+  const interrupted = (await f.journal()).operations[0];
+  f.db.afterFsync = () => { f.db.documents[interrupted.collection].find(d => same(d._id, interrupted.document._id)).artist = 'Concurrent edit after flush'; };
+  await assert.rejects(executeRelease({ ...f.options, resume: true }), /collision/);
+  assert.equal((await f.journal()).operations[0].phase, 'prepared');
+  assert.equal(f.db.writes.length, 1);
+});
+
+test('replica sets and routers fail closed before journals, writes, or fsync', async t => {
+  for (const hello of [{ isWritablePrimary: true, setName: 'rs0' }, { isWritablePrimary: true, msg: 'isdbgrid' }, { isWritablePrimary: false }, { isWritablePrimary: true, isreplicaset: true }]) {
+    const f = await fixture(t);
+    f.db.hello = hello;
+    await assert.rejects(executeRelease(f.options), /standalone/);
+    assert.equal(f.db.writes.length, 0); assert.equal(f.db.fsyncCalls, 0);
+    await assert.rejects(readFile(f.journalPath), { code: 'ENOENT' });
+  }
+});
+
 test('CAS rejects an edit racing the final read, and resume stops on ambiguous history', async t => {
   const f = await fixture(t);
   f.db.onWrite = action => { if (action === 'update') f.db.documents.catalog[0].chartHistory = [{ id: 'manual-review', note: 'Keep this concurrent edit.' }]; };
@@ -175,6 +288,30 @@ test('CAS rejects an edit racing the final read, and resume stops on ambiguous h
   f.db.onWrite = null;
   await assert.rejects(executeRelease({ ...f.options, resume: true }), /Concurrent edit/);
   assert.equal(f.db.documents.catalog[0].chartHistory[0].id, 'manual-review');
+});
+
+test('exact aggregation CAS rejects nested arrays that query $eq would accept', async t => {
+  assert.equal(matches({ history: [[]] }, { history: { $exists: true, $eq: [] } }), true);
+  assert.equal(matches({ history: [[]] }, { $expr: { $eq: ['$history', { $literal: [] }] } }), false);
+  const f = await fixture(t, { chartHistory: [] });
+  f.db.onWrite = (action, name, query) => {
+    if (action === 'update') {
+      assert.ok(query._id instanceof ObjectId);
+      assert.ok(query.$expr);
+      f.db.documents.catalog[0].chartHistory = [[]];
+    }
+  };
+  await assert.rejects(executeRelease(f.options), /compare-and-set/);
+  assert.deepEqual(f.db.documents.catalog[0].chartHistory, [[]]);
+  assert.equal(f.db.writes.filter(w => w.action === 'update').length, 0);
+});
+
+test('CAS rejects a nested-field parent becoming an array after its final read', async t => {
+  assert.equal(matches({ parent: [{ tokens: 'D20' }] }, { $expr: { $eq: ['$parent.tokens', { $literal: ['D20'] }] } }), true);
+  const f = await fixture(t);
+  f.db.onWrite = action => { if (action === 'update') f.db.documents.catalog[0].chartTokensByVersion = [{ phoenix2: 'D20' }]; };
+  await assert.rejects(executeRelease(f.options), /compare-and-set/);
+  assert.equal(f.db.writes.filter(w => w.action === 'update').length, 0);
 });
 
 test('a missing-to-null history change is a concurrent change, not a matching preimage', async t => {
