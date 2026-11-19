@@ -104,7 +104,7 @@ Use the owner's authorized account for necessary signed-in smoke tests without p
 
 ## Deploy and recover
 
-Run relevant tests, lint, the TypeScript check, and a build on the candidate revision before merging. The `main` watcher makes merging a production action. Retain the prior commit, recoverable database backup, and media backup, then verify the timer deployed the expected commit.
+Small, low-risk fixes may go directly to `main` after relevant validation. Use a PR for meaningful risk, including authentication, database writes, deployment recovery or pagination behavior; obtain automated Codex review of the exact head and resolve actionable findings before merging. Run relevant tests, lint, the TypeScript check, and a build on the candidate revision before updating `main`. The watcher makes either a merge or a direct push to `main` a production action. Retain the prior commit, recoverable database backup, and media backup, then verify the timer deployed the expected commit.
 
 The [deployment recovery guide](deployment-recovery.md) records the installed bundle and its separate host-installation requirements. Repository merges do not replace that immutable host bundle; verify the installed command before relying on a newer recovery implementation.
 
