@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
 import * as catalogVersion from "../src/lib/catalog-version.ts";
+import * as catalogSearchAliases from "../src/lib/catalog-search-aliases.ts";
 import { audioFileUrlForPath } from "../src/lib/audio-preview.ts";
 import { createPublicCatalogStore } from "../src/lib/public-catalog-cache.ts";
 
@@ -45,6 +46,7 @@ function fixture(options: { writeFails?: boolean; uploadFails?: boolean; respons
       return { audioPath: "manual/new.mp3", publicUrl: "/api/audio-file?path=phoenix2%2Faudio_previews%2Fmanual%2Fnew.mp3" };
     } },
     "@/lib/catalog-version": catalogVersion,
+    "@/lib/catalog-search-aliases": catalogSearchAliases,
     "@/lib/premium-songs": { isPremiumSong: () => false },
     "@/lib/song-chart-filters": {}, "@/lib/song-slug-filter": {},
     "@/lib/public-catalog": { invalidatePublicCatalog() { invalidations += 1; store.invalidate(); } },

@@ -1,4 +1,5 @@
 import { normalizePiuSeriesLabel, piuSeriesLabelPattern } from "./catalog-version.ts";
+import { catalogTitleAliasTargets } from "./catalog-search-aliases.ts";
 import type { CatalogFilterOptions, LevelFilterMode, PublicSong, SongSortOption, SortDirection } from "./types.ts";
 
 export type CatalogQuerySong = Pick<PublicSong, "slug" | "title" | "artist" | "folder" | "folderPosition" | "series" | "tags" | "chartSummary"> & { songKey?: string };
@@ -36,6 +37,7 @@ function levelRegexes(level: string, chart?: string): RegExp[] {
 export function queryCatalog<T extends CatalogQuerySong>(catalog: readonly T[], options: CatalogQuery): { songs: T[]; filterOptions: CatalogFilterOptions } {
   const query = clean(options.query);
   const text = query ? new RegExp(escapeRegex(query), "i") : null;
+  const titleAliases = catalogTitleAliasTargets(query);
   const coOp = query.toUpperCase().replace(/\s+/g, "").match(/^C(?:X)?([2-5])$/);
   const tokenQuery = coOp ? new RegExp(`^C(?:X)?${coOp[1]}$`, "i") : text;
   const folders = unique(options.folders ?? []);
@@ -46,7 +48,7 @@ export function queryCatalog<T extends CatalogQuerySong>(catalog: readonly T[], 
     ? levels.flatMap((level) => charts.length ? charts.map((chart) => levelRegexes(level, chart)) : [levelRegexes(level)])
     : charts.flatMap((chart) => { const regex = chartRegex(chart); return regex ? [[regex]] : []; });
   const songs = catalog.filter((song) => {
-    if (text && ![song.title, song.songKey ?? "", song.artist, song.folder ?? "", song.series ?? "", ...song.tags].some((value) => text.test(value)) && !song.chartSummary.some((token) => tokenQuery!.test(token))) return false;
+    if (text && ![song.title, song.songKey ?? "", song.artist, song.folder ?? "", song.series ?? "", ...song.tags].some((value) => text.test(value)) && !song.chartSummary.some((token) => tokenQuery!.test(token)) && !titleAliases.some((alias) => alias.title.test(song.title) && alias.artist.test(song.artist))) return false;
     if (folders.length && (!song.folder || !folders.includes(song.folder))) return false;
     if (series.length && (!song.series || !series.some((pattern) => pattern.test(song.series!)))) return false;
     if (predicates.length && !predicates[options.levelMode === "and" ? "every" : "some"]((patterns) => song.chartSummary.some((token) => patterns.some((pattern) => pattern.test(token))))) return false;

@@ -12,6 +12,7 @@ import { isPremiumSong } from "@/lib/premium-songs";
 import { songMatchesChartFilters } from "@/lib/song-chart-filters";
 import { songsMatchingSlugs } from "@/lib/song-slug-filter";
 import { invalidatePublicCatalog } from "@/lib/public-catalog";
+import { catalogTitleAliasTargets } from "@/lib/catalog-search-aliases";
 import type {
   CatalogFilterOptions,
   CatalogEditorPayload,
@@ -951,6 +952,7 @@ function buildSearchFilter(params: {
         { series: { $regex: escaped, $options: "i" } },
         { tags: { $regex: escaped, $options: "i" } },
         { [chartTokenField]: { $regex: chartTokenQuery } },
+        ...catalogTitleAliasTargets(query).map((alias) => ({ songName: alias.title, artist: alias.artist })),
       ],
     });
   }
@@ -1023,7 +1025,7 @@ function fallbackMatchesFilters(
 
   if (query.length > 0) {
     const haystack = `${song.title} ${song.artist} ${song.version} ${song.folder ?? ""} ${song.series ?? ""} ${song.chartSummary.join(" ")}`.toLowerCase();
-    if (!haystack.includes(query)) {
+    if (!haystack.includes(query) && !catalogTitleAliasTargets(query).some((alias) => alias.title.test(song.title) && alias.artist.test(song.artist))) {
       return false;
     }
   }
