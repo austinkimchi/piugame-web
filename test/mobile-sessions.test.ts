@@ -80,6 +80,7 @@ function catalogFixture(rows: Row[] = []) {
     "@/lib/catalog-version": catalogVersion,
     "@/lib/premium-songs": { isPremiumSong: () => false },
     "@/lib/song-chart-filters": {}, "@/lib/song-slug-filter": {},
+    "@/lib/public-catalog": {},
   });
   return { catalog, filters };
 }
