@@ -1,10 +1,10 @@
 # Strict PIUGAME TLS
 
-## Release prerequisite
+## SDK dependency and release checks
 
-This integration requires the reviewed SDK change adding `PiuClientOptions.ca` and applying the constructor TLS policy to binary downloads. Registry SDK 1.3.3 does not support that API. Until the new SDK is published and its actual version/integrity are pinned in `package.json` and `package-lock.json`, this is a blocked draft, not deployable source. Local validation uses a disposable packed SDK candidate; no local dependency path belongs in the committed lock.
+This integration pins published `@austinkimchi/piugame-sdk` **1.4.0**, which adds `PiuClientOptions.ca` and applies the constructor TLS policy to binary downloads. SDK 1.3.3 does not support that API. Version 1.4.0 was built from reviewed SDK merge `db92a609820bbe4b160f0c0553211090e41bebe6`; the downloaded registry tarball matched that build byte for byte (SHA-256 `4a85e9f801fb32c1420233239b79df309c851414453099498bfaeab74e05226e`). `package-lock.json` records the actual registry URL and SHA-512 integrity, with no local dependency path.
 
-Release order: review/merge the SDK; check version availability and deliberately publish the built package; pin its actual registry version/integrity here; repeat Linux CI and exact-head review; qualify authorized account linking/sync; coordinate deployment. Do not disable fallback in the live application before the chain remedy is available.
+Web release gates remain Linux CI and exact-head review, followed by authorized account linking/sync qualification and coordinated deployment. Publishing the SDK and passing anonymous TLS probes do not establish that a production account sync has passed. Do not disable fallback in the live application before the chain remedy is available.
 
 ## Scope
 
