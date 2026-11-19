@@ -39,8 +39,23 @@ test("selects the first locked title in the current single ladder", () => {
     name: "[S] ADVANCED LV.5",
     metric: "single_pumbility",
     current: 15_828.94,
+    previousTarget: 15_750,
     target: 16_000,
   });
+});
+
+test("uses the highest earned threshold as the start of title progress", () => {
+  const result = selectNextTitleObjective([
+    title("[S] ADVANCED LV.3", "single_pumbility", 15_875, 15_500, true),
+    title("[S] ADVANCED LV.4", "single_pumbility", 15_875, 15_750, true),
+    title("[S] ADVANCED LV.5", "single_pumbility", 15_875, 16_000),
+  ], "[S] ADVANCED LV.4");
+
+  assert.equal(result?.previousTarget, 15_750);
+  assert.equal(
+    (result!.current - result!.previousTarget) / (result!.target - result!.previousTarget),
+    0.5,
+  );
 });
 
 test("uses the closest named Pumbility objective when the current title is unrelated", () => {
@@ -51,4 +66,5 @@ test("uses the closest named Pumbility objective when the current title is unrel
   ], "CONRAD FOLLOWER");
 
   assert.equal(result?.name, "[S] ADVANCED LV.5");
+  assert.equal(result?.previousTarget, 0);
 });

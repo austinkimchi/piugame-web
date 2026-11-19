@@ -59,7 +59,7 @@ export function SongPopupModel({ song }: { song: PublicSong | null }) {
 
             <div className="min-w-0">
               <div className="flex flex-wrap gap-2">
-                <MetaChip icon={<Music2 aria-hidden="true" size={14} />} label="Phoenix 2" />
+                <MetaChip icon={<Music2 aria-hidden="true" size={14} />} label="PHOENIX 2" />
                 <MetaChip icon={<Folder aria-hidden="true" size={14} />} label="World Music" />
                 <MetaChip icon={<Music2 aria-hidden="true" size={14} />} label={bpm} />
               </div>
@@ -109,7 +109,7 @@ export function SongPopupModel({ song }: { song: PublicSong | null }) {
                     <div className="flex h-full flex-col justify-between bg-[radial-gradient(circle_at_58%_28%,rgba(70,244,252,0.42),transparent_20%),linear-gradient(135deg,#1c3345,#0d1720_60%,#263b45)] p-4">
                       <div className="flex items-start justify-between">
                         <span className="border border-white/30 bg-white/15 px-2 py-1 text-xs font-black text-white">STAGE 03</span>
-                        <span className="text-xs font-black uppercase text-[#baff5f]">Phoenix 2</span>
+                        <span className="text-xs font-black uppercase text-[#baff5f]">PHOENIX 2</span>
                       </div>
                       <div className="self-center text-center">
                         <p className="text-2xl font-black italic tracking-normal text-[#39dfff]">PERFECT</p>
@@ -129,7 +129,7 @@ export function SongPopupModel({ song }: { song: PublicSong | null }) {
               <SectionDivider />
 
               <FeatureRow icon={<Clock3 aria-hidden="true" size={15} />} label="History">
-                <p className="text-sm font-medium text-[#56604e]">Released Phoenix 2 07/2026</p>
+                <p className="text-sm font-medium text-[#56604e]">Released PHOENIX 2 07/2026</p>
               </FeatureRow>
             </div>
           </div>

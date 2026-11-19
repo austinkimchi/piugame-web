@@ -7,7 +7,7 @@ import { cache } from "react";
 
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { audioFileUrlForPath, saveCatalogAudioUpload } from "@/lib/audio-preview";
-import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, sortPiuSeries } from "@/lib/catalog-version";
+import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, normalizePiuSeriesLabel, piuSeriesLabelPattern, sortPiuSeries } from "@/lib/catalog-version";
 import { isPremiumSong } from "@/lib/premium-songs";
 import { songMatchesChartFilters } from "@/lib/song-chart-filters";
 import { songsMatchingSlugs } from "@/lib/song-slug-filter";
@@ -265,7 +265,7 @@ function filterOptionsFromValues(values: {
 
   return {
     folders: cleanList(values.folders.map(cleanText)).sort(),
-    series: sortSeries(cleanList(values.series.map(cleanText))),
+    series: sortSeries(cleanList(values.series.map((value) => normalizePiuSeriesLabel(cleanText(value))))),
     levels: compatibleLevelsFromTokens(tokens, values.charts),
     charts: sortCharts(cleanList(tokens.map((token) => chartTypeFromToken(token) ?? ""))),
   };
@@ -504,7 +504,7 @@ function publicSongFromDocument(document: WithId<CatalogDocument>, fallbackVersi
   const previewUrl = previewUrlFromDocument(document, imageVersion);
   const audioPath = cleanText(document.audioPath ?? document.audioPreview?.localPath) || null;
   const folder = cleanText(document.folder) || null;
-  const series = cleanText(document.series) || null;
+  const series = normalizePiuSeriesLabel(cleanText(document.series)) || null;
 
   return {
     slug: catalogDocumentSlug(document, fallbackVersion),
@@ -844,7 +844,7 @@ async function findMongoFavoriteSortedSongs(
         title,
         artist,
         folder: cleanText(document.folder) || null,
-        series: cleanText(document.series) || null,
+        series: normalizePiuSeriesLabel(cleanText(document.series)) || null,
       };
     }),
     sortBy,
@@ -885,7 +885,7 @@ async function fallbackSongs(version: PiuSeriesId, offset = 0, limit = PAGE_SIZE
 
     return filenames.map((filename, index) => ({
       slug: `${version}-jacket-${offset + index + 1}`,
-      title: `${version === "phoenix2" ? "Phoenix 2" : "Phoenix"} Jacket ${offset + index + 1}`,
+      title: `${version === "phoenix2" ? "PHOENIX 2" : "PHOENIX"} Jacket ${offset + index + 1}`,
       artist: "PIUGAME catalog asset",
       version,
       supportedVersions: [version],
@@ -902,7 +902,7 @@ async function fallbackSongs(version: PiuSeriesId, offset = 0, limit = PAGE_SIZE
       folder: null,
       folderPosition: offset + index + 1,
       folderSongCount: null,
-      series: version === "phoenix2" ? "Phoenix 2" : "Phoenix",
+      series: version === "phoenix2" ? "PHOENIX 2" : "PHOENIX",
       seriesSongCount: null,
       tags: [],
       isPremium: false,
@@ -967,7 +967,11 @@ function buildSearchFilter(params: {
 
   const series = cleanList(params.series);
   if (series.length > 0) {
-    clauses.push({ series: { $in: series } });
+    clauses.push({
+      series: {
+        $in: series.map(piuSeriesLabelPattern),
+      },
+    });
   }
 
   const levels = cleanList(params.levels);
@@ -1027,7 +1031,7 @@ function fallbackMatchesFilters(
     return false;
   }
 
-  if (series.length > 0 && (!song.series || !series.includes(song.series))) {
+  if (series.length > 0 && (!song.series || !series.map(normalizePiuSeriesLabel).includes(normalizePiuSeriesLabel(song.series)))) {
     return false;
   }
 
@@ -1168,6 +1172,7 @@ export async function getSongBySlug(slug: string, chartVersion?: PiuSeriesId): P
 export async function getSongsByTitles(
   version: PiuCatalogVersion,
   titles: string[],
+  options: { includeHistorical?: boolean } = {},
 ): Promise<Map<string, PublicSong>> {
   const uniqueTitles = Array.from(new Set(titles.map(cleanText).filter(Boolean)));
   const result = new Map<string, PublicSong>();
@@ -1176,7 +1181,12 @@ export async function getSongsByTitles(
   }
 
   if (!hasMongoConfig()) {
-    const fallback = await fallbackSongs(version, 0, 500);
+    const fallback = options.includeHistorical
+      ? (await Promise.all([
+          fallbackSongs("phoenix2", 0, 500),
+          fallbackSongs("phoenix", 0, 500),
+        ])).flat()
+      : await fallbackSongs(version, 0, 500);
     for (const song of fallback) {
       const key = titleLookupKey(song.title);
       if (uniqueTitles.some((title) => titleLookupKey(title) === key) && !result.has(key)) {
@@ -1190,7 +1200,7 @@ export async function getSongsByTitles(
   const documents = await collection
     .find(
       {
-        supportedVersions: version,
+        ...(options.includeHistorical ? {} : { supportedVersions: version }),
         $or: uniqueTitles.flatMap((title) => {
           const exactTitle = new RegExp(`^${escapeRegex(title)}$`, "i");
           return [{ songName: exactTitle }, { songKey: exactTitle }];
@@ -1283,7 +1293,7 @@ function normalizeCatalogEditorPayload(input: Partial<CatalogEditorPayload>): Ca
   const artist = cleanText(input.artist).slice(0, 180);
   const folder = cleanText(input.folder).slice(0, 120);
   const folderPosition = editableFolderPosition(input.folderPosition);
-  const series = cleanText(input.series).slice(0, 120);
+  const series = normalizePiuSeriesLabel(cleanText(input.series)).slice(0, 120);
   const tags = cleanEditableList(input.tags, 24).map((tag) => tag.slice(0, 60));
   const chartTokens = cleanEditableList(input.chartTokens, 80).map(normalizeChartToken);
   const history = Array.isArray(input.history) ? input.history.filter((event): event is SongCatalogHistoryEvent => Boolean(event && typeof event.date === "string" && typeof event.note === "string" && isPiuSeriesId(event.version))).slice(0, 80) : [];

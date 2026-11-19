@@ -1,4 +1,4 @@
-import { sortPiuSeries } from "./catalog-version.ts";
+import { normalizePiuSeriesLabel, sortPiuSeries } from "./catalog-version.ts";
 import type { PiuSeriesId, SongCatalogHistoryEvent } from "@/lib/types";
 
 export interface MergeCatalogDocument {
@@ -72,6 +72,7 @@ export function mergePhoenixCatalogs(args: {
 
     mergedByKey.set(key, {
       ...phoenix2Song,
+      ...(typeof phoenix2Song.series === "string" ? { series: normalizePiuSeriesLabel(phoenix2Song.series) } : {}),
       catalogVersion: "catalog",
       piuVersion: "phoenix2",
       supportedVersions,
@@ -82,7 +83,7 @@ export function mergePhoenixCatalogs(args: {
         ...(phoenixSong ? { phoenix: chartTokensFor(phoenixSong) } : {}),
       },
       history: uniqueHistory([
-        historyEvent(args.importedAt, "added", "phoenix2", "Imported from Phoenix 2 catalog."),
+        historyEvent(args.importedAt, "added", "phoenix2", "Imported from PHOENIX 2 catalog."),
         ...(phoenixSong ? [historyEvent(args.importedAt, "added", "phoenix", "Matched in Phoenix catalog.")] : []),
         ...(phoenix2Song.history ?? []),
       ]),
@@ -97,6 +98,7 @@ export function mergePhoenixCatalogs(args: {
 
     mergedByKey.set(key, {
       ...phoenixSong,
+      ...(typeof phoenixSong.series === "string" ? { series: normalizePiuSeriesLabel(phoenixSong.series) } : {}),
       catalogVersion: "catalog",
       piuVersion: "phoenix",
       supportedVersions: sortPiuSeries(["phoenix", ...(phoenixSong.supportedVersions ?? []).filter((version) => version !== "phoenix")]),
@@ -107,7 +109,7 @@ export function mergePhoenixCatalogs(args: {
       },
       history: uniqueHistory([
         historyEvent(args.importedAt, "added", "phoenix", "Imported from Phoenix catalog."),
-        historyEvent(args.importedAt, "removed", "phoenix2", "Present in Phoenix catalog but absent from Phoenix 2 catalog."),
+        historyEvent(args.importedAt, "removed", "phoenix2", "Present in PHOENIX catalog but absent from PHOENIX 2 catalog."),
         ...(phoenixSong.history ?? []),
       ]),
     });

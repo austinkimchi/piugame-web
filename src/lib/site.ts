@@ -1,6 +1,6 @@
 export const siteName = "MyPIU";
 export const siteDescription =
-  "Browse Pump It Up Phoenix 2 songs, charts, folders, previews, and version history in a searchable community catalog.";
+  "Browse Pump It Up PHOENIX 2 songs, charts, folders, previews, and version history in a searchable community catalog.";
 export const sitePreviewImage = {
   path: "/embed_image.png",
   width: 1239,

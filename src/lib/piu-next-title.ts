@@ -4,6 +4,7 @@ export interface NextTitleObjective {
   name: string;
   metric: TitleRequirementMetric;
   current: number;
+  previousTarget: number;
   target: number;
 }
 
@@ -22,12 +23,32 @@ export function selectNextTitleObjective(
       title.locked && !title.owned && title.requirement !== null && title.requirement.current !== null,
     )
     .filter((title) => !/^\?+$/.test(title.name.trim()))
-    .map((title) => ({
-      name: title.name,
-      metric: title.requirement.metric,
-      current: title.requirement.current!,
-      target: title.requirement.target,
-    }))
+    .map((title) => {
+      const metric = title.requirement.metric;
+      const target = title.requirement.target;
+      const previousTarget = titles.reduce((highest, possiblePrevious) => {
+        const requirement = possiblePrevious.requirement;
+        const isCurrentTitle = possiblePrevious.name.trim().toLocaleLowerCase()
+          === currentTitleName?.trim().toLocaleLowerCase();
+        if (
+          requirement === null
+          || requirement.metric !== metric
+          || requirement.target >= target
+          || (!possiblePrevious.owned && !isCurrentTitle)
+        ) {
+          return highest;
+        }
+        return Math.max(highest, requirement.target);
+      }, 0);
+
+      return {
+        name: title.name,
+        metric,
+        current: title.requirement.current!,
+        previousTarget,
+        target,
+      };
+    })
     .filter((candidate) => candidate.target > candidate.current);
 
   if (candidates.length === 0) {
@@ -43,11 +64,19 @@ export function selectNextTitleObjective(
   const ranked = pool.length > 0 ? pool : candidates;
 
   return ranked.sort((left, right) => {
-    const leftProgress = left.current / left.target;
-    const rightProgress = right.current / right.target;
+    const leftProgress = objectiveProgress(left);
+    const rightProgress = objectiveProgress(right);
     if (left.metric === right.metric) {
       return left.target - right.target;
     }
     return rightProgress - leftProgress;
   })[0] ?? null;
+}
+
+function objectiveProgress(objective: NextTitleObjective): number {
+  const interval = objective.target - objective.previousTarget;
+  if (interval <= 0) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, (objective.current - objective.previousTarget) / interval));
 }
