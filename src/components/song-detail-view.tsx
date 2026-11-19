@@ -8,11 +8,13 @@ import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties }
 
 import { CatalogAdminEditor } from "@/components/catalog-admin-editor";
 import { SongCommunityPanel } from "@/components/song-community-panel";
+import { PerformanceResultBadge } from "@/components/performance-result-badge";
+import { performanceResultBadges } from "@/lib/performance-result-badges";
 import { SongPreviewPlayButton } from "@/components/song-preview-play-button";
 import type { PublicUser, SongCommunityState } from "@/lib/auth";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
 import { chartCommunityKey } from "@/lib/chart-community";
-import { formatPerformanceGrade, isFailedPerformanceGrade } from "@/lib/performance-format";
+import { isFailedPerformanceGrade } from "@/lib/performance-format";
 import { displayedRecentPlayCount } from "@/lib/performance-play-count";
 import { buildSongPerformanceCarousel } from "@/lib/song-performance-carousel";
 import type { CommunityScoreLinkDraft } from "@/lib/community-score-link";
@@ -556,10 +558,10 @@ function SongPerformanceSection(props: { chartToken: string | null; performance:
         >
           <div className="flex flex-wrap items-start gap-5">
             {selectedPlay ? (
-              <div className="relative h-24 w-[22rem] shrink-0">
+              <div className="relative h-32 w-full max-w-[22rem] shrink-0">
                 {newerAttempt ? (
                   <motion.div
-                    className="absolute left-0 top-0 w-64 text-left"
+                    className="absolute left-0 top-0 w-64 max-w-[calc(100%_-_4rem)] text-left"
                     key={`newer:${newerAttempt.playedAt ?? "unknown"}:${newerAttempt.score ?? "none"}`}
                     onClick={() => setCarouselIndex((current) => Math.max(current - 1, 0))}
                     title="Show later attempt"
@@ -580,7 +582,7 @@ function SongPerformanceSection(props: { chartToken: string | null; performance:
                     </button>
                     <PerformanceScoreCard
                       date={newerAttempt.playedAt}
-                      grade={newerAttempt.grade ?? newerAttempt.plate}
+                      grade={newerAttempt.grade}
                       label="Later attempt"
                       muted={(newerAttempt.stageBreak || isFailedChartGrade(newerAttempt.grade)) && !newerAttempt.stageBreak}
                       score={newerAttempt.stageBreak ? "Stage break" : formatScore(newerAttempt.score)}
@@ -604,7 +606,7 @@ function SongPerformanceSection(props: { chartToken: string | null; performance:
                   return (
                     <motion.div
                       aria-label={isCurrent ? "Current performance attempt" : `Show previous attempt: ${play.stageBreak ? "Stage Break" : formatScore(play.score)}`}
-                      className={`absolute left-0 top-0 w-64 text-left ${offset === 1 ? "cursor-pointer" : offset > 1 ? "pointer-events-none" : ""}`}
+                      className={`absolute left-0 top-0 w-64 max-w-[calc(100%_-_4rem)] text-left ${offset === 1 ? "cursor-pointer" : offset > 1 ? "pointer-events-none" : ""}`}
                       key={`${play.playedAt ?? "unknown"}:${play.score ?? "none"}:${offset}`}
                       onClick={() => {
                         if (offset === 1) {
@@ -626,7 +628,7 @@ function SongPerformanceSection(props: { chartToken: string | null; performance:
                     >
                       <PerformanceScoreCard
                         date={play.playedAt}
-                        grade={play.grade ?? play.plate}
+                        grade={play.grade}
                         label={isCurrent ? selectedLabel : "Previous attempt"}
                         muted={playFailed && !play.stageBreak}
                         playCount={isCurrent && selectedIndex === 0 ? formatPlayCount(displayedRecentPlayCount(stats)) : undefined}
@@ -709,8 +711,9 @@ function PerformanceScoreCard({
   onToggleTimeFormat: () => void;
   timeFormat: PerformanceTimeFormat;
 }) {
+  const badges = performanceResultBadges({ grade, plate, version: performanceVersion, stageBreak });
   return (
-    <div className="relative border border-[#d8dfd1] bg-white px-4 py-3 shadow-[0_6px_18px_rgba(30,34,26,0.05)]">
+    <div className="relative min-h-28 border border-[#d8dfd1] bg-white px-4 py-3 shadow-[0_6px_18px_rgba(30,34,26,0.05)]">
       <button
         aria-label="Link this score in a community post"
         className="absolute right-2 top-2 inline-flex size-6 items-center justify-center border border-[#d8dfd1] bg-white text-[#596153] hover:border-[#28c950] hover:text-[#28c950] disabled:cursor-not-allowed disabled:opacity-40"
@@ -736,10 +739,10 @@ function PerformanceScoreCard({
           </div>
         </>
       ) : (
-        <div className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
-          <p className={`text-[1.7rem] font-black leading-none tracking-tight ${muted ? "text-[#7a8471] line-through decoration-2" : "text-[#171916]"}`}>{formatPerformanceGrade(grade)}</p>
+        <div className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-3 gap-y-1">
+          <PerformanceResultBadge badge={badges.grade} kind="grade" />
           <p className={`col-start-2 text-base font-black leading-none tracking-tight ${muted ? "text-[#7a8471] line-through decoration-2" : "text-[#171916]"}`}>{score}</p>
-          {playCount ? <span className="text-xs font-bold text-[#66705f]">{playCount}</span> : null}
+          <div className="col-start-1 min-h-5"><PerformanceResultBadge badge={badges.plate} kind="plate" /></div>
           {date ? (
             <span
               aria-label={`Switch to ${performanceTimeFormatLabel(nextPerformanceTimeFormat(timeFormat))}`}
@@ -762,6 +765,7 @@ function PerformanceScoreCard({
               {formatPlayDate(date, timeFormat)}
             </span>
           ) : null}
+          {playCount ? <span className="col-span-2 text-xs font-bold text-[#66705f]">{playCount}</span> : null}
         </div>
       )}
     </div>

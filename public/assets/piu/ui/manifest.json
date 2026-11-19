@@ -5,8 +5,8 @@
   "sourceHost": "https://piugame.com",
   "rights": "Copyright Andamiro Co., LTD. Original assets; no independent redistribution license asserted.",
   "scope": "Verified PNG interface assets from current official page references and existing official asset families. Not an exhaustive extraction of arcade software.",
-  "assetCount": 287,
-  "totalBytes": 8583238,
+  "assetCount": 294,
+  "totalBytes": 8636240,
   "assets": [
     {
       "id": "phoenix:grades:a",
@@ -1009,6 +1009,26 @@
       "retrievedAt": "2026-11-19T16:08:18.404898+00:00"
     },
     {
+      "id": "phoenix:stepballs/basic:e_num_1",
+      "path": "phoenix/stepballs/basic/e_num_1.png",
+      "category": "stepballs/basic",
+      "version": "phoenix",
+      "sourceUrl": "https://phoenix.piugame.com/l_img/stepball/basic/e_num_1.png",
+      "finalUrl": "https://phoenix.piugame.com/l_img/stepball/basic/e_num_1.png",
+      "httpStatus": 200,
+      "referenceKind": "official-rendered-page-reference",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609"
+      ],
+      "bytes": 1679,
+      "width": 70,
+      "height": 70,
+      "mimeType": "image/png",
+      "colorMode": "RGBA",
+      "sha256": "3aa7d58cc1d8b511103f6932ec0ae227f9b34d9e76a033f559cf0510c2ec5b31",
+      "retrievedAt": "2026-11-19T20:37:14.654398+00:00"
+    },
+    {
       "id": "phoenix:stepballs/basic:e_num_2",
       "sourceUrl": "https://piugame.com/l_img/stepball/basic/e_num_2.png",
       "path": "phoenix/stepballs/basic/e_num_2.png",
@@ -1107,6 +1127,26 @@
       "httpStatus": 200,
       "finalUrl": "https://piugame.com/l_img/stepball/basic/h_num_5.png",
       "retrievedAt": "2026-11-19T16:08:20.775470+00:00"
+    },
+    {
+      "id": "phoenix:stepballs/basic:h_num_6",
+      "path": "phoenix/stepballs/basic/h_num_6.png",
+      "category": "stepballs/basic",
+      "version": "phoenix",
+      "sourceUrl": "https://phoenix.piugame.com/l_img/stepball/basic/h_num_6.png",
+      "finalUrl": "https://phoenix.piugame.com/l_img/stepball/basic/h_num_6.png",
+      "httpStatus": 200,
+      "referenceKind": "official-rendered-page-reference",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609"
+      ],
+      "bytes": 2551,
+      "width": 70,
+      "height": 70,
+      "mimeType": "image/png",
+      "colorMode": "RGBA",
+      "sha256": "3f255fab839caae35abc65fa352127816d817da81bdfc6e701cb091020338f7e",
+      "retrievedAt": "2026-11-19T20:37:14.652139+00:00"
     },
     {
       "id": "phoenix:stepballs/basic:h_num_7",
@@ -1249,6 +1289,86 @@
       "retrievedAt": "2026-11-19T16:08:24.255321+00:00"
     },
     {
+      "id": "phoenix:stepballs/basic:vh_bg",
+      "path": "phoenix/stepballs/basic/vh_bg.png",
+      "category": "stepballs/basic",
+      "version": "phoenix",
+      "sourceUrl": "https://phoenix.piugame.com/l_img/stepball/basic/vh_bg.png",
+      "finalUrl": "https://phoenix.piugame.com/l_img/stepball/basic/vh_bg.png",
+      "httpStatus": 200,
+      "referenceKind": "official-rendered-page-reference",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609"
+      ],
+      "bytes": 38392,
+      "width": 167,
+      "height": 138,
+      "mimeType": "image/png",
+      "colorMode": "RGBA",
+      "sha256": "a660282915618ee15121533a9aaff4329ebba823b0524e7ac6c968b61ec25ad3",
+      "retrievedAt": "2026-11-19T20:37:15.243356+00:00"
+    },
+    {
+      "id": "phoenix:stepballs/basic:vh_num_0",
+      "path": "phoenix/stepballs/basic/vh_num_0.png",
+      "category": "stepballs/basic",
+      "version": "phoenix",
+      "sourceUrl": "https://phoenix.piugame.com/l_img/stepball/basic/vh_num_0.png",
+      "finalUrl": "https://phoenix.piugame.com/l_img/stepball/basic/vh_num_0.png",
+      "httpStatus": 200,
+      "referenceKind": "official-rendered-page-reference",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609"
+      ],
+      "bytes": 2632,
+      "width": 70,
+      "height": 70,
+      "mimeType": "image/png",
+      "colorMode": "RGBA",
+      "sha256": "59966d410bc789c57ea89f6a04a47689b71993f91bbfb673d1add0ff5f84413e",
+      "retrievedAt": "2026-11-19T20:37:15.535615+00:00"
+    },
+    {
+      "id": "phoenix:stepballs/basic:vh_num_9",
+      "path": "phoenix/stepballs/basic/vh_num_9.png",
+      "category": "stepballs/basic",
+      "version": "phoenix",
+      "sourceUrl": "https://phoenix.piugame.com/l_img/stepball/basic/vh_num_9.png",
+      "finalUrl": "https://phoenix.piugame.com/l_img/stepball/basic/vh_num_9.png",
+      "httpStatus": 200,
+      "referenceKind": "official-rendered-page-reference",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609"
+      ],
+      "bytes": 2677,
+      "width": 70,
+      "height": 70,
+      "mimeType": "image/png",
+      "colorMode": "RGBA",
+      "sha256": "c96f3b658925f6242ef218398606b8d06b8badeaa268acc5e250d4a3d5bf8f45",
+      "retrievedAt": "2026-11-19T20:37:16.144709+00:00"
+    },
+    {
+      "id": "phoenix:stepballs/basic:vh_text",
+      "path": "phoenix/stepballs/basic/vh_text.png",
+      "category": "stepballs/basic",
+      "version": "phoenix",
+      "sourceUrl": "https://phoenix.piugame.com/l_img/stepball/basic/vh_text.png",
+      "finalUrl": "https://phoenix.piugame.com/l_img/stepball/basic/vh_text.png",
+      "httpStatus": 200,
+      "referenceKind": "official-rendered-page-reference",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609"
+      ],
+      "bytes": 3315,
+      "width": 167,
+      "height": 16,
+      "mimeType": "image/png",
+      "colorMode": "RGBA",
+      "sha256": "eb1f3d06f9758ada88ca9a5a816492d0aa532e914d256aa21c764141e2051aed",
+      "retrievedAt": "2026-11-19T20:37:15.544415+00:00"
+    },
+    {
       "id": "phoenix:stepballs/full:d_bg",
       "sourceUrl": "https://piugame.com/l_img/stepball/full/d_bg.png",
       "path": "phoenix/stepballs/full/d_bg.png",
@@ -1287,6 +1407,26 @@
       "httpStatus": 200,
       "finalUrl": "https://piugame.com/l_img/stepball/full/d_num_0.png",
       "retrievedAt": "2026-11-19T16:08:13.740764+00:00"
+    },
+    {
+      "id": "phoenix:stepballs/full:d_num_1",
+      "path": "phoenix/stepballs/full/d_num_1.png",
+      "category": "stepballs/full",
+      "version": "phoenix",
+      "sourceUrl": "https://phoenix.piugame.com/l_img/stepball/full/d_num_1.png",
+      "finalUrl": "https://phoenix.piugame.com/l_img/stepball/full/d_num_1.png",
+      "httpStatus": 200,
+      "referenceKind": "official-rendered-page-reference",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=full&date=202609"
+      ],
+      "bytes": 1756,
+      "width": 70,
+      "height": 70,
+      "mimeType": "image/png",
+      "colorMode": "RGBA",
+      "sha256": "49a798dbcdc383b799db9da354c4458030b7d95f218d3293cf41b2be2167ccba",
+      "retrievedAt": "2026-11-19T20:37:16.436878+00:00"
     },
     {
       "id": "phoenix:stepballs/full:d_num_7",
@@ -5818,75 +5958,214 @@
   "unavailable": [
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_0.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:52.780198+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_7.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:52.778081+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/basic/e_num_0.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:52.774990+00:00",
+      "httpStatus": 404,
+      "classification": "unavailable-current-namespace-legacy-counterpart",
+      "finding": "This was a counterpart probe derived from the old Phoenix family. The old filename is referenced under https://phoenix.piugame.com/l_img/stepball/basic/. Current Phoenix2 Basic guide uses four complete 30_stepballbasic_* composites; no p2 counterpart reference was observed.",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609",
+        "https://piugame.com/game_info/basic_mode.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/basic/e_num_2.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:53.484759+00:00",
+      "httpStatus": 404,
+      "classification": "unavailable-current-namespace-legacy-counterpart",
+      "finding": "This was a counterpart probe derived from the old Phoenix family. The old filename is referenced under https://phoenix.piugame.com/l_img/stepball/basic/. Current Phoenix2 Basic guide uses four complete 30_stepballbasic_* composites; no p2 counterpart reference was observed.",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609",
+        "https://piugame.com/game_info/basic_mode.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/basic/h_num_0.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:53.470567+00:00",
+      "httpStatus": 404,
+      "classification": "unavailable-current-namespace-legacy-counterpart",
+      "finding": "This was a counterpart probe derived from the old Phoenix family. The old filename is referenced under https://phoenix.piugame.com/l_img/stepball/basic/. Current Phoenix2 Basic guide uses four complete 30_stepballbasic_* composites; no p2 counterpart reference was observed.",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609",
+        "https://piugame.com/game_info/basic_mode.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/basic/h_num_5.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:53.484544+00:00",
+      "httpStatus": 404,
+      "classification": "unavailable-current-namespace-legacy-counterpart",
+      "finding": "This was a counterpart probe derived from the old Phoenix family. The old filename is referenced under https://phoenix.piugame.com/l_img/stepball/basic/. Current Phoenix2 Basic guide uses four complete 30_stepballbasic_* composites; no p2 counterpart reference was observed.",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609",
+        "https://piugame.com/game_info/basic_mode.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/basic/h_num_7.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:54.224723+00:00",
+      "httpStatus": 404,
+      "classification": "unavailable-current-namespace-legacy-counterpart",
+      "finding": "This was a counterpart probe derived from the old Phoenix family. The old filename is referenced under https://phoenix.piugame.com/l_img/stepball/basic/. Current Phoenix2 Basic guide uses four complete 30_stepballbasic_* composites; no p2 counterpart reference was observed.",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609",
+        "https://piugame.com/game_info/basic_mode.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/basic/n_num_0.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:54.222053+00:00",
+      "httpStatus": 404,
+      "classification": "unavailable-current-namespace-legacy-counterpart",
+      "finding": "This was a counterpart probe derived from the old Phoenix family. The old filename is referenced under https://phoenix.piugame.com/l_img/stepball/basic/. Current Phoenix2 Basic guide uses four complete 30_stepballbasic_* composites; no p2 counterpart reference was observed.",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609",
+        "https://piugame.com/game_info/basic_mode.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/basic/n_num_3.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:54.229872+00:00",
+      "httpStatus": 404,
+      "classification": "unavailable-current-namespace-legacy-counterpart",
+      "finding": "This was a counterpart probe derived from the old Phoenix family. The old filename is referenced under https://phoenix.piugame.com/l_img/stepball/basic/. Current Phoenix2 Basic guide uses four complete 30_stepballbasic_* composites; no p2 counterpart reference was observed.",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609",
+        "https://piugame.com/game_info/basic_mode.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/basic/n_num_4.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:54.919436+00:00",
+      "httpStatus": 404,
+      "classification": "unavailable-current-namespace-legacy-counterpart",
+      "finding": "This was a counterpart probe derived from the old Phoenix family. The old filename is referenced under https://phoenix.piugame.com/l_img/stepball/basic/. Current Phoenix2 Basic guide uses four complete 30_stepballbasic_* composites; no p2 counterpart reference was observed.",
+      "references": [
+        "https://phoenix.piugame.com/leaderboard/top_steps.php?mode=basic&date=202609",
+        "https://piugame.com/game_info/basic_mode.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_2.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:54.903102+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_1.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:54.925730+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_3.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:55.602625+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_4.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:55.619646+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_6.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:55.625207+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_5.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:56.312616+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_8.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:56.303011+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     },
     {
       "sourceUrl": "https://piugame.com/l_img/p2/stepball/full/d_num_9.png",
-      "reason": "curl: (56) The requested URL returned error: 404"
+      "reason": "curl: (56) The requested URL returned error: 404",
+      "lastCheckedAt": "2026-11-19T20:34:56.312575+00:00",
+      "httpStatus": 404,
+      "classification": "unused-current-namespace-name",
+      "finding": "Current official Doubles uses the shared /l_img/p2/stepball/full/s_num_* digits. The probed d_num_* path is genuinely 404 but is not referenced by the reviewed current DOM.",
+      "references": [
+        "https://piugame.com/leaderboard/top_steps.php"
+      ]
     }
+  ],
+  "lastAuditedAt": "2026-11-19T20:38:43.321193+00:00",
+  "sourceHosts": [
+    "https://piugame.com",
+    "https://phoenix.piugame.com"
   ]
 }
