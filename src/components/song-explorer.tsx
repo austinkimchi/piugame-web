@@ -13,6 +13,7 @@ import type { PublicUser, SongCommunityState } from "@/lib/auth";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
 import { canLoadMoreSongs } from "@/lib/song-pagination";
 import { performanceVersionForCatalog } from "@/lib/piu-version";
+import { confirmPreviewMediaFailure, isPreviewUnavailable } from "@/lib/preview-availability";
 import type { CatalogFilterOptions, LevelFilterMode, PiuSeriesId, PublicSong, SongSortOption, SortDirection } from "@/lib/types";
 
 interface SearchResponse {
@@ -97,6 +98,7 @@ interface PreviewVoice {
   gain: GainNode | null;
   fadeFrame: number | null;
   volume: number;
+  onError: (() => void) | null;
 }
 
 export function SongExplorer({
@@ -517,6 +519,10 @@ export function SongExplorer({
       voice.fadeFrame = null;
     }
 
+    if (voice.onError) {
+      voice.audio.removeEventListener("error", voice.onError);
+      voice.onError = null;
+    }
     voice.audio.pause();
     voice.audio.removeAttribute("src");
     voice.audio.load();
@@ -659,7 +665,7 @@ export function SongExplorer({
 
   const playSongPreview = useCallback(
     async (song: PublicSong) => {
-      if (previewMuted || !song.previewUrl) {
+      if (previewMuted || !song.previewUrl || isPreviewUnavailable(song.previewUrl)) {
         return;
       }
 
@@ -692,7 +698,7 @@ export function SongExplorer({
         setActivePreviewUrl(song.previewUrl);
         return;
       }
-      const voice = {
+      const voice: PreviewVoice = {
         id: previewVoiceIdRef.current + 1,
         url: song.previewUrl,
         audio: new Audio(song.previewUrl),
@@ -701,6 +707,7 @@ export function SongExplorer({
         gain: null,
         fadeFrame: null,
         volume: 0,
+        onError: null,
       };
 
       previewVoiceIdRef.current = voice.id;
@@ -712,6 +719,16 @@ export function SongExplorer({
       activePreviewUrlRef.current = song.previewUrl;
       setActivePreviewUrl(song.previewUrl);
 
+      voice.onError = () => {
+        void confirmPreviewMediaFailure(voice.url, voice.audio.error);
+        removePreviewVoice(voice);
+        if (requestId === previewRequestIdRef.current && activePreviewUrlRef.current === voice.url) {
+          activePreviewUrlRef.current = null;
+          setActivePreviewUrl(null);
+        }
+      };
+      voice.audio.addEventListener("error", voice.onError);
+
       try {
         await voice.audio.play();
         if (requestId !== previewRequestIdRef.current || activePreviewUrlRef.current !== song.previewUrl) {
@@ -720,6 +737,7 @@ export function SongExplorer({
         }
         fadePreviewVoice(voice, previewVolume, PREVIEW_FADE_IN_MS);
       } catch {
+        void confirmPreviewMediaFailure(voice.url, voice.audio.error);
         removePreviewVoice(voice);
         if (requestId === previewRequestIdRef.current && activePreviewUrlRef.current === song.previewUrl) {
           activePreviewUrlRef.current = null;

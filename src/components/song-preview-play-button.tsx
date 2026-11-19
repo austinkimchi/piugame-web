@@ -4,6 +4,8 @@ import { Pause, Play } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 
+import { confirmPreviewMediaFailure, isPreviewUnavailable, usePreviewUnavailable } from "@/lib/preview-availability";
+
 interface SongPreviewPlayButtonProps {
   previewUrl: string | null;
   title: string;
@@ -14,6 +16,7 @@ interface SongPreviewPlayButtonProps {
 const FADE_IN_MS = 100;
 
 export function SongPreviewPlayButton({ previewUrl, title, className = "", volume = 1 }: SongPreviewPlayButtonProps) {
+  const unavailable = usePreviewUnavailable(previewUrl);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const fadeFrameRef = useRef<number | null>(null);
@@ -74,7 +77,7 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "", volum
   }
 
   async function togglePreview() {
-    if (!previewUrl) {
+    if (!previewUrl || isPreviewUnavailable(previewUrl)) {
       return;
     }
 
@@ -98,6 +101,7 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "", volum
       setPlaying(true);
       fadeTo(targetVolume, FADE_IN_MS);
     } catch {
+      void confirmPreviewMediaFailure(previewUrl, audio.error);
       stopPreview();
     }
   }
@@ -114,7 +118,7 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "", volum
   }
 
   useEffect(() => {
-    if (!previewUrl) {
+    if (!previewUrl || unavailable) {
       return;
     }
 
@@ -142,10 +146,16 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "", volum
       audio.currentTime = 0;
     }
 
+    function handleError() {
+      setPlaying(false);
+      void confirmPreviewMediaFailure(previewUrl, audio.error);
+    }
+
     audio.addEventListener("timeupdate", updateTime);
     audio.addEventListener("durationchange", updateDuration);
     audio.addEventListener("loadedmetadata", updateDuration);
     audio.addEventListener("ended", finishPlayback);
+    audio.addEventListener("error", handleError);
     audio.load();
 
     return () => {
@@ -158,13 +168,14 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "", volum
       audio.removeEventListener("durationchange", updateDuration);
       audio.removeEventListener("loadedmetadata", updateDuration);
       audio.removeEventListener("ended", finishPlayback);
+      audio.removeEventListener("error", handleError);
       audio.removeAttribute("src");
       audio.load();
       if (audioRef.current === audio) {
         audioRef.current = null;
       }
     };
-  }, [previewUrl]);
+  }, [previewUrl, unavailable]);
 
   useEffect(() => {
     if (playing) {
@@ -182,6 +193,16 @@ export function SongPreviewPlayButton({ previewUrl, title, className = "", volum
 
   if (!previewUrl) {
     return null;
+  }
+
+  if (unavailable) {
+    return (
+      <div className={`pointer-events-none absolute inset-0 z-20 ${className}`}>
+        <span className="absolute bottom-4 left-4 bg-white/95 px-3 py-1 text-sm text-[#687260]" role="status">
+          Preview unavailable
+        </span>
+      </div>
+    );
   }
 
   return (

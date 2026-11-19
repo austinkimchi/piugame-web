@@ -76,6 +76,10 @@ For a new clip, retain the source URL, confirmed start/end timestamps, export se
 
 Inspect format, duration, channels, sample rate, peak/clipping, and audible cut boundaries; compare with curated exports. Preserve the old file when replacing a clip. Verify the exact catalog URL, including spaces or punctuation, returns the intended bytes and content type. Check range requests used for seeking, and check after a service restart and deployment. `previewAvailable=true` describes a catalog reference; it does not prove the file exists or plays.
 
+**Manual completion needed — `%X (Percent X)` by Pory (November 19, 2026):** the catalog references `data\audio_previews\manual\%X (Percent X) - Pory.wav`, but that exact export was not found in the inspected PIU projects, Ableton folders, or production audio roots, and its public preview URL returned 404. Restore the verified original to `public/assets/piu/phoenix2/audio_previews/manual/%X (Percent X) - Pory.wav`, or upload a verified export through the admin editor. The existing `xpercentxpory.mp3` is a 12.04-second, 44.1 kHz stereo file; its intended cut and normalization have not been established, so do not substitute it. If re-exporting is necessary, confirm and record the source and exact boundaries first. Preserve the curated catalog reference until the correct clip is available.
+
+Preview players remember a confirmed 404 only in page-session memory and show “Preview unavailable.” Confirmation happens after an actual media-load failure, with one shared in-flight range request per URL; normal songs receive no extra check. Reloading retries the original URL, and a new upload URL is checked independently. Autoplay denial, cancellation, offline errors and other HTTP statuses do not mark a preview missing.
+
 Jacket syncing is a separate filesystem operation. Review source/destination paths before copying; do not assume every worktree has a sibling SDK checkout. Verify all newly advertised image URLs after deployment.
 
 ## Performance and mobile clients
