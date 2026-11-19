@@ -223,7 +223,7 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, f
                       Upload audio
                       <span className="flex min-h-11 min-w-0 cursor-pointer items-center gap-2 overflow-hidden border border-dashed border-[#cdd5c5] bg-white px-3 text-sm font-bold normal-case text-[#56604e] transition hover:border-[#28c950] hover:text-[#1f5f39]">
                         {audioFile ? <Music aria-hidden="true" className="shrink-0" size={16} /> : <Upload aria-hidden="true" className="shrink-0" size={16} />}
-                        <span className="min-w-0 flex-1 truncate">{audioFile?.name ?? song.audioPath ?? "Drop or choose preview audio"}</span>
+                        <span className="min-w-0 flex-1 truncate">{audioFile?.name ?? song.audioPath ?? previewFilename(song.previewUrl) ?? "Drop or choose preview audio"}</span>
                       </span>
                       <input className="sr-only" accept={AUDIO_ACCEPT} type="file" onChange={handleAudioInput} />
                     </label>
@@ -288,6 +288,17 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, f
       ) : null}
     </>
   );
+}
+
+function previewFilename(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value, "https://mypiu.austin.kim");
+    const filename = (url.pathname === "/api/audio-file" ? url.searchParams.get("path") : url.pathname)?.split("/").pop();
+    return filename ? decodeURIComponent(filename) : "Existing preview audio";
+  } catch {
+    return "Existing preview audio";
+  }
 }
 
 function payloadFromSong(song: PublicSong): CatalogEditorPayload {
