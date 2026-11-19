@@ -13,7 +13,7 @@ export function manageDialogFocus(dialog: HTMLElement, initialFocus: HTMLElement
   }
 
   function tabStops() {
-    return [...dialog.querySelectorAll<HTMLElement>("a[href],button,input,select,textarea,[tabindex]")]
+    return [...dialog.querySelectorAll<HTMLElement>("a[href],button,input,select,textarea,summary,iframe,[tabindex]")]
       .filter((element) => element.tabIndex >= 0 && !element.matches(":disabled")
         && !element.closest("[hidden],[inert],[aria-hidden='true']") && element.getClientRects().length > 0);
   }
@@ -30,10 +30,26 @@ export function manageDialogFocus(dialog: HTMLElement, initialFocus: HTMLElement
     }
   }
 
+  // Keyboard events inside an embedded video do not bubble to this document.
+  // Contain the ensuing focus move when Tab leaves a final iframe, without
+  // inspecting its document or interfering with another modal's focus scope.
+  let redirectingFocus = false;
+  function handleFocusIn(event: FocusEvent) {
+    if (redirectingFocus || dialog.contains(event.target as Node) || anotherModalOpen()) return;
+    redirectingFocus = true;
+    try {
+      focus(tabStops()[0] ?? dialog);
+    } finally {
+      redirectingFocus = false;
+    }
+  }
+
   focus(initialFocus ?? tabStops()[0] ?? dialog);
   document.addEventListener("keydown", handleKeyDown);
+  document.addEventListener("focusin", handleFocusIn);
   return () => {
     document.removeEventListener("keydown", handleKeyDown);
+    document.removeEventListener("focusin", handleFocusIn);
     if (!anotherModalOpen() && previousFocus?.isConnected && typeof previousFocus.focus === "function") focus(previousFocus);
   };
 }

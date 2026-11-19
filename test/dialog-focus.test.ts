@@ -8,6 +8,7 @@ class FocusDocument extends EventTarget {
   querySelectorAll() { return this.modals; }
 }
 class FocusElement {
+  tagName = "button";
   tabIndex = 0;
   disabled = false;
   hidden = false;
@@ -25,7 +26,9 @@ class FocusElement {
   matches() { return this.disabled; }
   closest() { return this.hidden ? this : null; }
   getClientRects() { return this.visible ? [{}] : []; }
-  querySelectorAll() { return this.children; }
+  querySelectorAll(selector: string) {
+    return this.children.filter((child) => selector.split(",").includes(child.tagName));
+  }
   contains(element: FocusElement | null) { return element === this || this.children.includes(element!); }
   asHTMLElement() { return this as unknown as HTMLElement; }
 }
@@ -33,6 +36,10 @@ function key(document: FocusDocument, value = "Tab", shiftKey = false) {
   const event = Object.assign(new Event("keydown", { cancelable: true }), { key: value, shiftKey });
   document.dispatchEvent(event);
   return event;
+}
+function focusIn(document: FocusDocument, element: FocusElement) {
+  document.activeElement = element;
+  document.dispatchEvent(Object.defineProperty(new Event("focusin"), "target", { value: element }));
 }
 function fixture() {
   const document = new FocusDocument();
@@ -129,4 +136,50 @@ test("a separate modal keeps keyboard and focus ownership until it closes", () =
   f.document.activeElement = field;
   cleanup();
   assert.equal(f.document.activeElement, field, "Notebook cleanup must not steal a live popup's focus");
+});
+
+test("native tag disclosures and video frames remain in the keyboard boundaries", () => {
+  const f = fixture();
+  const summary = new FocusElement(f.document);
+  summary.tagName = "summary";
+  const frame = new FocusElement(f.document);
+  frame.tagName = "iframe";
+  f.dialog.children.push(summary, frame);
+  const cleanup = manageDialogFocus(f.dialog.asHTMLElement(), f.close.asHTMLElement());
+  f.document.activeElement = f.last;
+  assert.equal(key(f.document).defaultPrevented, false, "The preceding button must reach the native disclosure");
+  f.document.activeElement = summary;
+  assert.equal(key(f.document).defaultPrevented, false, "The disclosure must reach the video frame");
+  f.document.activeElement = frame;
+  assert.equal(key(f.document).defaultPrevented, true);
+  assert.equal(f.document.activeElement, f.first);
+  key(f.document, "Tab", true);
+  assert.equal(f.document.activeElement, frame, "Reverse wrapping includes the last native control");
+  frame.hidden = true;
+  f.document.activeElement = f.first;
+  key(f.document, "Tab", true);
+  assert.equal(f.document.activeElement, summary, "Hidden frames do not hide the preceding disclosure boundary");
+  cleanup();
+});
+
+test("focus leaving a final iframe is contained without trapping another modal or the restored invoker", () => {
+  const f = fixture();
+  const cleanup = manageDialogFocus(f.dialog.asHTMLElement(), f.close.asHTMLElement());
+  focusIn(f.document, f.trigger);
+  assert.equal(f.document.activeElement, f.first, "Iframe key events need not reach the parent document");
+  focusIn(f.document, f.last);
+  assert.equal(f.document.activeElement, f.last, "Internal focus retains its native position");
+  const portal = new FocusElement(f.document);
+  f.document.modals = [f.dialog, portal];
+  focusIn(f.document, portal);
+  assert.equal(f.document.activeElement, portal);
+  portal.visible = false;
+  // Simulate a synchronous focus event during redirection, as in a real DOM.
+  const focus = f.first.focus.bind(f.first);
+  f.first.focus = (options) => { focus(options); focusIn(f.document, f.first); };
+  focusIn(f.document, f.trigger);
+  assert.equal(f.document.activeElement, f.first);
+  cleanup();
+  focusIn(f.document, f.trigger);
+  assert.equal(f.document.activeElement, f.trigger, "Cleanup removes focus containment before restoring the card");
 });
