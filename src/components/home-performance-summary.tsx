@@ -42,7 +42,7 @@ export function HomePerformanceSummary({ averageBestScore, averageBestScoreChang
             <SummaryMetric detail={format24HourChange(pumbilityChange24Hours)} icon={<TrendingUp aria-hidden="true" size={17} />} label="Pumbility" value={formatNumber(pumbility)} />
             <SummaryMetric onClick={openRecommendations} detail={format24HourChange(averageBestScoreChange24Hours)} icon={<BarChart3 aria-hidden="true" size={17} />} label="Average best" value={formatNumber(averageBestScore)} />
             <SummaryMetric onClick={upscoreMetrics.length > 1 ? showNextUpscoreMetric : undefined} icon={<Zap aria-hidden="true" size={17} />} label={upscoreMetric.label} value={formatNumber(upscoreMetric.value)} />
-            <SummaryMetric onClick={openRecentCatalog} icon={<Clock3 aria-hidden="true" size={17} />} label="Recently played" value={formatNumber(recentlyPlayed)} />
+            <SummaryMetric onClick={openRecentCatalog} detail="View all play history" icon={<Clock3 aria-hidden="true" size={17} />} label="Latest session" value={`${formatNumber(recentlyPlayed)} ${recentlyPlayed === 1 ? "play" : "plays"}`} />
           </div>
           {!synced ? (
             <div className="absolute inset-0 flex items-center justify-center bg-white/65 px-4 backdrop-blur-[2px]">

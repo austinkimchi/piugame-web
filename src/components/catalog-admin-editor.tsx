@@ -1,7 +1,7 @@
 "use client";
 
 import { Music, Pencil, Plus, Save, Trash2, Upload, X } from "lucide-react";
-import { type ChangeEvent, type DragEvent, useMemo, useState } from "react";
+import { type ChangeEvent, type DragEvent, useMemo, useRef, useState } from "react";
 
 import { useAdminViewMode } from "@/lib/admin-view-mode";
 import type { CatalogEditorPayload, PiuSeriesId, PublicSong } from "@/lib/types";
@@ -24,6 +24,8 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, f
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [message, setMessage] = useState("");
   const [draft, setDraft] = useState<CatalogEditorPayload>(() => payloadFromSong(song));
+  const [chartKeys, setChartKeys] = useState(() => song.chartSummary.map((_, index) => index));
+  const nextChartKey = useRef(song.chartSummary.length);
   const [historyJson, setHistoryJson] = useState(() => JSON.stringify(payloadFromSong(song).history, null, 2));
   const [chartHistoryJson, setChartHistoryJson] = useState(() => JSON.stringify(payloadFromSong(song).chartHistory, null, 2));
   const [chartLinksJson, setChartLinksJson] = useState(() => JSON.stringify(payloadFromSong(song).chartLinks, null, 2));
@@ -48,6 +50,7 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, f
   }
 
   function removeChartToken(index: number) {
+    setChartKeys((current) => current.filter((_, tokenIndex) => tokenIndex !== index));
     setDraft((current) => ({
       ...current,
       chartTokens: current.chartTokens.filter((_, tokenIndex) => tokenIndex !== index),
@@ -55,6 +58,8 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, f
   }
 
   function addChartToken() {
+    const key = nextChartKey.current++;
+    setChartKeys((current) => [...current, key]);
     setDraft((current) => ({ ...current, chartTokens: [...current.chartTokens, ""] }));
   }
 
@@ -148,6 +153,7 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, f
 
     setStatus("idle");
     setDraft(payloadFromSong(responseBody.song));
+    setChartKeys(responseBody.song.chartSummary.map(() => nextChartKey.current++));
     setHistoryJson(JSON.stringify(responseBody.song.history, null, 2));
     setChartHistoryJson(JSON.stringify(responseBody.song.chartHistory, null, 2));
     setChartLinksJson(JSON.stringify(responseBody.song.chartLinks, null, 2));
@@ -257,8 +263,9 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, f
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {draft.chartTokens.map((token, index) => (
-                    <div key={`${index}:${token}`} className="flex gap-2">
+                    <div key={chartKeys[index]} className="flex gap-2">
                       <input
+                        aria-label={`Chart ${index + 1} difficulty`}
                         className="min-h-10 min-w-0 flex-1 border border-[#d8dfd1] bg-white px-3 text-sm font-black uppercase text-[#171916] outline-none focus:border-[#28c950]"
                         value={token}
                         onChange={(event) => updateChartToken(index, event.target.value)}
