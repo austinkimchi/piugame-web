@@ -51,6 +51,7 @@ The full test suite requires Linux, `flock` and Python 3; see [test prerequisite
 - [Architecture, catalog updates, audio, and deployment](docs/maintenance.md)
 - [CI and spending controls](docs/ci.md)
 - [Mobile API](docs/mobile-api.md) · [Sign in with Apple](docs/sign-in-with-apple.md)
+- [Public catalog snapshot API](docs/public-catalog-api.md)
 - [PIUGAME SDK](https://github.com/austinkimchi/piugame-sdk) · [Mobile project](https://github.com/austinkimchi/piugame-mobile)
 
 MyPIU is not affiliated with ANDAMIRO.

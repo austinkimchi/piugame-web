@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const version = normalizePiuSeriesId(request.nextUrl.searchParams.get("version"));
   const song = await getSongBySlug(slug, version);
   const chartToken = normalizeChartToken(request.nextUrl.searchParams.get("chart") ?? undefined, song?.chartSummary);
-  return NextResponse.json(await getSongCommunityState(user, slug, chartToken, song ? chartCommunityKey(song, version, chartToken) : null), {
+  return NextResponse.json(await getSongCommunityState(user, song?.slug ?? slug, chartToken, song ? chartCommunityKey(song, version, chartToken) : null), {
     headers: { "Cache-Control": "private, no-store" },
   });
 }

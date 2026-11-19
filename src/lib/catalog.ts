@@ -11,6 +11,7 @@ import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, normalizeP
 import { isPremiumSong } from "@/lib/premium-songs";
 import { songMatchesChartFilters } from "@/lib/song-chart-filters";
 import { songsMatchingSlugs } from "@/lib/song-slug-filter";
+import { invalidatePublicCatalog } from "@/lib/public-catalog";
 import type {
   CatalogFilterOptions,
   CatalogEditorPayload,
@@ -1261,7 +1262,13 @@ async function getCatalogDocumentBySlug(slug: string): Promise<WithId<CatalogDoc
     )
     .limit(5000)
     .toArray();
-  const candidate = candidates.find((document) => catalogDocumentSlug(document, fallbackVersion) === slug);
+  const candidate = candidates.find((document) => {
+    // Keep legacy search/favorite URLs valid, and also accept source-version
+    // slugs emitted by the public snapshot for records originating in PHOENIX.
+    if (catalogDocumentSlug(document, fallbackVersion) === slug) return true;
+    const sourceVersion = cleanText(document.piuVersion ?? document.catalogVersion);
+    return sourceVersion === "phoenix" && catalogDocumentSlug(document, "phoenix") === slug;
+  });
 
   return candidate ? collection.findOne({ _id: candidate._id }, { projection: projection() }) : null;
 }
@@ -1397,7 +1404,12 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
     };
   }
 
-  await collection.updateOne({ _id: document._id }, { $set });
+  const result = await collection.updateOne({ _id: document._id }, { $set });
+  if (result.acknowledged && result.matchedCount > 0) {
+    // Invalidate after the committed catalog/audio update, even if the response
+    // read below fails. Failed uploads and failed writes leave the cache intact.
+    invalidatePublicCatalog();
+  }
 
   const updated = await collection.findOne({ _id: document._id }, { projection: projection() });
   if (!updated) {
