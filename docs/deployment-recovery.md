@@ -2,23 +2,60 @@
 
 ## Installation status
 
-The initial installation was verified on **November 19, 2026**, using the immutable
-bundle from reviewed head `baf9b5631a30bcfaa5280d48f20ba5b73c2371c7`, installed under
-`~/.local/lib/piugame-web-deploy/` outside the application and recovery trees.
-The launcher SHA-256 is `998bd4271c6b16701bd2b2eff02f13d28e8e2c7419a7c90b043c2c5a9bf669e3`.
-Installation retained the same existing deployment lock across the source merge
-and atomic launcher replacement. The ordinary timer then deployed `bd3c718`,
-and the next timer reported it current.
+The installed immutable bundle is reviewed head
+`bc4bbb3035c59e6994093e0effa47851e65babd4` from
+[PR #58](https://github.com/austinkimchi/piugame-web/pull/58), verified on
+**November 19, 2026 at 23:14:52 UTC**. It lives under
+`~/.local/lib/piugame-web-deploy/<reviewed-commit>/`, outside the application and
+recovery trees. The launcher SHA-256 is
+`8ee8afbb4efaa6911f86465c8dcca45c2986062cec42c8726e010e06af2b5bcb`.
+The existing deployment lock protected the exact-hash checks and atomic launcher
+replacement. The previous `1031b47` bundle and launcher backup remain available.
 
-Qualification passed 53 of 53 isolated Linux tests. A fresh full-runtime copy,
-durable inventory and verification took 81.176 seconds within the 120-second
-budget. The first normal live promotion with this bundle succeeded; it caused
-about 92 seconds of single-instance interruption. Origin/static/catalog, public
-image/audio checks, all 63 manual-audio hashes, environment and unrelated bot
-checks passed. A real live post-promotion rollback was not deliberately tested.
-Private receipts are under `deployment-install-baf9b563/` in the November 19
-maintenance directory; the initial safely failed `9318d1e` deployment evidence
-was retained separately.
+All 69 Linux deployment/files/process tests, CI and exact-head review passed.
+Installation followed the ordinary source promotion to `1d79b743`; source,
+marker, origin/public HTML, static bytes and the 675-song catalog agreed. The
+web process was not restarted by bundle installation, all 63 existing audio
+hashes and `.env` remained unchanged, and subsequent ordinary timer runs reported
+the release current. Private installation evidence is under
+`deployment-install-bc4bbb3/` in the November 19 maintenance directory; the
+sanitized laptop receipt is `deployment-snapshot-release.json`.
+
+An isolated ext4 comparison using retained runtime/media and real copy/hash/sync
+work reduced the **simulated** stopped interval from 87.664 to 14.966 seconds.
+Total deployment time increased from 89.612 to 93.633 seconds. Build, service and
+HTTP readiness were simulated, so these figures are not a live outage claim.
+The comparison preserved the input, rollback artifacts, existing media and
+environment fixture; its scratch files were removed.
+
+The final ordinary rollout using the old `1031b47` driver took 112.661 seconds
+from systemd's `Stopping` event to `Started` (96.196 seconds fully stopped).
+Origin probes failed across a 111.852-second span; the surrounding successful
+probes were 132.725 seconds apart. Those approximately ten-second samples do not
+give an exact HTTP outage duration.
+
+The first ordinary rollout with the new driver promoted `924061bf`
+([PR #57](https://github.com/austinkimchi/piugame-web/pull/57)) at **23:24:34.554 UTC**
+on November 19. Healthy origin/public samples covered 78.364 seconds of snapshot
+preparation. Systemd's `Stopping` to `Started` interval was **19.054 seconds**
+(19.048 seconds fully stopped); the validated deployment-marker write followed
+20.631 seconds after the verified stop. Approximately two-second probes recorded
+17.283 seconds between the first and last failures, with surrounding healthy
+samples 21.783 seconds apart at origin and 22.199 seconds publicly. This is one
+observed release, not a guaranteed duration or an exact continuous HTTP trace.
+
+Source/marker, origin/public static/catalog checks and all 63 existing audio
+files passed. Environment files were unchanged. The retained rollback runtime
+was independently rehashed; its prior build ID, dependencies, media and protected
+source ref match the pre-release state. Pending, in-flight and transaction state
+cleared normally. The sanitized laptop receipt is
+`deployment-first-optimized-rollout.json`. Measure future useful releases rather
+than forcing a same-SHA deployment for timing.
+
+The initial `baf9b563` installation, its 53-test qualification and first normal
+promotion remain recorded under `deployment-install-baf9b563/`; the safely failed
+`9318d1e` evidence remains separate. A real live post-promotion rollback has not
+been deliberately exercised.
 
 Merging future repository changes does **not** replace this installed bundle.
 New recovery code still requires a separately reviewed host installation and
@@ -100,12 +137,10 @@ files into staging.
   A rollback uses this deployment's snapshot, not an older maintenance backup.
 
 The staging checkout installs locked dependencies and builds while the current
-service remains available. The repository's snapshot preparation also copies,
+service remains available. The installed snapshot preparation also copies,
 hashes and syncs the prior runtime while that service is running. Both runtime
 roots are copied together to preserve relative links between `.next` and
 `node_modules`; these are independent copies, never hard links to live files.
-This optimization needs separate host installation before it changes production
-deployment behavior.
 
 After the verified stop, dependencies are checked against the prepared snapshot.
 The preliminary `.next` copy is replaced with a fresh stopped copy, and manual
