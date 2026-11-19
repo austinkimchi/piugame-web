@@ -10,6 +10,7 @@ import { HomePerformanceSummary } from "@/components/home-performance-summary";
 import { SongCard } from "@/components/song-card";
 import { SongDetailView } from "@/components/song-detail-view";
 import type { PublicUser, SongCommunityState } from "@/lib/auth";
+import { catalogFilterOptionsForSelection } from "@/lib/catalog-filter-options";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
 import { canLoadMoreSongs } from "@/lib/song-pagination";
 import { performanceVersionForCatalog } from "@/lib/piu-version";
@@ -336,12 +337,7 @@ export function SongExplorer({
           setCompatibleFilterOptions(
             isSpecialFeedQuery
               ? filterOptions
-              : {
-                  ...body.filterOptions,
-                  // Keep alternate series available while building a multi-series selection;
-                  // otherwise narrow this list to the current search results.
-                  series: requestFilters.series.length > 0 ? filterOptions.series : body.filterOptions.series,
-                },
+              : catalogFilterOptionsForSelection(body.filterOptions, filterOptions, requestFilters),
           );
         }
         setNextCursor(body.nextCursor);
@@ -1125,12 +1121,13 @@ export function SongExplorer({
               className="mb-3 grid gap-3 border-y border-[#d9ded2] py-4 lg:grid-cols-[minmax(260px,1fr)_auto] lg:items-center"
               layout
             >
-              <motion.label
+              <motion.div
                 className="search-field flex min-h-11 items-center gap-3 border border-[#cfd7c8] bg-white px-3"
                 whileHover={{ y: -2, boxShadow: "0 12px 28px rgba(30,34,26,0.10)" }}
               >
                 <Search aria-hidden="true" size={18} className="shrink-0 text-[#626c5c]" />
                 <input
+                  aria-label="Search songs"
                   className="ios-search-input w-full bg-transparent text-base outline-none placeholder:text-[#8b9483]"
                   value={query}
                   onChange={(event) => {
@@ -1157,7 +1154,7 @@ export function SongExplorer({
                     <X aria-hidden="true" size={17} />
                   </button>
                 ) : null}
-              </motion.label>
+              </motion.div>
               <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_2.75rem_2.75rem_2.75rem] items-center border border-[#cfd7c8] bg-white text-sm font-bold uppercase text-[#596153] lg:min-w-[19.5rem] lg:grid-cols-[minmax(11rem,1fr)_2.75rem_2.75rem]">
                 <label className={`relative h-full ${isRankedFeedSearch ? "opacity-45" : ""}`}>
                   <span className="sr-only">Sort by</span>
