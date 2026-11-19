@@ -1,11 +1,12 @@
 import "server-only";
 
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import type { Collection, Document, Filter, WithId } from "mongodb";
 import { cache } from "react";
 
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
+import { audioFileUrlForPath, saveCatalogAudioUpload } from "@/lib/audio-preview";
 import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, sortPiuSeries } from "@/lib/catalog-version";
 import { isPremiumSong } from "@/lib/premium-songs";
 import { songMatchesChartFilters } from "@/lib/song-chart-filters";
@@ -33,16 +34,6 @@ const DB_NAME = process.env.SONG_CATALOG_DB ?? "piugame_sdk";
 const CATALOG_COLLECTION = process.env.CATALOG_COLLECTION ?? "catalog";
 const MAIN_CATALOG_VERSION: PiuSeriesId = DEFAULT_CATALOG_SERIES;
 const SERIES_ORDER = ["1st", "nx", "fiesta", "prime", "prime2", "xx", "phoenix", "phoenix2"];
-const AUDIO_UPLOAD_MAX_BYTES = 16 * 1024 * 1024;
-const AUDIO_UPLOAD_CONTENT_TYPES = new Map([
-  ["audio/mpeg", ".mp3"],
-  ["audio/mp3", ".mp3"],
-  ["audio/ogg", ".ogg"],
-  ["audio/wav", ".wav"],
-  ["audio/x-wav", ".wav"],
-  ["audio/mp4", ".m4a"],
-  ["audio/x-m4a", ".m4a"],
-]);
 
 interface CatalogStats {
   folderCounts: Map<string, number>;
@@ -483,88 +474,6 @@ function editableFolderPosition(value: unknown): number | null {
 
 function bpmFromDocument(document: CatalogDocument): string | null {
   return cleanText(document.bpm ?? document.bpmRaw) || null;
-}
-
-function encodedPublicPath(pathname: string): string | null {
-  const segments = pathname
-    .split("/")
-    .filter(Boolean);
-
-  if (segments.length === 0 || segments.some((segment) => segment === "." || segment === "..")) {
-    return null;
-  }
-
-  return `/${segments.map(encodeURIComponent).join("/")}`;
-}
-
-function audioFileUrlForPath(localPath: string | null | undefined, version: PiuCatalogVersion): string | null {
-  const normalized = String(localPath ?? "")
-    .trim()
-    .replaceAll("\\", "/")
-    .replace(/^\/+/, "");
-
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized.startsWith("data/audio_previews/")) {
-    const filename = normalized.slice("data/audio_previews/".length);
-    return encodedPublicPath(`assets/piu/${version}/audio_previews/${filename}`);
-  }
-
-  if (normalized.startsWith("public/")) {
-    return encodedPublicPath(normalized.slice("public/".length));
-  }
-
-  if (normalized.startsWith("assets/")) {
-    return encodedPublicPath(normalized);
-  }
-
-  // Admin uploads store paths relative to their catalog's preview directory.
-  if (normalized.startsWith("manual/")) {
-    return encodedPublicPath(`assets/piu/${version}/audio_previews/${normalized}`);
-  }
-
-  return null;
-}
-
-function audioUploadExtension(file: File): string {
-  const extension = path.extname(file.name).toLowerCase();
-  if (Array.from(AUDIO_UPLOAD_CONTENT_TYPES.values()).includes(extension)) {
-    return extension;
-  }
-
-  const contentTypeExtension = AUDIO_UPLOAD_CONTENT_TYPES.get(file.type.toLowerCase());
-  if (contentTypeExtension) {
-    return contentTypeExtension;
-  }
-
-  throw new Error("Audio upload must be an MP3, OGG, WAV, or M4A file.");
-}
-
-function audioFilenameForSong(title: string, artist: string, extension: string): string {
-  return `${slugify(title) || "untitled"}-${slugify(artist) || "unknown"}${extension}`;
-}
-
-async function saveCatalogAudioUpload(version: PiuCatalogVersion, title: string, artist: string, file: File): Promise<{ audioPath: string; publicUrl: string }> {
-  if (file.size < 1) {
-    throw new Error("Audio upload is empty.");
-  }
-  if (file.size > AUDIO_UPLOAD_MAX_BYTES) {
-    throw new Error("Audio upload must be 16 MB or smaller.");
-  }
-
-  const extension = audioUploadExtension(file);
-  const filename = audioFilenameForSong(title, artist, extension);
-  const uploadDir = path.join(process.cwd(), "public", "assets", "piu", version, "audio_previews", "manual");
-  await mkdir(uploadDir, { recursive: true });
-  await writeFile(path.join(uploadDir, filename), Buffer.from(await file.arrayBuffer()));
-
-  const audioPath = `manual/${filename}`;
-  return {
-    audioPath,
-    publicUrl: `/assets/piu/${version}/audio_previews/manual/${encodeURIComponent(filename)}`,
-  };
 }
 
 function previewUrlFromDocument(document: CatalogDocument, version: PiuCatalogVersion): string | null {
@@ -1464,7 +1373,8 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
   }
 
   if (audioFile) {
-    const upload = await saveCatalogAudioUpload(versionFromDocument(document, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION)), payload.title, payload.artist, audioFile);
+    const assetVersion = imageVersionFor(document, versionFromDocument(document, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION)));
+    const upload = await saveCatalogAudioUpload(assetVersion, payload.title, payload.artist, audioFile);
     $set.audioPath = upload.audioPath;
     $set.audioPreview = {
       ...(document.audioPreview ?? {}),
