@@ -1,18 +1,20 @@
 # MyPIU maintenance runbook
 
-Last verified: **November 19, 2026**, against production commit `146d4ce`, repository source, official release notices, and the live site. Counts below are the audit baseline before the October catalog reconciliation, not permanent expected totals. Recheck deployment and database state before changing production.
+Last verified: **November 19, 2026**, with production running commit `b66a7fc` on Node 24.22.3. The October catalog release was applied using commit `844e43d`; the initial audit used `146d4ce`. Counts below describe the completed catalog update, not permanent expected totals. Recheck deployment and database state before changing production.
 
 ## Production and data ownership
 
-| Component | Verified baseline |
+| Component | Verified state |
 | --- | --- |
 | Public website | `https://mypiu.austin.kim` |
 | Origin | `slim7prox`, checkout `/home/pkimchi/piugame-web-prod`, port `4090` |
 | Web service | systemd user unit `piugame-web.service` |
+| Runtime | Node 24.22.3 in the web service and deploy script; the default shell remains on Node 23.11.0 |
 | Deployment | `piugame-web-deploy.timer` checks GitHub `main` every minute; deployment resets the checkout to `main`, installs dependencies, builds, and restarts the service |
 | Catalog database | `SONG_CATALOG_DB=piugame_sdk`, unified `CATALOG_COLLECTION=catalog` |
-| Catalog baseline | 676 total documents; 654 support Phoenix 2 |
-| Source collections | `song_catalog`: 639 documents; `song_catalog_2`: 654 documents; manual overrides are maintained separately |
+| Catalog after October update | 697 total documents; 675 support Phoenix 2 |
+| Source collections | `song_catalog`: 639 documents; `song_catalog_2`: 675 documents |
+| Manual overrides | `song_catalog_2_media_overrides`: 404; `song_catalog_series_overrides`: 444; unchanged by the catalog update |
 | Community database | `COMMUNITY_DB_NAME=piugame_web`: accounts, sessions, favorites, community content, performance, and mobile authentication/import records |
 
 The deployment audit did **not** establish an automatic health check or rollback. A successful build or running process alone is insufficient evidence that a release works. Cloudflare configuration, Workers, and routing must be inspected separately before changing them; the existence of Workers in the account does not mean this Next.js origin runs in a Worker.
@@ -53,6 +55,14 @@ The [October 15 notice](https://piugame.com/phoenix2_notice?&wr_id=357) covers P
 
 PHYSALIS is Premium Mode exclusive. Verify the 15 R!SE songs' exact chart lists against official chart pages; the notice names these songs without their full difficulty lists. Preserve pre-existing R!SE charts when adding arcade charts.
 
+### Completed October catalog update
+
+On November 19, commit `844e43d` applied **43 operations**: 21 new songs in each of `catalog` and `song_catalog_2`, plus the Hello William D20 history event. Public verification at **16:57:07 UTC** found 675 Phoenix 2 songs, including all 21 additions and their 171 charts. Fresh exports produced a zero-change plan. Existing BSON documents were unchanged except for the reviewed Hello William history append; all 63 manual-audio hashes matched. Audio for the 21 additions remains absent until verified.
+
+The private release record is under `/home/pkimchi/Documents/piugame-maintenance/2026-11-19/`: `catalog-backup-final/` holds the before exports, `catalog-backup-after/` the after exports, and `catalog-release-journal.ejson` is mode 0600 with phase `complete`, 43 intents, 43 acknowledgements and 43 completed operations. The reviewed `catalog-release-plan-final.json` SHA-256 is `988fe273b1111cc141b0dae388b333041a60717df405cc4edf075bbe88918d70`. Keep these files outside Git and retain the completed journal. Public verification and a completed journal do not by themselves establish that backup restoration has been tested.
+
+See [release planning](catalog-release-planning.md) for evidence and dry runs, and the [October writer](catalog-release-writer.md) for its preconditions and recovery procedure. That writer accepts only the fixed October 43-operation plan. A later release requires fresh official evidence, lossless exports, a reviewed plan and separately reviewed writer support; changing the planner's manifest does not make the current writer suitable for another release.
+
 The [official v1.03 teaser](https://www.youtube.com/watch?v=Jja7HusBVzc) announces November 24, 2026, with an earlier IAAPA preview. As of this runbook's verification date, that content must not be represented as generally released. Recheck the official release notice on or after release rather than promoting a draft automatically.
 
 ## Back up, plan, apply, verify
@@ -64,7 +74,7 @@ The [official v1.03 teaser](https://www.youtube.com/watch?v=Jja7HusBVzc) announc
 5. Apply with the reviewed tool and compare actual writes with the plan. Re-run the dry run to establish idempotence. Check version-specific counts, provenance, media availability, and unchanged identities, manual audio, and older-version charts.
 6. Verify the public API and browser: search each added song; open its details; check artist, BPM, folder, charts, history, premium/restriction information, and jacket. Compare representative Phoenix songs and favorites with the baseline. Check anonymous and authorized signed-in behavior.
 
-The exact import command depends on the reviewed tooling in the checkout. Historically, `.gitignore` excluded `scripts`, while `package.json` advertised import/migration commands. Do not recover and execute an old script without reviewing its source and dry-run behavior. Record the command and revision actually used in the release record.
+Use the [reviewed planner](catalog-release-planning.md) and the release-specific [writer procedure](catalog-release-writer.md). Historically, `.gitignore` excluded `scripts`, while `package.json` advertised import/migration commands. Do not recover and execute an old script without reviewing its source and dry-run behavior. Record the command and revision actually used in the release record.
 
 ## Audio and jackets
 
@@ -105,3 +115,17 @@ systemctl --user status piugame-web-deploy.timer --no-pager
 Check origin and public behavior, including search, a song detail, a jacket, an audio URL, and an authorized signed-in flow. A protected public request returning a challenge or 403 is not evidence of an application regression; verify through the authorized browser and inspect the origin before changing edge rules.
 
 For recovery, first coordinate the deployment watcher so it cannot replace a restored revision. Git rollback does not restore database writes or overwritten media. Restore only affected data/files from the verified backup, preserve later legitimate changes, and repeat application checks. Do not claim recovery is tested until the isolated restore and intended rollback path actually pass.
+
+### Runtime switch and rollback
+
+**Completed November 19 at 17:19:05 UTC:** production commit `b66a7fca64e1bbf21a25027a455d338151ad5c4d` switched to Node 24.22.3. The npm and Next.js processes use `~/.local/share/piugame-runtime/node-v24.22.3/bin/node`; the service's `ExecStart`/`PATH` and `~/.local/bin/piugame-web-deploy` use the dedicated runtime. The default shell and unrelated bot service were unchanged. Qualification passed all 215 tests, lint, type checks and build, with zero audit findings at that time. Origin/public catalog, icon, optimized-image and WAV-range checks passed; all 63 manual-audio hashes, `.env` and database counts were unchanged. Subsequent public verification confirmed all 21 songs/171 charts, and signed-in home and chart-page checks passed.
+
+The private receipt is `runtime24/runtime-switch-completion.json` under the release-record root above. The same-commit Node 23 rollback snapshot is `/home/pkimchi/Documents/piugame-maintenance/2026-11-19/rollback-node23-b66a7fc/app`. Rollback was not needed or exercised; this procedure does not add automatic health rollback. The reviewed procedure and precondition hashes are in `runtime24/switch-review/`, with qualification logs in `runtime24/`. The steps below describe the Node 23-to-24 switch. For another runtime change, refresh these records, runtime names and snapshot paths against the current configuration; do not reuse an older code snapshot.
+
+1. Install the verified new runtime beside the existing one. In a clean checkout of the exact production revision, install locked dependencies, run tests, Next.js type generation, TypeScript, lint and build, then smoke-test on an isolated loopback port without production credentials. Resolve or explicitly review every failed check before proceeding.
+2. Acquire `/home/pkimchi/.local/state/piugame-web/deploy.lock` exclusively and retain its file descriptor through snapshot, switch, checks and any rollback. The timer can remain enabled because the deploy script skips while this lock is held. Recheck HEAD, the deployed marker, clean tracked files, effective service configuration, unexpected drop-ins and every reviewed precondition hash. Abort on drift.
+3. Copy the then-current production tree to a private `rollback-node23-<commit>/app` snapshot under the release-record root, preserving `.env`, `.next`, `node_modules`, `public`, modes and timestamps. Record the commit, build ID, all manual-audio hashes and configuration/marker checksums; retain the original unit, deploy script and marker beside it. Verify the copy before changing the service. The November 19 switch limited qualification plus the new snapshot to 6 GiB; set and check a storage allowance before repeating the procedure. Leave retained snapshots and catalog backups untouched.
+4. Stop `piugame-web.service` for artifact replacement. Copy only the qualified `.next` and `node_modules` into production, preserving source, media and `.env`; retain the qualification originals. Install the reviewed `90-node24.conf.candidate` as `~/.config/systemd/user/piugame-web.service.d/90-node24.conf` (0644), and atomically replace the deploy script with its reviewed candidate while preserving executable mode. Keep both configuration changes under the same lock. Leave the nvm default, other services and global shell configuration unchanged.
+5. Run `systemctl --user daemon-reload` and start the web service. Verify the actual process executable/version and both service/deploy runtime paths, then check localhost:4090 and public health, read-only catalog APIs, image optimization, icon generation, WAV range responses and all manual-audio hashes. These runtime checks do not require account or database writes. The source commit is unchanged, so retain the deployed-commit marker and record the runtime transition separately. Release the lock last.
+
+On startup or health failure, retain the lock and stop the service. Restore `.next` and `node_modules` from the verified **same-commit** snapshot, remove only the new `90-node24.conf` (the recorded original had none), and atomically restore the original executable deploy script and marker. A later switch must restore any pre-existing drop-in instead of assuming it can be removed. Restore the base unit only if this operation changed its checksum; stop and report unexpected concurrent changes. Reload systemd, start the service, verify the old runtime, local/public health, catalog counts and audio hashes, then record the outcome and release the lock. A runtime rollback does not require database restoration.
