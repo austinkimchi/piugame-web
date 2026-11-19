@@ -34,6 +34,7 @@ interface SongExplorerProps {
   initialSongs: Array<PublicSong & { songKey?: string }>;
   initialFavoriteSlugs: string[];
   chartRecommendations: CatalogChartRecommendations;
+  localCatalogPreview?: boolean;
   featureSong: PublicSong | null;
   filterOptions: CatalogFilterOptions;
   canFavorite: boolean;
@@ -77,6 +78,7 @@ const SORT_OPTIONS: Array<{ value: SongSortOption; label: string }> = [
   { value: "folder", label: "Folder" },
 ];
 const SEARCH_HASH = "#search";
+const NO_CHART_FILTERS: string[] = [];
 const NOTEBOOK_RESIZE_HANDLE_SIZE = 40;
 const NOTEBOOK_SIZE_STORAGE_KEY = "mypiu-song-notebook-size:v2";
 const PREVIEW_FADE_IN_MS = 50;
@@ -111,6 +113,7 @@ export function SongExplorer({
   initialSongs,
   initialFavoriteSlugs,
   chartRecommendations,
+  localCatalogPreview = false,
   featureSong,
   filterOptions,
   canFavorite,
@@ -126,6 +129,7 @@ export function SongExplorer({
   removedFromVersion,
   showLanding = true,
 }: SongExplorerProps) {
+  const defaultCharts = localCatalogPreview ? NO_CHART_FILTERS : DEFAULT_FILTERS.charts;
   const searchSectionRef = useRef<HTMLElement | null>(null);
   const catalogSongsRef = useRef(initialSongs);
   const acceptedInitialSongsRef = useRef(initialSongs);
@@ -138,7 +142,7 @@ export function SongExplorer({
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const selectedFiltersRef = useRef<Record<FilterKey, string[]>>({
     ...DEFAULT_FILTERS,
-    charts: [...DEFAULT_FILTERS.charts],
+    charts: [...defaultCharts],
   });
   const levelModeRef = useRef<LevelFilterMode>("and");
   const sortByRef = useRef<SongSortOption>(initialSortBy);
@@ -168,13 +172,13 @@ export function SongExplorer({
   const searchPlaceholder = `Search ${piuSeriesMetadata(catalogVersion).label.toUpperCase()}'s title, artists, folder, tag, series, or chart.`;
   const [selectedFilters, setSelectedFilters] = useState<Record<FilterKey, string[]>>({
     ...DEFAULT_FILTERS,
-    charts: [...DEFAULT_FILTERS.charts],
+    charts: [...defaultCharts],
   });
   const initialResult = useMemo(() => queryCatalog(initialSongs, {
-    query: "", charts: DEFAULT_FILTERS.charts, levelMode: "and", sortBy: initialSortBy, sortDirection: initialSortDirection,
+    query: "", charts: defaultCharts, levelMode: "and", sortBy: initialSortBy, sortDirection: initialSortDirection,
     favoriteSlugs: initialFavoritesFirst ? new Set(initialFavoriteSlugs) : undefined,
-  }), [initialSongs, initialSortBy, initialSortDirection, initialFavoritesFirst, initialFavoriteSlugs]);
-  const [songs, setSongs] = useState<PublicSong[]>(() => decorateCatalogSongs(initialResult.songs, new Set(initialFavoriteSlugs), chartRecommendations, DEFAULT_FILTERS.charts));
+  }), [initialSongs, initialSortBy, initialSortDirection, initialFavoritesFirst, initialFavoriteSlugs, defaultCharts]);
+  const [songs, setSongs] = useState<PublicSong[]>(() => decorateCatalogSongs(initialResult.songs, new Set(initialFavoriteSlugs), chartRecommendations, defaultCharts));
   const [favoriteSlugs, setFavoriteSlugs] = useState<Set<string>>(
     () => new Set(initialFavoriteSlugs),
   );
@@ -201,15 +205,15 @@ export function SongExplorer({
   const canResetFilters = useMemo(
     () =>
       (Object.keys(DEFAULT_FILTERS) as FilterKey[]).some((key) => {
-        const defaultValues = DEFAULT_FILTERS[key];
+        const defaultValues = key === "charts" ? defaultCharts : DEFAULT_FILTERS[key];
         const selectedValues = selectedFilters[key];
         return selectedValues.length !== defaultValues.length || selectedValues.some((value) => !defaultValues.includes(value));
       }),
-    [selectedFilters],
+    [selectedFilters, defaultCharts],
   );
   const favoritedInitialSongs = useMemo(
-    () => decorateCatalogSongs(initialResult.songs.slice(0, 24), favoriteSlugs, chartRecommendations, DEFAULT_FILTERS.charts),
-    [favoriteSlugs, initialResult.songs, chartRecommendations],
+    () => decorateCatalogSongs(initialResult.songs.slice(0, 24), favoriteSlugs, chartRecommendations, defaultCharts),
+    [favoriteSlugs, initialResult.songs, chartRecommendations, defaultCharts],
   );
   const previewMuted = preferredPreviewMuted;
   const previewEnabled = !previewMuted;
@@ -411,6 +415,7 @@ export function SongExplorer({
   }, [initialSongs, initialFavoriteSlugs, filterOptions, runSearch]);
 
   const refreshCatalog = useCallback(async () => {
+    if (localCatalogPreview) return;
     snapshotRequestRef.current?.abort();
     const controller = new AbortController();
     snapshotRequestRef.current = controller;
@@ -429,7 +434,7 @@ export function SongExplorer({
     } finally {
       if (snapshotRequestRef.current === controller) snapshotRequestRef.current = null;
     }
-  }, [catalogVersion, removedFromVersion, runSearch]);
+  }, [catalogVersion, removedFromVersion, runSearch, localCatalogPreview]);
 
   useEffect(() => {
     if (snapshotCheckedAtRef.current === 0) snapshotCheckedAtRef.current = Date.now();
@@ -1071,7 +1076,7 @@ export function SongExplorer({
   }
 
   function clearFilters() {
-    const nextFilters = { ...DEFAULT_FILTERS, charts: isRecentSearch ? [] : [...DEFAULT_FILTERS.charts] };
+    const nextFilters = { ...DEFAULT_FILTERS, charts: isRecentSearch ? [] : [...defaultCharts] };
     setCompatibleFilterOptions(catalogFilterOptionsRef.current);
     setLevelMode("and");
     setSelectedFilters(nextFilters);
@@ -1158,6 +1163,7 @@ export function SongExplorer({
         viewport={{ once: true, amount: 0.08 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       >
+        {localCatalogPreview ? <p className="mx-auto max-w-7xl px-5 pt-6 text-sm text-[#697362]" role="status">Limited local jacket preview. Connect a development database to load catalog metadata.</p> : null}
         <div className="mx-auto grid max-w-7xl gap-5 px-5 py-8 sm:px-8 lg:grid-cols-[260px_minmax(0,1fr)] lg:px-10">
           <motion.aside
             ref={filterPanelRef}

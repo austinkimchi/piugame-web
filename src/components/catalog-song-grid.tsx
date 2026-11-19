@@ -4,13 +4,12 @@ import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 
 import { flushSync } from "react-dom";
 
 import { catalogGridWindow } from "@/lib/catalog-grid-window";
+import { catalogTabStops } from "@/lib/catalog-tab-stops";
 
 interface CatalogSongGridProps<T extends { slug: string }> {
   songs: T[];
   renderSong: (song: T, index: number) => ReactNode;
 }
-
-const FOCUSABLE = 'a[href],button:not([disabled]),[tabindex="0"]';
 
 /** All data is local; only image-heavy cards near the viewport are mounted. */
 export function CatalogSongGrid<T extends { slug: string }>({ songs, renderSong }: CatalogSongGridProps<T>) {
@@ -57,7 +56,7 @@ export function CatalogSongGrid<T extends { slug: string }>({ songs, renderSong 
     const target = event.target as HTMLElement;
     const card = target.closest<HTMLElement>("[data-catalog-index]");
     if (!card) return;
-    const focusable = [...card.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    const focusable = catalogTabStops(card);
     const boundary = event.shiftKey ? focusable[0] : focusable.at(-1);
     if (target !== boundary) return;
     const next = Number(card.dataset.catalogIndex) + (event.shiftKey ? -1 : 1);
@@ -67,7 +66,7 @@ export function CatalogSongGrid<T extends { slug: string }>({ songs, renderSong 
     // traverse the complete catalog even at the edge of the viewport window.
     flushSync(() => setFocusedSlug(songs[next].slug));
     const nextCard = gridRef.current?.querySelector<HTMLElement>(`[data-catalog-index="${next}"]`);
-    const nextTargets = nextCard ? [...nextCard.querySelectorAll<HTMLElement>(FOCUSABLE)] : [];
+    const nextTargets = nextCard ? catalogTabStops(nextCard) : [];
     (event.shiftKey ? nextTargets.at(-1) : nextTargets[0])?.focus();
   }
 

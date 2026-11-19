@@ -4,7 +4,7 @@ import { HomePerformanceRefresh } from "@/components/home-performance-refresh";
 import { HomePerformanceSummary } from "@/components/home-performance-summary";
 import { SongExplorer } from "@/components/song-explorer";
 import { getAllFavoriteSongSlugs, getCurrentUser, isAdmin } from "@/lib/auth";
-import { getPublicCatalogSnapshot } from "@/lib/public-catalog";
+import { getCatalogPage } from "@/lib/catalog-page";
 import { queryCatalog } from "@/lib/catalog-client-query";
 import { catalogFavoriteSlugs } from "@/lib/catalog-private-overlay";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
@@ -22,12 +22,12 @@ export default async function Home() {
   const initialSortBy = user?.preferences.songExplorerSortBy ?? "series";
   const initialSortDirection = user?.preferences.songExplorerSortDirection ?? "desc";
   const initialFavoritesFirst = user?.preferences.songExplorerFavoritesFirst ?? false;
-  const [snapshot, performance, storedFavoriteSlugs] = await Promise.all([
-    getPublicCatalogSnapshot(catalogVersion),
+  const [catalogPage, performance, storedFavoriteSlugs] = await Promise.all([
+    getCatalogPage(catalogVersion),
     getPerformanceDashboard(user?.id ?? null),
     getAllFavoriteSongSlugs(user),
   ]);
-  const songs = snapshot.songs.map((song) => ({ ...song, audioPath: null }));
+  const songs = catalogPage.songs;
   const favoriteSlugs = catalogFavoriteSlugs(songs, storedFavoriteSlugs);
   const featuredSong = songs.find((song) => song.slug === FEATURED_SHOWCASE_SONG_SLUG);
   const chartRecommendations = await getCatalogChartRecommendations(user?.id ?? null, catalogVersion, songs);
@@ -59,7 +59,8 @@ export default async function Home() {
         communityUser={user}
         catalogVersion={catalogVersion}
         featureSong={catalogFeatureSong}
-        filterOptions={snapshot.filterOptions}
+        filterOptions={catalogPage.filterOptions}
+        localCatalogPreview={catalogPage.localPreview}
         initialFavoriteSlugs={[...favoriteSlugs]}
         chartRecommendations={chartRecommendations}
         initialPreviewMuted={user?.preferences.songPreviewMuted ?? true}
