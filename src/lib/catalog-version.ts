@@ -59,3 +59,11 @@ export function normalizePiuSeriesLabel(value: string): string {
   }
   return cleaned;
 }
+
+/** Match the same legacy labels that the display normalizer accepts. */
+export function piuSeriesLabelPattern(value: string): RegExp {
+  const label = normalizePiuSeriesLabel(value);
+  if (label === "PHOENIX 2") return /^\s*phoenix\s*2\s*$/i;
+  if (label === "PHOENIX") return /^\s*phoenix\s*$/i;
+  return new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+}

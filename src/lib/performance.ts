@@ -18,6 +18,7 @@ import { performancePlayKey } from "@/lib/performance-play-key";
 import { PerformanceUserBusyError, withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { metricChangeSince, roundedAverageBestScore } from "@/lib/performance-metrics";
 import { performanceSessionArcade, startsNewSession, summarizePerformanceSession } from "@/lib/performance-session";
+import { sessionLimit, sessionOffset } from "@/lib/performance-session-pagination";
 import { applyBucketBestSummary, applyTopPlaySummary, combineChartStatSummaries, reconcileRecentPlaySummary, type PerformanceChartStatSummary } from "@/lib/performance-stat-summary";
 import { populationCandidatesInCatalog, rankChartRecommendations, recommendationCandidatesFromCatalog, type PopulationChartEvidence, type RankedChartRecommendation } from "@/lib/song-recommendation";
 import { shouldTreatRecentPlaysAsEmpty } from "@/lib/performance-sync-errors";
@@ -628,9 +629,8 @@ export async function getPerformanceSessions(
     return [];
   }
 
-  const offset = Math.min(Math.max(0, Math.trunc(args.offset ?? 0)), 1000);
-  const limit = Math.min(Math.max(1, Math.trunc(args.limit ?? 50)), 100);
-  const requiredSessions = offset + limit;
+  const offset = sessionOffset(args.offset);
+  const limit = sessionLimit(args.limit);
   const { users, plays } = await collections();
   const piuVersion = await performanceVersionForUser(users, userId);
   const cursor = plays
@@ -638,6 +638,7 @@ export async function getPerformanceSessions(
     .sort(recentPlaySort());
   const groupedPlays: Array<Array<WithId<PerformancePlayEventDocument>>> = [];
   let sessionPlays: Array<WithId<PerformancePlayEventDocument>> = [];
+  let sessionIndex = 0;
   let previous: Date | null = null;
 
   try {
@@ -646,8 +647,9 @@ export async function getPerformanceSessions(
         continue;
       }
       if (previous && startsNewSession(previous, play.playedAt)) {
-        groupedPlays.push(sessionPlays);
-        if (groupedPlays.length >= requiredSessions) {
+        if (sessionIndex >= offset) groupedPlays.push(sessionPlays);
+        sessionIndex += 1;
+        if (groupedPlays.length >= limit) {
           break;
         }
         sessionPlays = [];
@@ -659,11 +661,11 @@ export async function getPerformanceSessions(
     await cursor.close();
   }
 
-  if (sessionPlays.length > 0 && groupedPlays.length < requiredSessions) {
+  if (sessionPlays.length > 0 && sessionIndex >= offset && groupedPlays.length < limit) {
     groupedPlays.push(sessionPlays);
   }
 
-  const sessions = groupedPlays.slice(offset, offset + limit).flatMap((group) => {
+  const sessions = groupedPlays.flatMap((group) => {
     const summary = summarizePerformanceSession(group);
     if (!summary || !group[0]) {
       return [];

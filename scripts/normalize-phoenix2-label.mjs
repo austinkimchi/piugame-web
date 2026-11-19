@@ -12,7 +12,7 @@ if (!uri) {
 
 const databaseName = process.env.SONG_CATALOG_DB ?? "piugame_sdk";
 const collectionName = process.env.CATALOG_COLLECTION ?? "catalog";
-const legacyLabel = /^phoenix\s*2$/i;
+const legacyLabel = /^\s*phoenix\s*2\s*$/i;
 const client = new MongoClient(uri);
 
 try {

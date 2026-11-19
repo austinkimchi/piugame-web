@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { bearerTokenFromAuthorization } from "@/lib/mobile-auth-core";
 import { authenticateMobileAccessToken } from "@/lib/mobile-auth";
 import { getPerformanceSessions } from "@/lib/performance";
+import { sessionLimit, sessionOffset } from "@/lib/performance-session-pagination";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,20 +19,15 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const offset = boundedInteger(url.searchParams.get("offset"), 0, 0, 1000);
-  const limit = boundedInteger(url.searchParams.get("limit"), 20, 1, 50);
+  const offset = sessionOffset(url.searchParams.get("offset"));
+  const limit = sessionLimit(url.searchParams.get("limit"), 50);
   const page = await getPerformanceSessions(identity.userId, { offset, limit: limit + 1 });
   const hasMore = page.length > limit;
   const sessions = page.slice(0, limit);
   return NextResponse.json(
-    { sessions, nextOffset: hasMore ? offset + sessions.length : null },
+    { sessions, nextOffset: hasMore && Number.isSafeInteger(offset + sessions.length) ? offset + sessions.length : null },
     { headers: noStoreHeaders() },
   );
-}
-
-function boundedInteger(value: string | null, fallback: number, minimum: number, maximum: number): number {
-  const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isFinite(parsed) ? Math.min(maximum, Math.max(minimum, parsed)) : fallback;
 }
 
 function noStoreHeaders() {

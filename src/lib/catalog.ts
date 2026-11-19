@@ -7,7 +7,7 @@ import { cache } from "react";
 
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
 import { audioFileUrlForPath, saveCatalogAudioUpload } from "@/lib/audio-preview";
-import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, normalizePiuSeriesLabel, sortPiuSeries } from "@/lib/catalog-version";
+import { DEFAULT_CATALOG_SERIES, isPiuSeriesId, normalizePiuSeriesId, normalizePiuSeriesLabel, piuSeriesLabelPattern, sortPiuSeries } from "@/lib/catalog-version";
 import { isPremiumSong } from "@/lib/premium-songs";
 import { songMatchesChartFilters } from "@/lib/song-chart-filters";
 import { songsMatchingSlugs } from "@/lib/song-slug-filter";
@@ -969,7 +969,7 @@ function buildSearchFilter(params: {
   if (series.length > 0) {
     clauses.push({
       series: {
-        $in: series.map((value) => new RegExp(`^${escapeRegex(value)}$`, "i")),
+        $in: series.map(piuSeriesLabelPattern),
       },
     });
   }
