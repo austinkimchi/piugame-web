@@ -118,6 +118,12 @@ missing-versus-null CAS, relevant and unrelated concurrent edits, collisions,
 collection replacement, duplicate writers, and process-death lock recovery.
 No test connects to production or assumes multi-document transactions.
 
+The writer's lock tests require **Linux and `flock`**, including when invoked by
+the full `npm test` suite. They fail on a Mac without that Linux facility; passing
+non-lock tests there is not full writer validation. Run the complete suite in
+Linux CI or a disposable Linux environment. This is an intentional runtime
+dependency, not a reason to bypass locking in the writer.
+
 An optional real-server CAS check is in
 `test/catalog-release-write.integration.test.mjs`. It is skipped by default and
 never starts or downloads a server. Supply a disposable MongoDB **5.0.8** standalone

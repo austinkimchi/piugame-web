@@ -17,8 +17,10 @@ node scripts/catalog-release-plan.mjs \
 
 Each export must be JSON with a `documents` array containing every document in
 that collection, including BSON Extended JSON IDs. Keep backups and plans outside
-Git. Preserve BSON types when a separately reviewed writer eventually consumes
-the plan. A plan is a snapshot: re-export and re-plan before any application.
+Git. Preserve BSON types during export and in the reviewed writer; Extended JSON
+cannot recover types already lost during driver decoding. The [October writer](catalog-release-writer.md)
+documents the required BSON read options. A plan is a snapshot: re-export and
+re-plan before any application.
 
 The planner inserts missing songs and adds only explicitly requested chart
 changes. It preserves existing IDs, manual previews, tags, chart links, history,
@@ -26,12 +28,21 @@ and version-specific metadata. An existing release row with missing chart tokens
 blocks review instead of being replaced. `readyForReview` means the plan has no
 known blockers; it is not permission to apply it.
 
-For the October 15, 2026 release, the reviewed baseline proposes 21 inserts in
+For the October 15, 2026 release, the reviewed baseline proposed 21 inserts in
 each of `catalog` and `song_catalog_2`, plus one `catalog.chartHistory` update for
 Hello William D20. No existing difficulty changes. All new songs use the existing
 `Phoenix 2` series spelling; the 15 R!SE additions use `R!se Volume 1`, explicit
 unknown BPMs, and Steam Link availability tags/history. Audio stays null until
 the user supplies or verifies precisely aligned preview clips.
+
+These 43 operations were applied on November 19 using commit `844e43d`; fresh
+after-state exports produced a zero-change plan. See the [maintenance release
+record](maintenance.md#completed-october-catalog-update) for counts and retained
+private evidence. Keep the completed journal; do not create a new one to repeat
+the release. The current writer deliberately accepts only this exact October
+scope. A later release needs fresh official evidence, exports and plan review,
+plus separately reviewed writer support and tests; swapping the planner manifest
+does not extend the writer's authorization or accepted operations.
 
 Evidence is in `scripts/releases/phoenix2-v1.02.0-evidence.json`: official request
 parameters, 97 page checksums, row offsets, and SHA-256 checksums for 21 original
