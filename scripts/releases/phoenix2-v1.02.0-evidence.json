@@ -1,0 +1,1997 @@
+{
+  "collectedAt": "2026-11-19T16:07:18.514Z",
+  "source": {
+    "url": "https://piugame.com/ajax/top_steps.php",
+    "method": "POST",
+    "params": {
+      "date": "202611",
+      "mode": "full"
+    },
+    "pagination": "page is offset; increments 50",
+    "authentication": "Anonymous guest SSO session only; no personal account data",
+    "tls": "Verified Sectigo issuer plus system trust store; no verification bypass",
+    "scope": "Full-mode official monthly chart popularity feed only. Basic mode was not requested; chartsBasic=[] is absence of evidence, not a complete basic inventory."
+  },
+  "feedSummary": {
+    "rows": 4704,
+    "songs": 675,
+    "skippedRows": 0,
+    "finalNonemptyOffset": 4700,
+    "finalNonemptyRows": 4,
+    "terminalOffsets": [
+      4750,
+      4800
+    ],
+    "terminalExplanation": "Both terminal responses contain zero <li> rows and a location.href script, not literal empty bodies."
+  },
+  "pages": [
+    {
+      "page": 0,
+      "rowCount": 50,
+      "sha256": "88dd026e8f2e866916e05620af8100ec97c310f693277c4a9aac03087753f521"
+    },
+    {
+      "page": 50,
+      "rowCount": 50,
+      "sha256": "1ee6f7bb380595d0d41813a222bf4bfae1ee56b5892ae40a0fcd57d66e8ab2cb"
+    },
+    {
+      "page": 100,
+      "rowCount": 50,
+      "sha256": "2336cab543f8c74c3747de36afbc70ed725ded28f3bec963f30068a32255813c"
+    },
+    {
+      "page": 150,
+      "rowCount": 50,
+      "sha256": "f0f1756d1ecd252869de338d8d5385751e49b88c522b841adb308cef8100b00b"
+    },
+    {
+      "page": 200,
+      "rowCount": 50,
+      "sha256": "d91d37bea28ab8c0439c353ec92d93ad83f4b636fed467ebab8093c9b950cb84"
+    },
+    {
+      "page": 250,
+      "rowCount": 50,
+      "sha256": "37a452b40b1e9674bd539a4dddf5779f2e2a3ff6753b45e72746b79461cb6773"
+    },
+    {
+      "page": 300,
+      "rowCount": 50,
+      "sha256": "9d75b74b3d3d773b10d638b7842c74866f562261c1a9c65a1226a643b80ae778"
+    },
+    {
+      "page": 350,
+      "rowCount": 50,
+      "sha256": "28970f0f546feff7048fa107cc52baeab692506960656d251561ebdc31edbf07"
+    },
+    {
+      "page": 400,
+      "rowCount": 50,
+      "sha256": "e0d4660ef3c11218c98a6c7f9c1110104f1d6fc00abd4bfbd4f6e9a5fe48ccdf"
+    },
+    {
+      "page": 450,
+      "rowCount": 50,
+      "sha256": "60f268ac1977165f1b19623befa3e6dea3a7d1d2ba8b7fd5d742cb5088f635d0"
+    },
+    {
+      "page": 500,
+      "rowCount": 50,
+      "sha256": "bffcba9e37e323f40e4a47761527e8f5211d7e2ec719632e7a6dc94a83ef3a78"
+    },
+    {
+      "page": 550,
+      "rowCount": 50,
+      "sha256": "a3d33aa791f8a55f17bb62ffc7cbd021d38cef1f551ac06b047bf578a5461cf6"
+    },
+    {
+      "page": 600,
+      "rowCount": 50,
+      "sha256": "205293d6105ddce7aeccc0cf1dde9391c044647670b674743cebd3fc1ed41c8f"
+    },
+    {
+      "page": 650,
+      "rowCount": 50,
+      "sha256": "30155bb9eb49bc17c38bcdcc3c18b7c3dde2caab13d1675c735827d22c37d27c"
+    },
+    {
+      "page": 700,
+      "rowCount": 50,
+      "sha256": "d54fe31a1c449e412f90240f92d9838fcea8b86804e86ef05548bf514b794ced"
+    },
+    {
+      "page": 750,
+      "rowCount": 50,
+      "sha256": "244afc5a5395ef9c22dcaa3cb54ffabbad56848e996b8d45b22042e822a73a27"
+    },
+    {
+      "page": 800,
+      "rowCount": 50,
+      "sha256": "e356d847c65c347f54f314224285bfd4cbc8451117e65f2da454b8991ae5b228"
+    },
+    {
+      "page": 850,
+      "rowCount": 50,
+      "sha256": "74cb8e8f6ee93cd2993a92453d7ac27f08384f9ceba58b5c829f716e9dc62b44"
+    },
+    {
+      "page": 900,
+      "rowCount": 50,
+      "sha256": "fa1e0cded1406c941df24443f2ece8e6a2d51bd749101cca5db5ac5231fcb769"
+    },
+    {
+      "page": 950,
+      "rowCount": 50,
+      "sha256": "ab9996a34070fbf11a76f89cfe330c851cafb690885e20b07f4010f81b6df58b"
+    },
+    {
+      "page": 1000,
+      "rowCount": 50,
+      "sha256": "6c0134283606f3da5e7b722906389a3fbb4de20e2870a9a82a057e0c745e96a6"
+    },
+    {
+      "page": 1050,
+      "rowCount": 50,
+      "sha256": "2063a4a77d0fb05854f7211d026dfe56773b35d2f49c046a2eb0e8553fc75185"
+    },
+    {
+      "page": 1100,
+      "rowCount": 50,
+      "sha256": "dcb5c661db3c2382ddfb1af972358e41429414818e875b9d2d38233258fb41e1"
+    },
+    {
+      "page": 1150,
+      "rowCount": 50,
+      "sha256": "55cba430f2e549e194efdaa4cebcaef0171a2f7e5436074d89d0e00ae7ffcbb2"
+    },
+    {
+      "page": 1200,
+      "rowCount": 50,
+      "sha256": "1bad9b1e943c0a912458fc3fb4c7bd3bbc8314d2c3f13d14664243dc801574be"
+    },
+    {
+      "page": 1250,
+      "rowCount": 50,
+      "sha256": "2235876cd7d4104380027a319238258f1ee9b80ecc2955df19e8d37019401124"
+    },
+    {
+      "page": 1300,
+      "rowCount": 50,
+      "sha256": "71fb0795aa2506f5e74b8fb1595919fc693605a49aff24c599f305528154bae4"
+    },
+    {
+      "page": 1350,
+      "rowCount": 50,
+      "sha256": "e0e720467b8f66f8e410df6fb8c895849983df4f719f150bb5704c44e7ee23b8"
+    },
+    {
+      "page": 1400,
+      "rowCount": 50,
+      "sha256": "c9d915df02fc2353637a25a1807b8ef5252dfd0e4c8adebca436df5a7937bf09"
+    },
+    {
+      "page": 1450,
+      "rowCount": 50,
+      "sha256": "403423eb8a8f3e968af26d27b2dbba09b1e72dacd4a7a0331780887df885dbda"
+    },
+    {
+      "page": 1500,
+      "rowCount": 50,
+      "sha256": "739e0940deb811b3da559b27262269bce09e9bfbe03691d6a7296b18a9343c11"
+    },
+    {
+      "page": 1550,
+      "rowCount": 50,
+      "sha256": "fe0cfc8b9e6eb677512ef28a31ae35e72eb6f3aa8be18ece75c75b99ac848921"
+    },
+    {
+      "page": 1600,
+      "rowCount": 50,
+      "sha256": "c19c1206f17157c27eaeb5a93689b3a205b8cdc56d3118e6c074a34be82bf248"
+    },
+    {
+      "page": 1650,
+      "rowCount": 50,
+      "sha256": "0c2d4bc2a04870d79d3f9570518279f11fac268cba21a9115dfce8f312a67f4e"
+    },
+    {
+      "page": 1700,
+      "rowCount": 50,
+      "sha256": "9682915fd0debfd50aaa14dd96a5ca4e8f5c12552e4eef0e523f658cfe3360a2"
+    },
+    {
+      "page": 1750,
+      "rowCount": 50,
+      "sha256": "cfc856fc7de82ecce885bfd75e29010b5819bd699efa58fd3149f6073b8888ac"
+    },
+    {
+      "page": 1800,
+      "rowCount": 50,
+      "sha256": "06162fd675d5570d64d6eed25d025e04c0eaad7cdf4faf0a4ad505fccdfdfc66"
+    },
+    {
+      "page": 1850,
+      "rowCount": 50,
+      "sha256": "14f0893ebaf76451523f34e8697750af9c71e46480e1084cdfd14896f03354ec"
+    },
+    {
+      "page": 1900,
+      "rowCount": 50,
+      "sha256": "8454a34454b313674b368c6f4a9b2f0c71f473384af1d87e3e90263948ac9267"
+    },
+    {
+      "page": 1950,
+      "rowCount": 50,
+      "sha256": "bccbc8d45088187a1730aa5d05783ffa7a83344b09ba06d98e7a6b068087ad0e"
+    },
+    {
+      "page": 2000,
+      "rowCount": 50,
+      "sha256": "ebdd74f92b6fee84d15976621f8031e5b6faf3d2187db7aac4facdf41ef902da"
+    },
+    {
+      "page": 2050,
+      "rowCount": 50,
+      "sha256": "b074021b539b9de32fa422d81732dc0f077735cecc989fe10a9cb4afe6ab3b6b"
+    },
+    {
+      "page": 2100,
+      "rowCount": 50,
+      "sha256": "1082f26af7c80ef1095cde63c796efc3af611ab5f94667b6b2ebc58abc1de0af"
+    },
+    {
+      "page": 2150,
+      "rowCount": 50,
+      "sha256": "aec5035dd7de5a8d0fdb1460c65efe37826eab9cbc7879263c8b022a101d9d6a"
+    },
+    {
+      "page": 2200,
+      "rowCount": 50,
+      "sha256": "488ec9d8989c58bd740ab62dffb71d0e89886964dd2591fc6c52494d56b8dc4c"
+    },
+    {
+      "page": 2250,
+      "rowCount": 50,
+      "sha256": "0f1757ab0155e13d2c8a613753f19c852f265fce4fb7c37b00a367e894c86074"
+    },
+    {
+      "page": 2300,
+      "rowCount": 50,
+      "sha256": "1404a75c2e336c103ef26ac493927db025c136da3e96b15d42cd659ce81f5f2c"
+    },
+    {
+      "page": 2350,
+      "rowCount": 50,
+      "sha256": "44fa74366f84a42811153f33a5c8a9220b9c1d6d1c7b070cfd6a85c14feed0ec"
+    },
+    {
+      "page": 2400,
+      "rowCount": 50,
+      "sha256": "db900f8df294199e799ef2680f1469192741db04c9c8eff24cd4b2b0dfe67739"
+    },
+    {
+      "page": 2450,
+      "rowCount": 50,
+      "sha256": "09e7ba4313847f9dec313a7b394f88090ad3274916ad0d65ee36e890c159e28f"
+    },
+    {
+      "page": 2500,
+      "rowCount": 50,
+      "sha256": "35687e3c7ca6eafb80f98494be89691cc421101e5a2230a44d8ccaab7e8c8391"
+    },
+    {
+      "page": 2550,
+      "rowCount": 50,
+      "sha256": "8d80af371f0b9045c94ae3ba4562591c70a0630afdcc40500b4e5c7d3925f418"
+    },
+    {
+      "page": 2600,
+      "rowCount": 50,
+      "sha256": "d506f5e628b80e0c54cf002b810e8ee65ee127d215db5f018e8638200bc6870c"
+    },
+    {
+      "page": 2650,
+      "rowCount": 50,
+      "sha256": "3985f2cb4528d54ca96ade3e44f19b12012c66edba90d13fd4ec9b1d00434ed7"
+    },
+    {
+      "page": 2700,
+      "rowCount": 50,
+      "sha256": "cc551f1c7bc5e15dd6d567927184614be0f78eb512f72ca3d6c459617e7f2ec2"
+    },
+    {
+      "page": 2750,
+      "rowCount": 50,
+      "sha256": "555e28a899020465177097bb327819598f03e7ca2e2476d18f0eaac5f3f68154"
+    },
+    {
+      "page": 2800,
+      "rowCount": 50,
+      "sha256": "59ae500acd10d2c228ded90002385dac22cc326a680e7033331e490e0c35ff23"
+    },
+    {
+      "page": 2850,
+      "rowCount": 50,
+      "sha256": "1edaec642529a193622760f915ef19b70456d17f19a61225ca03e2bc368241c5"
+    },
+    {
+      "page": 2900,
+      "rowCount": 50,
+      "sha256": "13fe87b7120021437473b74b3bd03da8481cc7094e36c05d8303a2b29fc91bd2"
+    },
+    {
+      "page": 2950,
+      "rowCount": 50,
+      "sha256": "9f87630de800e40fb8fd2c6f4ff030458e1f28898ffcedc9cce7f6b2566f5b64"
+    },
+    {
+      "page": 3000,
+      "rowCount": 50,
+      "sha256": "3be5ef340d652e95b1e2f3dabb61011c12cce443120810b2490dda5f021acabc"
+    },
+    {
+      "page": 3050,
+      "rowCount": 50,
+      "sha256": "9e32a987cd0de72bf227d3baa2740a8972a78e98fed887a4275ad33512f17d79"
+    },
+    {
+      "page": 3100,
+      "rowCount": 50,
+      "sha256": "db879f6d1f964d3afe10c4a8cf2a88536b52ba80fa34b7d3b1110d452733c958"
+    },
+    {
+      "page": 3150,
+      "rowCount": 50,
+      "sha256": "a0d01274514ca6459a3e3be8de9263f0d6dbb7a789a15b1783ba51cdd53b5667"
+    },
+    {
+      "page": 3200,
+      "rowCount": 50,
+      "sha256": "38bcc5aca83f93e419ff92f1837d1fe8f3b985e96070c73aec668af9bbc26133"
+    },
+    {
+      "page": 3250,
+      "rowCount": 50,
+      "sha256": "a00aa3287274891ffda93c93e7e753bd7ba357ab3c1d04c6b0475d5ff1c7d0b2"
+    },
+    {
+      "page": 3300,
+      "rowCount": 50,
+      "sha256": "f2753331cfdc3d2849e00fc70489b1d290bdaf83ad927ff8d1382888308551d5"
+    },
+    {
+      "page": 3350,
+      "rowCount": 50,
+      "sha256": "5e12f3b3f64b45f84b70984e1cffe8105ff8e25d44c2dc7b4bbc314c99c09300"
+    },
+    {
+      "page": 3400,
+      "rowCount": 50,
+      "sha256": "83c62ca13f91bec9a0689bbbf7a67aed4fe8f8fbdddf146a2251ec012ab5ac46"
+    },
+    {
+      "page": 3450,
+      "rowCount": 50,
+      "sha256": "def8edf613423c444983d9807212ba479f9bb7601c4acee6d76631fc6c22c81b"
+    },
+    {
+      "page": 3500,
+      "rowCount": 50,
+      "sha256": "7791e0b693a3176b8b7fbb058c118a807ca025bebef14c5e7ba35c3f895737fe"
+    },
+    {
+      "page": 3550,
+      "rowCount": 50,
+      "sha256": "0c4d7be902cd57374baf5c4001450742b32683b19bd32437e5604e60a0d7747b"
+    },
+    {
+      "page": 3600,
+      "rowCount": 50,
+      "sha256": "5b4523d1fb272687cab9a48a9cc4c1b08932e931029112097172b16518aac899"
+    },
+    {
+      "page": 3650,
+      "rowCount": 50,
+      "sha256": "a554fa646083b93cec1b23833c79580aaf85d87703321a6df91c960b6f8329b3"
+    },
+    {
+      "page": 3700,
+      "rowCount": 50,
+      "sha256": "3be78ad8511294fb3c8092ff2518499493f6c250c13e2fced0fb0cda87935ea3"
+    },
+    {
+      "page": 3750,
+      "rowCount": 50,
+      "sha256": "8a6313d032c74e043fb587959c1b27ea739a060c08f22249b5a6eae6e7008a84"
+    },
+    {
+      "page": 3800,
+      "rowCount": 50,
+      "sha256": "62d729231331b0699bfa0179226e0971b1f9e923a0683263f87debe0cf98ac41"
+    },
+    {
+      "page": 3850,
+      "rowCount": 50,
+      "sha256": "99595587c3df194e050677a242d93aefb660c7fb42468958bf5796e126894669"
+    },
+    {
+      "page": 3900,
+      "rowCount": 50,
+      "sha256": "f0e0c3b4cdbaf4d07775c4026959b0098c70a2aa604e26b2a058866ef443551d"
+    },
+    {
+      "page": 3950,
+      "rowCount": 50,
+      "sha256": "16dfb650fc5129b439d6dc0cd2533fce81177ac0fc134c20617199a9ae124fd1"
+    },
+    {
+      "page": 4000,
+      "rowCount": 50,
+      "sha256": "d21673cf8baca1f69e5758234139f67acc0808e718e193f4b06b38abfe475e43"
+    },
+    {
+      "page": 4050,
+      "rowCount": 50,
+      "sha256": "baaf3508f29be9984aa4581dcb6cf7250a39095ede4f337ba347891c883f6e0b"
+    },
+    {
+      "page": 4100,
+      "rowCount": 50,
+      "sha256": "4d2a26e1de5cfc0b0c0ad78868ff136167e280aa8cc30136e3f8e382d41245e6"
+    },
+    {
+      "page": 4150,
+      "rowCount": 50,
+      "sha256": "01cfc4fc8f1660bb8c78b3cfd11579961837128cf4377c93bc80a3ded92188fa"
+    },
+    {
+      "page": 4200,
+      "rowCount": 50,
+      "sha256": "1ac854ab3185f3ac1eee382ffa837482edd3592cdaf2d24554ef64846864008c"
+    },
+    {
+      "page": 4250,
+      "rowCount": 50,
+      "sha256": "af096104793979408681e67bc33cdfa9017adf553dded48631b710b2583c37d6"
+    },
+    {
+      "page": 4300,
+      "rowCount": 50,
+      "sha256": "f92b26d25ae339e7c96cffea24c191609fab2dec2e9aaf054b2952300ac6e165"
+    },
+    {
+      "page": 4350,
+      "rowCount": 50,
+      "sha256": "d3170850bad370239dd0520fb9dc799eb35374005e72f879a8d3f9f8ea40b8b7"
+    },
+    {
+      "page": 4400,
+      "rowCount": 50,
+      "sha256": "d7b10aee01797622e6a1f8aa1517777c5a8e6804bae4a3809aa2550f5a47a54c"
+    },
+    {
+      "page": 4450,
+      "rowCount": 50,
+      "sha256": "6a1a889254e779d62eb95b18b17c476e0aa5b03e2263ff3f691afcaaa685ab75"
+    },
+    {
+      "page": 4500,
+      "rowCount": 50,
+      "sha256": "1a62f2625d31907d46047549f31a12447ced9c8bb4f78868971e212d976c95e0"
+    },
+    {
+      "page": 4550,
+      "rowCount": 50,
+      "sha256": "313e01e2166ff7e38f0f27b1dfdc11b9bf2cddefabf8c35a92096420a3ff7b48"
+    },
+    {
+      "page": 4600,
+      "rowCount": 50,
+      "sha256": "24bd5f20b641c55cb849edd567721e9c2bb2eaf2b4e12d42a8ec04f727dd652b"
+    },
+    {
+      "page": 4650,
+      "rowCount": 50,
+      "sha256": "921fde875dd7ae010f661e689daa96a13e28005994da6c6a1f8379095c0b1b5d"
+    },
+    {
+      "page": 4700,
+      "rowCount": 4,
+      "sha256": "27854309836641a8acde74ace41c005e7e8860472d877fdad92b25eadf032238"
+    },
+    {
+      "page": 4750,
+      "rowCount": 0,
+      "sha256": "0c99c8cb6509ef119835d59bd609539ab092ce7e4194663dbb64edd73d0f5ecf",
+      "terminalResponse": "<script>\n              location.href = '?mode=full&date=202611';\n          </script>"
+    },
+    {
+      "page": 4800,
+      "rowCount": 0,
+      "sha256": "0c99c8cb6509ef119835d59bd609539ab092ce7e4194663dbb64edd73d0f5ecf",
+      "terminalResponse": "<script>\n              location.href = '?mode=full&date=202611';\n          </script>"
+    }
+  ],
+  "songs": [
+    {
+      "songName": "Assault TAXI",
+      "artist": "ASA",
+      "images": [
+        "b62c203e440a8aaf7d35e9034d7f3fe1.png"
+      ],
+      "chartTokens": [
+        "S13",
+        "S15",
+        "S18",
+        "S21",
+        "D14",
+        "D20",
+        "D23"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/b62c203e440a8aaf7d35e9034d7f3fe1.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S18",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "S21",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "S15",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "D20",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "D23",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "S13",
+          "scope": "full",
+          "page": 300
+        },
+        {
+          "token": "D14",
+          "scope": "full",
+          "page": 300
+        }
+      ]
+    },
+    {
+      "songName": "Burning SuperNova feat. neur6sia",
+      "artist": "Palami",
+      "images": [
+        "ec32a9cc6c063f67182ca985a020a3b8.png"
+      ],
+      "chartTokens": [
+        "S13",
+        "S16",
+        "S19",
+        "S21",
+        "S23",
+        "D17",
+        "D22",
+        "D25"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/ec32a9cc6c063f67182ca985a020a3b8.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S23",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "S19",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "S16",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "S21",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "D22",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D17",
+          "scope": "full",
+          "page": 400
+        },
+        {
+          "token": "D25",
+          "scope": "full",
+          "page": 550
+        },
+        {
+          "token": "S13",
+          "scope": "full",
+          "page": 850
+        }
+      ]
+    },
+    {
+      "songName": "Chess and Chase",
+      "artist": "litmus* ft. CielA",
+      "images": [
+        "a2a95bd6ba8eaf53ea75dcdac32ac28a.png"
+      ],
+      "chartTokens": [
+        "S7",
+        "S10",
+        "S14",
+        "S17",
+        "S20",
+        "D12",
+        "D16",
+        "D18",
+        "D22"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/a2a95bd6ba8eaf53ea75dcdac32ac28a.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S20",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "D22",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "S17",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "D18",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "S14",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "D16",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "S10",
+          "scope": "full",
+          "page": 1100
+        },
+        {
+          "token": "D12",
+          "scope": "full",
+          "page": 1450
+        },
+        {
+          "token": "S7",
+          "scope": "full",
+          "page": 2250
+        }
+      ]
+    },
+    {
+      "songName": "DROP FRONT!ER",
+      "artist": "xi",
+      "images": [
+        "f1660f398538083e015611f3cad1e546.png"
+      ],
+      "chartTokens": [
+        "S16",
+        "S19",
+        "S22",
+        "S25",
+        "D18",
+        "D24",
+        "D27"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/f1660f398538083e015611f3cad1e546.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S22",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "S25",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "S19",
+          "scope": "full",
+          "page": 300
+        },
+        {
+          "token": "D18",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "S16",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 700
+        },
+        {
+          "token": "D27",
+          "scope": "full",
+          "page": 2200
+        }
+      ]
+    },
+    {
+      "songName": "Falling Stars",
+      "artist": "WyvernP",
+      "images": [
+        "5f1dd8491e1656499997f1f3fe2084e1.png"
+      ],
+      "chartTokens": [
+        "S9",
+        "S13",
+        "S17",
+        "S20",
+        "S22",
+        "D16",
+        "D20",
+        "D24"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/5f1dd8491e1656499997f1f3fe2084e1.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S17",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S13",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S20",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "D16",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "D20",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "S22",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "S9",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 150
+        }
+      ]
+    },
+    {
+      "songName": "Galactic Metronome",
+      "artist": "Essbee",
+      "images": [
+        "81005e747c8bf33c392b7aea4bd41f92.png"
+      ],
+      "chartTokens": [
+        "S10",
+        "S15",
+        "S19",
+        "S22",
+        "S24",
+        "D17",
+        "D21",
+        "D24",
+        "D26"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/81005e747c8bf33c392b7aea4bd41f92.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S24",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "S19",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "S22",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D17",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D21",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D26",
+          "scope": "full",
+          "page": 400
+        },
+        {
+          "token": "S15",
+          "scope": "full",
+          "page": 450
+        },
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 600
+        },
+        {
+          "token": "S10",
+          "scope": "full",
+          "page": 1400
+        }
+      ]
+    },
+    {
+      "songName": "Galactic Terminus",
+      "artist": "Reku Mochizuki",
+      "images": [
+        "864c2d759ecaf29bff2260d317c081ee.png"
+      ],
+      "chartTokens": [
+        "S3",
+        "S7",
+        "S11",
+        "S16",
+        "S18",
+        "S20",
+        "D13",
+        "D19",
+        "D22"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/864c2d759ecaf29bff2260d317c081ee.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S20",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "S18",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D22",
+          "scope": "full",
+          "page": 400
+        },
+        {
+          "token": "S16",
+          "scope": "full",
+          "page": 400
+        },
+        {
+          "token": "D19",
+          "scope": "full",
+          "page": 500
+        },
+        {
+          "token": "D13",
+          "scope": "full",
+          "page": 2350
+        },
+        {
+          "token": "S11",
+          "scope": "full",
+          "page": 2450
+        },
+        {
+          "token": "S3",
+          "scope": "full",
+          "page": 3600
+        },
+        {
+          "token": "S7",
+          "scope": "full",
+          "page": 3750
+        }
+      ]
+    },
+    {
+      "songName": "Love Witch",
+      "artist": "SHK",
+      "images": [
+        "45e6716895c336db9d30fd60c107c249.png"
+      ],
+      "chartTokens": [
+        "S13",
+        "S16",
+        "S18",
+        "S21",
+        "D16",
+        "D18",
+        "D20",
+        "D23"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/45e6716895c336db9d30fd60c107c249.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S21",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "S18",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "D23",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "S16",
+          "scope": "full",
+          "page": 300
+        },
+        {
+          "token": "D18",
+          "scope": "full",
+          "page": 500
+        },
+        {
+          "token": "D20",
+          "scope": "full",
+          "page": 500
+        },
+        {
+          "token": "D16",
+          "scope": "full",
+          "page": 600
+        },
+        {
+          "token": "S13",
+          "scope": "full",
+          "page": 900
+        }
+      ]
+    },
+    {
+      "songName": "Mephitz",
+      "artist": "litmus* as Ester",
+      "images": [
+        "cdd3b7c7404b3cbebd21634e0fff75b3.png"
+      ],
+      "chartTokens": [
+        "S12",
+        "S16",
+        "S18",
+        "S20",
+        "S22",
+        "D15",
+        "D18",
+        "D21",
+        "D24"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/cdd3b7c7404b3cbebd21634e0fff75b3.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S20",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S18",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S16",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S12",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "D18",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "D15",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "S22",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "D21",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 400
+        }
+      ]
+    },
+    {
+      "songName": "Morrighan",
+      "artist": "ryhki",
+      "images": [
+        "cc15917a0c8f24c40edcd9146f010581.png"
+      ],
+      "chartTokens": [
+        "S16",
+        "S18",
+        "S20",
+        "S22",
+        "D20",
+        "D22",
+        "D24"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/cc15917a0c8f24c40edcd9146f010581.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S20",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "S18",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "S16",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "D20",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "S22",
+          "scope": "full",
+          "page": 300
+        },
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D22",
+          "scope": "full",
+          "page": 500
+        }
+      ]
+    },
+    {
+      "songName": "NEMONEMO",
+      "artist": "YENA",
+      "images": [
+        "c4641ca95ecf3ff81cdded622ee8895a.png"
+      ],
+      "chartTokens": [
+        "S2",
+        "S4",
+        "S6",
+        "S10",
+        "S15",
+        "S18",
+        "S21",
+        "D11",
+        "D16",
+        "D19",
+        "D22"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/c4641ca95ecf3ff81cdded622ee8895a.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S18",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S15",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S10",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "D19",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "D16",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S21",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S6",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "D22",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "D11",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "S4",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "S2",
+          "scope": "full",
+          "page": 550
+        }
+      ]
+    },
+    {
+      "songName": "Pastry mix",
+      "artist": "Sobrem",
+      "images": [
+        "f16215673975220a70051d68fb6e42a9.png"
+      ],
+      "chartTokens": [
+        "S14",
+        "S17",
+        "S20",
+        "S23",
+        "D19",
+        "D22",
+        "D25"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/f16215673975220a70051d68fb6e42a9.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S20",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "S17",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "S23",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "D22",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "D25",
+          "scope": "full",
+          "page": 300
+        },
+        {
+          "token": "D19",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "S14",
+          "scope": "full",
+          "page": 600
+        }
+      ]
+    },
+    {
+      "songName": "PHYSALIS",
+      "artist": "TAG",
+      "images": [
+        "3aee829433e43cfecd3dd42d8e0beba5.png"
+      ],
+      "chartTokens": [
+        "S15",
+        "S19",
+        "S22",
+        "S24",
+        "D17",
+        "D20",
+        "D24",
+        "D26"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/3aee829433e43cfecd3dd42d8e0beba5.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S19",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S22",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S15",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "D20",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "D17",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "S24",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "D26",
+          "scope": "full",
+          "page": 350
+        }
+      ]
+    },
+    {
+      "songName": "Reincarnate in “A”",
+      "artist": "TAG underground overlay",
+      "images": [
+        "87c7fe03f93e41711155b4cb6d8fe208.png"
+      ],
+      "chartTokens": [
+        "S16",
+        "S19",
+        "S22",
+        "S25",
+        "D21",
+        "D24",
+        "D27"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/87c7fe03f93e41711155b4cb6d8fe208.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S16",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "S19",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "S22",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "D21",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "S25",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 550
+        },
+        {
+          "token": "D27",
+          "scope": "full",
+          "page": 1600
+        }
+      ]
+    },
+    {
+      "songName": "Skybound",
+      "artist": "Yamajet",
+      "images": [
+        "aaea0d72df0fa664859fe9594b24b104.png"
+      ],
+      "chartTokens": [
+        "S16",
+        "S18",
+        "S20",
+        "S22",
+        "D20",
+        "D22",
+        "D24"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/aaea0d72df0fa664859fe9594b24b104.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S22",
+          "scope": "full",
+          "page": 200
+        },
+        {
+          "token": "S20",
+          "scope": "full",
+          "page": 300
+        },
+        {
+          "token": "S18",
+          "scope": "full",
+          "page": 500
+        },
+        {
+          "token": "S16",
+          "scope": "full",
+          "page": 550
+        },
+        {
+          "token": "D20",
+          "scope": "full",
+          "page": 600
+        },
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 750
+        },
+        {
+          "token": "D22",
+          "scope": "full",
+          "page": 1150
+        }
+      ]
+    },
+    {
+      "songName": "Sylaphz",
+      "artist": "onoken",
+      "images": [
+        "081f5f3aeb0fc6a7613664fd06c88816.png"
+      ],
+      "chartTokens": [
+        "S14",
+        "S18",
+        "S21",
+        "S24",
+        "D16",
+        "D20",
+        "D23",
+        "D26"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/081f5f3aeb0fc6a7613664fd06c88816.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S21",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "S18",
+          "scope": "full",
+          "page": 150
+        },
+        {
+          "token": "S24",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "D23",
+          "scope": "full",
+          "page": 300
+        },
+        {
+          "token": "D26",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D20",
+          "scope": "full",
+          "page": 400
+        },
+        {
+          "token": "D16",
+          "scope": "full",
+          "page": 600
+        },
+        {
+          "token": "S14",
+          "scope": "full",
+          "page": 650
+        }
+      ]
+    },
+    {
+      "songName": "The Deconstruction",
+      "artist": "Hommarju",
+      "images": [
+        "2fece5bf98cec7388dfeca3057c3b735.png"
+      ],
+      "chartTokens": [
+        "S13",
+        "S17",
+        "S19",
+        "S22",
+        "D17",
+        "D20",
+        "D24"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/2fece5bf98cec7388dfeca3057c3b735.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S19",
+          "scope": "full",
+          "page": 400
+        },
+        {
+          "token": "S17",
+          "scope": "full",
+          "page": 500
+        },
+        {
+          "token": "S22",
+          "scope": "full",
+          "page": 600
+        },
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 850
+        },
+        {
+          "token": "D17",
+          "scope": "full",
+          "page": 850
+        },
+        {
+          "token": "D20",
+          "scope": "full",
+          "page": 1000
+        },
+        {
+          "token": "S13",
+          "scope": "full",
+          "page": 1050
+        }
+      ]
+    },
+    {
+      "songName": "The Last Stand",
+      "artist": "3R2",
+      "images": [
+        "dce94472834a0bb7bf8e941e7c0788f5.png"
+      ],
+      "chartTokens": [
+        "S4",
+        "S7",
+        "S11",
+        "S16",
+        "S19",
+        "S21",
+        "D14",
+        "D20",
+        "D24"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/dce94472834a0bb7bf8e941e7c0788f5.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "D24",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "S21",
+          "scope": "full",
+          "page": 300
+        },
+        {
+          "token": "S19",
+          "scope": "full",
+          "page": 400
+        },
+        {
+          "token": "S16",
+          "scope": "full",
+          "page": 450
+        },
+        {
+          "token": "D20",
+          "scope": "full",
+          "page": 550
+        },
+        {
+          "token": "D14",
+          "scope": "full",
+          "page": 1600
+        },
+        {
+          "token": "S11",
+          "scope": "full",
+          "page": 2150
+        },
+        {
+          "token": "S4",
+          "scope": "full",
+          "page": 3750
+        },
+        {
+          "token": "S7",
+          "scope": "full",
+          "page": 3950
+        }
+      ]
+    },
+    {
+      "songName": "Transmission",
+      "artist": "Sakuzyo",
+      "images": [
+        "a5fbfc4500a56e6f40491f160df583fb.png"
+      ],
+      "chartTokens": [
+        "S9",
+        "S15",
+        "S21",
+        "S23",
+        "D17",
+        "D22",
+        "D25"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/a5fbfc4500a56e6f40491f160df583fb.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S21",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "S23",
+          "scope": "full",
+          "page": 300
+        },
+        {
+          "token": "D25",
+          "scope": "full",
+          "page": 350
+        },
+        {
+          "token": "D22",
+          "scope": "full",
+          "page": 450
+        },
+        {
+          "token": "D17",
+          "scope": "full",
+          "page": 600
+        },
+        {
+          "token": "S15",
+          "scope": "full",
+          "page": 650
+        },
+        {
+          "token": "S9",
+          "scope": "full",
+          "page": 3200
+        }
+      ]
+    },
+    {
+      "songName": "Under the Christmas Stars",
+      "artist": "MAX",
+      "images": [
+        "d6a82f4805514e117a51696f07ea798a.png"
+      ],
+      "chartTokens": [
+        "S2",
+        "S4",
+        "S7",
+        "S11",
+        "S15",
+        "S18",
+        "D5",
+        "D13",
+        "D16",
+        "D19"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/d6a82f4805514e117a51696f07ea798a.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S18",
+          "scope": "full",
+          "page": 250
+        },
+        {
+          "token": "D19",
+          "scope": "full",
+          "page": 400
+        },
+        {
+          "token": "S15",
+          "scope": "full",
+          "page": 600
+        },
+        {
+          "token": "D16",
+          "scope": "full",
+          "page": 900
+        },
+        {
+          "token": "S11",
+          "scope": "full",
+          "page": 2050
+        },
+        {
+          "token": "D13",
+          "scope": "full",
+          "page": 2150
+        },
+        {
+          "token": "S7",
+          "scope": "full",
+          "page": 3900
+        },
+        {
+          "token": "D5",
+          "scope": "full",
+          "page": 4200
+        },
+        {
+          "token": "S2",
+          "scope": "full",
+          "page": 4350
+        },
+        {
+          "token": "S4",
+          "scope": "full",
+          "page": 4350
+        }
+      ]
+    },
+    {
+      "songName": "Until Defined",
+      "artist": "Palami feat. Dyon Joo & neur6sia",
+      "images": [
+        "ff001f39b980aad4b86435c662099dff.png"
+      ],
+      "chartTokens": [
+        "S12",
+        "S15",
+        "S19",
+        "S21",
+        "D16",
+        "D21",
+        "D23"
+      ],
+      "imageUrls": [
+        "https://piugame.com/data/song_img2/ff001f39b980aad4b86435c662099dff.png?v=20261015133540"
+      ],
+      "charts": [
+        {
+          "token": "S15",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S19",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "D16",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S21",
+          "scope": "full",
+          "page": 0
+        },
+        {
+          "token": "S12",
+          "scope": "full",
+          "page": 50
+        },
+        {
+          "token": "D23",
+          "scope": "full",
+          "page": 100
+        },
+        {
+          "token": "D21",
+          "scope": "full",
+          "page": 150
+        }
+      ]
+    }
+  ],
+  "limitations": "Popularity feed completeness does not prove unplayed charts are absent. No Basic feed was requested. Cooperative charts NEMONEMO C2 and Until Defined C2 are from the release notice.",
+  "assets": [
+  {
+    "file": "b62c203e440a8aaf7d35e9034d7f3fe1.png",
+    "url": "https://piugame.com/data/song_img2/b62c203e440a8aaf7d35e9034d7f3fe1.png?v=20261015133540",
+    "sha256": "9bce432283a85ea1c6a78a8b4f266342d65561bf1b71d1d3288834857ebcdd27",
+    "bytes": 56542,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "ec32a9cc6c063f67182ca985a020a3b8.png",
+    "url": "https://piugame.com/data/song_img2/ec32a9cc6c063f67182ca985a020a3b8.png?v=20261015133540",
+    "sha256": "3e0e72699fcec6fc79c325de58cae8acbee36eb6d27d0d4b29c176b5c2e03f77",
+    "bytes": 368576,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "a2a95bd6ba8eaf53ea75dcdac32ac28a.png",
+    "url": "https://piugame.com/data/song_img2/a2a95bd6ba8eaf53ea75dcdac32ac28a.png?v=20261015133540",
+    "sha256": "6856cc37bb72fa43bc733581787c9972c41ff4ab83b04bd22b67fb378d523cb9",
+    "bytes": 399087,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "f1660f398538083e015611f3cad1e546.png",
+    "url": "https://piugame.com/data/song_img2/f1660f398538083e015611f3cad1e546.png?v=20261015133540",
+    "sha256": "be49afab43e041d3201ba7f9299858d7d22676b6bb6c976ebac9288fff2bece6",
+    "bytes": 364078,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "5f1dd8491e1656499997f1f3fe2084e1.png",
+    "url": "https://piugame.com/data/song_img2/5f1dd8491e1656499997f1f3fe2084e1.png?v=20261015133540",
+    "sha256": "b6d3dbe4cd9e8b1719ba691944c22d0da0d57a9b42eb4ab7387289ee82f1c720",
+    "bytes": 388566,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "81005e747c8bf33c392b7aea4bd41f92.png",
+    "url": "https://piugame.com/data/song_img2/81005e747c8bf33c392b7aea4bd41f92.png?v=20261015133540",
+    "sha256": "584c81e11b6d281340410f96b5b13006a0df5844ab1813335766b5b52a8df142",
+    "bytes": 425559,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "864c2d759ecaf29bff2260d317c081ee.png",
+    "url": "https://piugame.com/data/song_img2/864c2d759ecaf29bff2260d317c081ee.png?v=20261015133540",
+    "sha256": "dc77e21b24cd06f5ce011f9ba9383153d6612c3e4929433ff9267e1a63cae8ca",
+    "bytes": 533598,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "45e6716895c336db9d30fd60c107c249.png",
+    "url": "https://piugame.com/data/song_img2/45e6716895c336db9d30fd60c107c249.png?v=20261015133540",
+    "sha256": "1cc7d55229dd254e72c7335ea6413c660220a0c983478bcf6907838e7e78710f",
+    "bytes": 273494,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "cdd3b7c7404b3cbebd21634e0fff75b3.png",
+    "url": "https://piugame.com/data/song_img2/cdd3b7c7404b3cbebd21634e0fff75b3.png?v=20261015133540",
+    "sha256": "b8d2f9815d650f49109670f6e8bf8bf0c30138011a76ac5f2786bf5ac879712b",
+    "bytes": 386193,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "cc15917a0c8f24c40edcd9146f010581.png",
+    "url": "https://piugame.com/data/song_img2/cc15917a0c8f24c40edcd9146f010581.png?v=20261015133540",
+    "sha256": "e3fb6e0d399f1761b5f9c4a97511a9cb90fd78dbe2f4d6066fc2f8797340badd",
+    "bytes": 523717,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "c4641ca95ecf3ff81cdded622ee8895a.png",
+    "url": "https://piugame.com/data/song_img2/c4641ca95ecf3ff81cdded622ee8895a.png?v=20261015133540",
+    "sha256": "614e6574b5440b23e124f28c8e9e1efd90e93efe42f05a1070000232ba7f6d4b",
+    "bytes": 275934,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "f16215673975220a70051d68fb6e42a9.png",
+    "url": "https://piugame.com/data/song_img2/f16215673975220a70051d68fb6e42a9.png?v=20261015133540",
+    "sha256": "14e70ec21d1efa56b6b9c402b84db608d8ca8737c5e2a7a0b16b4c52f352b7a9",
+    "bytes": 537276,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "3aee829433e43cfecd3dd42d8e0beba5.png",
+    "url": "https://piugame.com/data/song_img2/3aee829433e43cfecd3dd42d8e0beba5.png?v=20261015133540",
+    "sha256": "a5e1ad4a67bb4a0fab002665d74b3a02f431e3b28f2330d175d413b58f208a3a",
+    "bytes": 163855,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "87c7fe03f93e41711155b4cb6d8fe208.png",
+    "url": "https://piugame.com/data/song_img2/87c7fe03f93e41711155b4cb6d8fe208.png?v=20261015133540",
+    "sha256": "3a2547ae374a51580edcddad0c49d3a10242b9216795d6d1bf86f97d5fde5e9f",
+    "bytes": 331472,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "aaea0d72df0fa664859fe9594b24b104.png",
+    "url": "https://piugame.com/data/song_img2/aaea0d72df0fa664859fe9594b24b104.png?v=20261015133540",
+    "sha256": "ecf2dc03e1667178241443239d017d11a586f07334fae8b801a46570035ba01c",
+    "bytes": 368062,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "081f5f3aeb0fc6a7613664fd06c88816.png",
+    "url": "https://piugame.com/data/song_img2/081f5f3aeb0fc6a7613664fd06c88816.png?v=20261015133540",
+    "sha256": "d604b2f95f92664bf2fc220ad2eb984659c4e599acf48683d188a95a3ec149ba",
+    "bytes": 350797,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "2fece5bf98cec7388dfeca3057c3b735.png",
+    "url": "https://piugame.com/data/song_img2/2fece5bf98cec7388dfeca3057c3b735.png?v=20261015133540",
+    "sha256": "c8cf0f2381cbd0770d3b22f56b1d0954b08e0e96470b02ae7af1de3c3551d261",
+    "bytes": 246724,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "dce94472834a0bb7bf8e941e7c0788f5.png",
+    "url": "https://piugame.com/data/song_img2/dce94472834a0bb7bf8e941e7c0788f5.png?v=20261015133540",
+    "sha256": "b25c6ad9bc29485ef3c0edf65fc0c8866c1bbdf15adcad2aef4755e8c5f833b6",
+    "bytes": 468602,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "a5fbfc4500a56e6f40491f160df583fb.png",
+    "url": "https://piugame.com/data/song_img2/a5fbfc4500a56e6f40491f160df583fb.png?v=20261015133540",
+    "sha256": "c9e45cb0bbf499fccdfd57b669e4e6bc4edea67b2a604f6e19d8093bac3aae73",
+    "bytes": 370494,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "d6a82f4805514e117a51696f07ea798a.png",
+    "url": "https://piugame.com/data/song_img2/d6a82f4805514e117a51696f07ea798a.png?v=20261015133540",
+    "sha256": "2012b5c9755a77d0138df914da81466963f2c8da8f3d29fe2cd80120526374fb",
+    "bytes": 463699,
+    "width": 700,
+    "height": 393
+  },
+  {
+    "file": "ff001f39b980aad4b86435c662099dff.png",
+    "url": "https://piugame.com/data/song_img2/ff001f39b980aad4b86435c662099dff.png?v=20261015133540",
+    "sha256": "6eafa04194690e6d6004cf5162511d51dfaaf9844a67ba5dba3c004246a77264",
+    "bytes": 480159,
+    "width": 700,
+    "height": 393
+  }
+]
+}
