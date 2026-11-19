@@ -7,3 +7,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Maintenance continuity
+
+Before maintenance work, read [the task ledger](docs/maintenance-plan.md) and
+[the runbook](docs/maintenance.md). Preserve the original catalog, audio, asset,
+storage and repository tasks while addressing newer bugs. Recheck live state and
+PR heads; distinguish proposed, tested, merged and deployed work. Update the
+ledger at meaningful milestones and keep unresolved items explicit.

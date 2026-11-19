@@ -1,6 +1,6 @@
 # MyPIU maintenance runbook
 
-Last verified: **November 19, 2026**, with production running commit `b66a7fc` on Node 24.22.3. The October catalog release was applied using commit `844e43d`; the initial audit used `146d4ce`. Counts below describe the completed catalog update, not permanent expected totals. Recheck deployment and database state before changing production.
+Last verified: **November 19, 2026**, with production running commit `bd3c718` on Node 24.22.3 and the separately installed recovery driver from reviewed head `baf9b563`. The October catalog release was applied using commit `844e43d`; the initial audit used `146d4ce`. Counts below describe the completed catalog update, not permanent expected totals. Recheck deployment and database state before changing production. The [maintenance task ledger](maintenance-plan.md) tracks every original request, completed work and remaining gaps.
 
 ## Production and data ownership
 
@@ -10,14 +10,14 @@ Last verified: **November 19, 2026**, with production running commit `b66a7fc` o
 | Origin | `slim7prox`, checkout `/home/pkimchi/piugame-web-prod`, port `4090` |
 | Web service | systemd user unit `piugame-web.service` |
 | Runtime | Node 24.22.3 in the web service and deploy script; the default shell remains on Node 23.11.0 |
-| Deployment | `piugame-web-deploy.timer` checks GitHub `main` every minute; deployment resets the checkout to `main`, installs dependencies, builds, and restarts the service |
+| Deployment | `piugame-web-deploy.timer` checks GitHub `main` every minute; the installed immutable recovery driver stages install/build, preserves runtime/manual media, switches the stopped service and checks readiness |
 | Catalog database | `SONG_CATALOG_DB=piugame_sdk`, unified `CATALOG_COLLECTION=catalog` |
 | Catalog after October update | 697 total documents; 675 support Phoenix 2 |
 | Source collections | `song_catalog`: 639 documents; `song_catalog_2`: 675 documents |
 | Manual overrides | `song_catalog_2_media_overrides`: 404; `song_catalog_series_overrides`: 444; unchanged by the catalog update |
 | Community database | `COMMUNITY_DB_NAME=piugame_web`: accounts, sessions, favorites, community content, performance, and mobile authentication/import records |
 
-The deployment audit did **not** establish an automatic health check or rollback. A successful build or running process alone is insufficient evidence that a release works. Cloudflare configuration, Workers, and routing must be inspected separately before changing them; the existence of Workers in the account does not mean this Next.js origin runs in a Worker.
+The installed driver now checks origin HTML, built static bytes and catalog readiness, and provides durable recovery for its documented phases. All 53 isolated Linux deployment tests passed and a normal full promotion was verified; a real live post-promotion rollback was not deliberately exercised. The single-instance snapshot/switch interrupted origin service for about 92 seconds. A successful build or running process alone is insufficient evidence that a release works. Cloudflare configuration, Workers, and routing still need an authenticated account audit; the existence of Workers in the account does not mean this Next.js origin runs in a Worker.
 
 Use a branch or isolated worktree. The development and production checkouts are distinct, and development may contain unique uncommitted maintenance scripts. Preserve them. The Mac mobile checkout also has pre-existing Xcode signing/project edits; use an isolated mobile worktree for new work.
 
@@ -104,7 +104,7 @@ Use the owner's authorized account for necessary signed-in smoke tests without p
 
 Run relevant tests, lint, the TypeScript check, and a build on the candidate revision before merging. The `main` watcher makes merging a production action. Retain the prior commit, recoverable database backup, and media backup, then verify the timer deployed the expected commit.
 
-The [deployment recovery guide](deployment-recovery.md) describes the reviewed code and its separate host-installation requirements. Code in the repository does not establish that the host watcher uses it; verify the installed command before relying on pending recovery or automatic code rollback.
+The [deployment recovery guide](deployment-recovery.md) records the installed bundle and its separate host-installation requirements. Repository merges do not replace that immutable host bundle; verify the installed command before relying on a newer recovery implementation.
 
 Read-only origin checks include:
 

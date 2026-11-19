@@ -2,11 +2,29 @@
 
 ## Installation status
 
-This repository provides the recovery implementation; merging it does **not**
-install it as the host's deploy command. The November 19 production watcher still
-uses its existing reset/install/build/restart script until a separately reviewed
-host installation is completed and verified. The [runtime switch record](maintenance.md#runtime-switch-and-rollback)
-describes the installed Node runtime, not an installed recovery system.
+Installed and verified on **November 19, 2026**: the watcher uses the immutable
+bundle from reviewed head `baf9b5631a30bcfaa5280d48f20ba5b73c2371c7`, installed under
+`~/.local/lib/piugame-web-deploy/` outside the application and recovery trees.
+The launcher SHA-256 is `998bd4271c6b16701bd2b2eff02f13d28e8e2c7419a7c90b043c2c5a9bf669e3`.
+Installation retained the same existing deployment lock across the source merge
+and atomic launcher replacement. The ordinary timer then deployed `bd3c718`,
+and the next timer reported it current.
+
+Qualification passed 53 of 53 isolated Linux tests. A fresh full-runtime copy,
+durable inventory and verification took 81.176 seconds within the 120-second
+budget. The first normal live promotion with this bundle succeeded; it caused
+about 92 seconds of single-instance interruption. Origin/static/catalog, public
+image/audio checks, all 63 manual-audio hashes, environment and unrelated bot
+checks passed. A real live post-promotion rollback was not deliberately tested.
+Private receipts are under `deployment-install-baf9b563/` in the November 19
+maintenance directory; the initial safely failed `9318d1e` deployment evidence
+was retained separately.
+
+Merging future repository changes does **not** replace this installed bundle.
+New recovery code still requires a separately reviewed host installation and
+verification. The [runtime switch record](maintenance.md#runtime-switch-and-rollback)
+describes the earlier runtime transition; the [task ledger](maintenance-plan.md)
+tracks remaining maintenance and release work.
 
 Install these three reviewed files together in a fixed directory outside the
 application checkout:
