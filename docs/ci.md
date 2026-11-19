@@ -24,7 +24,7 @@ Before making this a required merge check, account for path-filtered runs: GitHu
 
 ### Local package access
 
-The private `@austinkimchi/piugame-sdk` dependency is hosted on GitHub Packages. Local `npm ci` requires an account with access and npm authentication for `https://npm.pkg.github.com`. Follow [GitHub's npm authentication instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry#authenticating-to-github-packages); keep tokens in your user-level npm configuration or a local environment, never in the repository. The workflow's ephemeral `GITHUB_TOKEN` is provided only inside GitHub Actions.
+The private `@austinkimchi/piugame-sdk` dependency is hosted on GitHub Packages. Local `npm ci` requires an account with package access and a `GITHUB_PACKAGES_TOKEN` environment variable, which the checked-in `.npmrc` references. Follow [GitHub's npm authentication instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry#authenticating-to-github-packages) for a token with `read:packages` access. Keep its value outside the repository. CI maps its ephemeral `GITHUB_TOKEN` to the same variable during installation.
 
 ## Existing deployment
 

@@ -53,12 +53,10 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@austinkimchi'
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Test
         run: npm test
       - name: Generate Next.js route types
