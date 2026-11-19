@@ -10,12 +10,14 @@ Last verified: **November 19, 2026**, with production running commit `96d0b365` 
 | Origin | `slim7prox`, checkout `/home/pkimchi/piugame-web-prod`, port `4090` |
 | Web service | systemd user unit `piugame-web.service` |
 | Runtime | Node 24.22.3 in the web service and deploy script; the default shell remains on Node 23.11.0 |
-| Deployment | `piugame-web-deploy.timer` checks GitHub `main` every minute; the installed immutable recovery driver stages install/build, preserves runtime/manual media, switches the stopped service and checks readiness |
+| Deployment | `piugame-web-deploy.timer` checks GitHub `main` on a five-second timer; the installed immutable recovery driver stages install/build, preserves runtime/manual media, switches the stopped service and checks readiness |
 | Catalog database | `SONG_CATALOG_DB=piugame_sdk`, unified `CATALOG_COLLECTION=catalog` |
 | Catalog after October update | 697 total documents; 675 support Phoenix 2 |
 | Source collections | `song_catalog`: 639 documents; `song_catalog_2`: 675 documents |
 | Manual overrides | `song_catalog_2_media_overrides`: 404; `song_catalog_series_overrides`: 444; unchanged by the catalog update |
 | Community database | `COMMUNITY_DB_NAME=piugame_web`: accounts, sessions, favorites, community content, performance, and mobile authentication/import records |
+
+The timer was verified on November 19 with `OnUnitActiveSec=5s`, `OnBootSec=5s`, `AccuracySec=1s` and `RandomizedDelaySec=0`. Successive no-change checks were 5.377, 5.082, 5.088, 5.070 and 5.075 seconds apart. This is polling cadence, not a five-second deployment promise: the same oneshot service and exclusive deployment lock serialize work, and a changed revision still requires installation, build, switch and readiness checks.
 
 The installed driver now checks origin HTML, built static bytes and catalog readiness, and provides durable recovery for its documented phases. All 53 isolated Linux deployment tests passed and a normal full promotion was verified; a real live post-promotion rollback was not deliberately exercised. The single-instance snapshot/switch interrupted origin service for about 92 seconds. A successful build or running process alone is insufficient evidence that a release works. Authenticated Cloudflare inspection confirms the proxied hostname uses the healthy `slimx` tunnel on slim7prox, route 7 to `http://localhost:4090`. The separate `piugame-web` Worker has only its workers.dev hostname and no custom domains/routes. Its stale build failed with private SDK package E401; automatic Worker builds were disabled and the persisted setting verified. The active origin/deployer, DNS, tunnel and credentials were unchanged. Audit the remaining Worker use and retire or repair it separately; keep its plain build credential out of reports.
 
