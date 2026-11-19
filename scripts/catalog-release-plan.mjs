@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 const key = (text) => String(text ?? '').normalize('NFKC').trim().toLowerCase();
 const chartPattern = /^(?:[SD](?:[1-9]|[12]\d|3[0-5])|C[2-9])$/;
 const unique = (values) => [...new Set(values)];
+const normalizedToken = token => String(token).replace(/^Cx/, 'C');
 
 function isDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? '')) return false;
@@ -25,6 +26,10 @@ function findSong(documents, entry) {
 
 function chart(token) {
   return { mode: token[0], level: token.slice(1), token };
+}
+
+function existingChartToken(chart) {
+  return normalizedToken(chart.token || `${chart.mode}${chart.level}`);
 }
 
 function historyEvent(release, token, type, note) {
@@ -56,7 +61,7 @@ export function planCatalogRelease(release, catalogSnapshot, sourceSnapshot, { a
   const plan = { release: release.release, sourceUrl: release.sourceUrl, asOf, readOnly: true, readyForReview: false, blockers: [], pendingSongs: release.pendingSongs ?? [], changes: [] };
   const identities = new Set();
   for (const entry of release.newSongs ?? []) {
-    if (!entry.title || !entry.artist || !entry.folder || !Number.isFinite(entry.bpm) || entry.bpm <= 0) throw new Error('New songs require title, artist, folder and BPM.');
+    if (!entry.title || !entry.artist || !entry.folder || (entry.bpm !== null && (!Number.isFinite(entry.bpm) || entry.bpm <= 0))) throw new Error('New songs require title, artist, folder and positive BPM or explicit null.');
     validateTokens(entry.chartTokens);
     const identity = `${key(entry.title)}\0${key(entry.artist)}`;
     if (identities.has(identity)) throw new Error(`Duplicate release entry: ${entry.title}`);
@@ -67,21 +72,21 @@ export function planCatalogRelease(release, catalogSnapshot, sourceSnapshot, { a
       const existing = findSong(documents, entry);
       if (existing) {
         const current = unified ? existing.chartTokensByVersion?.phoenix2 : existing.chartTokens;
-        if (!current || entry.chartTokens.some(t => !current.includes(t))) plan.blockers.push(`${collection}/${entry.title}: existing row differs; review explicitly as chart additions`);
+        if (!Array.isArray(current) || entry.chartTokens.some(t => !current.map(normalizedToken).includes(t))) plan.blockers.push(`${collection}/${entry.title}: existing row differs; review explicitly as chart additions`);
         continue; // Never replace existing metadata or curated audio during re-runs.
       }
       const document = {
         songKey: entry.title, songName: entry.title, artist: entry.artist,
-        piuVersion: 'phoenix2', series: 'PHOENIX 2', folder: entry.folder, folderPosition: null,
+        piuVersion: 'phoenix2', catalogVersion: 'phoenix2', series: 'Phoenix 2', folder: entry.folder, folderPosition: null,
         bpm: entry.bpm, type: 'arcade', images: entry.images ?? [], tags: entry.tags ?? [],
-        chartTokens: [...entry.chartTokens], chartsBasic: [], chartsFull: entry.chartTokens.map(chart),
+        chartTokens: [...entry.chartTokens], chartsBasic: [], chartsFull: entry.chartTokens.map(chart), stepArtists: [],
         audioPath: null, audioPreview: null,
-        source: { sourceFile: release.sourceUrl, releasedOn: release.releasedOn },
+        source: { sourceFile: release.sourceUrl, releasedOn: release.releasedOn, chartEvidence: entry.chartEvidence ?? null },
       };
       if (unified) Object.assign(document, {
         catalogVersion: 'catalog', supportedVersions: ['phoenix2'], removedFromVersions: [],
         chartTokensByVersion: { phoenix2: [...entry.chartTokens] }, chartLinks: [], chartHistory: [],
-        history: [{ date: release.releasedOn, type: 'added', version: 'phoenix2', note: `Added in ${release.release}.` }],
+        history: [{ date: release.releasedOn, type: 'added', version: 'phoenix2', note: `Added in ${release.release}.${entry.availabilityNote ? ` ${entry.availabilityNote}` : ''}` }],
       });
       plan.changes.push({ collection, action: 'insert', identity: { songKey: entry.title, artist: entry.artist }, document });
     }
@@ -114,17 +119,18 @@ export function planCatalogRelease(release, catalogSnapshot, sourceSnapshot, { a
       if (!Array.isArray(beforeTokens)) throw new Error(`Missing version-specific chart tokens: ${entry.title}`);
       const tokenField = unified ? 'chartTokensByVersion.phoenix2' : 'chartTokens';
       const tokens = change.set[tokenField] ?? beforeTokens;
-      const additions = entry.chartTokens.filter(t => !tokens.includes(t));
+      const additions = entry.chartTokens.filter(t => !tokens.map(normalizedToken).includes(t));
       if (!additions.length) continue;
       change.before[tokenField] = beforeTokens;
       change.set[tokenField] = [...tokens, ...additions];
       if (unified) {
         change.before.chartTokens = document.chartTokens ?? null;
-        change.set.chartTokens = unique([...(change.set.chartTokens ?? document.chartTokens ?? []), ...additions]);
+        const union = change.set.chartTokens ?? document.chartTokens ?? [];
+        change.set.chartTokens = [...union, ...additions.filter(t => !union.map(normalizedToken).includes(t))];
       }
       const full = change.set.chartsFull ?? document.chartsFull ?? [];
       change.before.chartsFull = document.chartsFull ?? null;
-      change.set.chartsFull = [...full, ...additions.filter(t => !full.some(c => c.token === t)).map(chart)];
+      change.set.chartsFull = [...full, ...additions.filter(t => !full.some(c => existingChartToken(c) === t)).map(chart)];
       if (unified) addEvents(change, document, additions.map(t => historyEvent(release, t, 'added', entry.note)));
     }
   }
@@ -132,7 +138,7 @@ export function planCatalogRelease(release, catalogSnapshot, sourceSnapshot, { a
     validateTokens([entry.chartToken]);
     if (!entry.note) throw new Error('Chart revisions require an official change description.');
     const document = findSong(catalog, entry);
-    if (!document || !document.chartTokensByVersion?.phoenix2?.includes(entry.chartToken)) { plan.blockers.push(`${entry.title}: revised chart missing from PHOENIX 2`); continue; }
+    if (!document || !document.chartTokensByVersion?.phoenix2?.map(normalizedToken).includes(entry.chartToken)) { plan.blockers.push(`${entry.title}: revised chart missing from PHOENIX 2`); continue; }
     addEvents(update('catalog', document), document, [historyEvent(release, entry.chartToken, 'changed', entry.note)]);
   }
   plan.changes.push(...[...updates.values()].filter(change => Object.keys(change.set).length));

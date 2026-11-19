@@ -3,7 +3,7 @@
   "releasedOn": "2026-10-15",
   "version": "phoenix2",
   "sourceUrl": "https://piugame.com/phoenix2_notice?wr_id=357",
-  "evidence": "Official notice transcribed from the user's Mac browser on 2026-11-19. Jacket filenames and R!SE chart lists still pending verification.",
+  "evidence": "Official October 15 notice plus exhaustive November 2026 full-mode popularity feed. See phoenix2-v1.02.0-evidence.json for request parameters, page hashes and row references. Two cooperative charts come from the notice; 169 other charts were observed in the feed. R!SE BPMs are explicitly unknown.",
   "newSongs": [
     {
       "title": "NEMONEMO",
@@ -24,8 +24,11 @@
         "D22",
         "C2"
       ],
-      "images": [],
-      "tags": []
+      "images": [
+        "c4641ca95ecf3ff81cdded622ee8895a.png"
+      ],
+      "tags": [],
+      "chartEvidence": "Official release notice; full-mode monthly feed corroborates non-cooperative charts."
     },
     {
       "title": "Mephitz",
@@ -43,8 +46,11 @@
         "D21",
         "D24"
       ],
-      "images": [],
-      "tags": []
+      "images": [
+        "cdd3b7c7404b3cbebd21634e0fff75b3.png"
+      ],
+      "tags": [],
+      "chartEvidence": "Official release notice; full-mode monthly feed corroborates non-cooperative charts."
     },
     {
       "title": "Falling Stars",
@@ -61,8 +67,11 @@
         "D20",
         "D24"
       ],
-      "images": [],
-      "tags": []
+      "images": [
+        "5f1dd8491e1656499997f1f3fe2084e1.png"
+      ],
+      "tags": [],
+      "chartEvidence": "Official release notice; full-mode monthly feed corroborates non-cooperative charts."
     },
     {
       "title": "Until Defined",
@@ -79,8 +88,11 @@
         "D23",
         "C2"
       ],
-      "images": [],
-      "tags": []
+      "images": [
+        "ff001f39b980aad4b86435c662099dff.png"
+      ],
+      "tags": [],
+      "chartEvidence": "Official release notice; full-mode monthly feed corroborates non-cooperative charts."
     },
     {
       "title": "PHYSALIS",
@@ -97,10 +109,13 @@
         "D24",
         "D26"
       ],
-      "images": [],
+      "images": [
+        "3aee829433e43cfecd3dd42d8e0beba5.png"
+      ],
       "tags": [
         "Premium Mode Exclusive"
-      ]
+      ],
+      "chartEvidence": "Official release notice; full-mode monthly feed corroborates non-cooperative charts."
     },
     {
       "title": "Assault TAXI",
@@ -116,8 +131,370 @@
         "D20",
         "D23"
       ],
-      "images": [],
-      "tags": []
+      "images": [
+        "b62c203e440a8aaf7d35e9034d7f3fe1.png"
+      ],
+      "tags": [],
+      "chartEvidence": "Official release notice; full-mode monthly feed corroborates non-cooperative charts."
+    },
+    {
+      "title": "Transmission",
+      "artist": "Sakuzyo",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S9",
+        "S15",
+        "S21",
+        "S23",
+        "D17",
+        "D22",
+        "D25"
+      ],
+      "images": [
+        "a5fbfc4500a56e6f40491f160df583fb.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Chess and Chase",
+      "artist": "litmus* ft. CielA",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S7",
+        "S10",
+        "S14",
+        "S17",
+        "S20",
+        "D12",
+        "D16",
+        "D18",
+        "D22"
+      ],
+      "images": [
+        "a2a95bd6ba8eaf53ea75dcdac32ac28a.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Sylaphz",
+      "artist": "onoken",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S14",
+        "S18",
+        "S21",
+        "S24",
+        "D16",
+        "D20",
+        "D23",
+        "D26"
+      ],
+      "images": [
+        "081f5f3aeb0fc6a7613664fd06c88816.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Pastry mix",
+      "artist": "Sobrem",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S14",
+        "S17",
+        "S20",
+        "S23",
+        "D19",
+        "D22",
+        "D25"
+      ],
+      "images": [
+        "f16215673975220a70051d68fb6e42a9.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Love Witch",
+      "artist": "SHK",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S13",
+        "S16",
+        "S18",
+        "S21",
+        "D16",
+        "D18",
+        "D20",
+        "D23"
+      ],
+      "images": [
+        "45e6716895c336db9d30fd60c107c249.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Galactic Metronome",
+      "artist": "Essbee",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S10",
+        "S15",
+        "S19",
+        "S22",
+        "S24",
+        "D17",
+        "D21",
+        "D24",
+        "D26"
+      ],
+      "images": [
+        "81005e747c8bf33c392b7aea4bd41f92.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Under the Christmas Stars",
+      "artist": "MAX",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S2",
+        "S4",
+        "S7",
+        "S11",
+        "S15",
+        "S18",
+        "D5",
+        "D13",
+        "D16",
+        "D19"
+      ],
+      "images": [
+        "d6a82f4805514e117a51696f07ea798a.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Skybound",
+      "artist": "Yamajet",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S16",
+        "S18",
+        "S20",
+        "S22",
+        "D20",
+        "D22",
+        "D24"
+      ],
+      "images": [
+        "aaea0d72df0fa664859fe9594b24b104.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "DROP FRONT!ER",
+      "artist": "xi",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S16",
+        "S19",
+        "S22",
+        "S25",
+        "D18",
+        "D24",
+        "D27"
+      ],
+      "images": [
+        "f1660f398538083e015611f3cad1e546.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Morrighan",
+      "artist": "ryhki",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S16",
+        "S18",
+        "S20",
+        "S22",
+        "D20",
+        "D22",
+        "D24"
+      ],
+      "images": [
+        "cc15917a0c8f24c40edcd9146f010581.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Galactic Terminus",
+      "artist": "Reku Mochizuki",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S3",
+        "S7",
+        "S11",
+        "S16",
+        "S18",
+        "S20",
+        "D13",
+        "D19",
+        "D22"
+      ],
+      "images": [
+        "864c2d759ecaf29bff2260d317c081ee.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "The Last Stand",
+      "artist": "3R2",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S4",
+        "S7",
+        "S11",
+        "S16",
+        "S19",
+        "S21",
+        "D14",
+        "D20",
+        "D24"
+      ],
+      "images": [
+        "dce94472834a0bb7bf8e941e7c0788f5.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "The Deconstruction",
+      "artist": "Hommarju",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S13",
+        "S17",
+        "S19",
+        "S22",
+        "D17",
+        "D20",
+        "D24"
+      ],
+      "images": [
+        "2fece5bf98cec7388dfeca3057c3b735.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Reincarnate in “A”",
+      "artist": "TAG underground overlay",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S16",
+        "S19",
+        "S22",
+        "S25",
+        "D21",
+        "D24",
+        "D27"
+      ],
+      "images": [
+        "87c7fe03f93e41711155b4cb6d8fe208.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
+    },
+    {
+      "title": "Burning SuperNova feat. neur6sia",
+      "artist": "Palami",
+      "bpm": null,
+      "folder": "R!se Volume 1",
+      "chartTokens": [
+        "S13",
+        "S16",
+        "S19",
+        "S21",
+        "S23",
+        "D17",
+        "D22",
+        "D25"
+      ],
+      "images": [
+        "ec32a9cc6c063f67182ca985a020a3b8.png"
+      ],
+      "tags": [
+        "Steam Link Exclusive"
+      ],
+      "availabilityNote": "R!SE Vol.1 ARCADE MIX; exclusive to Steam Link accounts.",
+      "chartEvidence": "All observed full-mode charts in the exhausted November 2026 official popularity feed. Unplayed charts may be absent; basic-mode inventory was not queried."
     }
   ],
   "chartAdditions": [],
@@ -128,68 +505,7 @@
       "note": "Part of the D20 chart was modified; difficulty unchanged."
     }
   ],
-  "pendingSongs": [
-    {
-      "title": "Transmission",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Chess and Chase",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Sylaphz",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Pastry mix",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Love Witch",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Galactic Metronome",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Under the Christmas Stars",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Skybound",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "DROP FRONT!ER",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Morrighan",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Galactic Terminus",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "The Last Stand",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "The Deconstruction",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Reincarnate in “A”",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    },
-    {
-      "title": "Burning SuperNova feat. neur6sia",
-      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
-    }
-  ],
+  "pendingSongs": [],
   "excludedReleases": [
     {
       "release": "PHOENIX 2 v1.03",
