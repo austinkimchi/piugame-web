@@ -9,6 +9,7 @@ import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { DISCORD_BOT_USER_COLLECTIONS } from "@/lib/account-deletion-core";
 import { withActiveAccountWrite } from "@/lib/account-write-fence";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
+import { existingMongoIndexes } from "@/lib/mongo-indexes";
 import { encryptCredential } from "@/lib/credential-crypto";
 import { withPerformanceUserLease } from "@/lib/performance-user-lock";
 import { piuDisplayName } from "@/lib/piu-account";
@@ -419,7 +420,7 @@ async function ensureIndexes(args: {
 }
 
 async function dropLegacyTagIndexes(collection: Collection<TagContributionDocument>): Promise<void> {
-  const indexes = await collection.indexes();
+  const indexes = await existingMongoIndexes(collection);
   const legacyIndexNames = indexes
     .filter((index) => JSON.stringify(index.key) === JSON.stringify({ userId: 1, songSlug: 1, tag: 1 }) || JSON.stringify(index.key) === JSON.stringify({ songSlug: 1, tag: 1 }))
     .map((index) => index.name)
@@ -431,7 +432,7 @@ async function dropLegacyTagIndexes(collection: Collection<TagContributionDocume
 }
 
 async function dropLegacyNoteIndexes(collection: Collection<SongNoteDocument>): Promise<void> {
-  const indexes = await collection.indexes();
+  const indexes = await existingMongoIndexes(collection);
   const legacyIndexNames = indexes
     .filter((index) => JSON.stringify(index.key) === JSON.stringify({ userId: 1, songSlug: 1 }))
     .map((index) => index.name)
