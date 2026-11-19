@@ -22,6 +22,10 @@ Use a disposable checkout without production environment files. A build without 
 
 Before making this a required merge check, account for path-filtered runs: GitHub can leave a required check pending when its workflow is skipped. Either remove the path filter or introduce an always-running gate before requiring it. A successful run alone does not establish branch protection.
 
+### Local package access
+
+The private `@austinkimchi/piugame-sdk` dependency is hosted on GitHub Packages. Local `npm ci` requires an account with access and npm authentication for `https://npm.pkg.github.com`. Follow [GitHub's npm authentication instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry#authenticating-to-github-packages); keep tokens in your user-level npm configuration or a local environment, never in the repository. The workflow's ephemeral `GITHUB_TOKEN` is provided only inside GitHub Actions.
+
 ## Existing deployment
 
 The origin's systemd timer already deploys GitHub `main`; no second GitHub Actions deployment job is needed. This CI workflow neither deploys nor invokes catalog migrations. Do not put production database credentials, SSH credentials, or migration commands into it.

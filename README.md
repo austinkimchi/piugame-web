@@ -1,6 +1,7 @@
 # MyPIU
 
 [![Website](https://img.shields.io/badge/Website-mypiu.austin.kim-287f46)](https://mypiu.austin.kim)
+[![Web checks](https://github.com/austinkimchi/piugame-web/actions/workflows/web-checks.yml/badge.svg)](https://github.com/austinkimchi/piugame-web/actions/workflows/web-checks.yml)
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 
@@ -22,7 +23,7 @@ MyPIU is a Pump It Up song catalog and personal performance notebook. Find chart
 
 Visit [MyPIU](https://mypiu.austin.kim) to browse the catalog. Sign in to save favorites and use personal features.
 
-For local development, use Node 24:
+For local development, use Node 24 and [GitHub Packages read access](docs/ci.md#local-package-access) for the private SDK:
 
 ```sh
 npm ci
