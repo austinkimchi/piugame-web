@@ -1,0 +1,200 @@
+{
+  "release": "PHOENIX 2 v1.02.0",
+  "releasedOn": "2026-10-15",
+  "version": "phoenix2",
+  "sourceUrl": "https://piugame.com/phoenix2_notice?wr_id=357",
+  "evidence": "Official notice transcribed from the user's Mac browser on 2026-11-19. Jacket filenames and R!SE chart lists still pending verification.",
+  "newSongs": [
+    {
+      "title": "NEMONEMO",
+      "artist": "YENA",
+      "bpm": 138,
+      "folder": "K-Pop",
+      "chartTokens": [
+        "S2",
+        "S4",
+        "S6",
+        "S10",
+        "S15",
+        "S18",
+        "S21",
+        "D11",
+        "D16",
+        "D19",
+        "D22",
+        "C2"
+      ],
+      "images": [],
+      "tags": []
+    },
+    {
+      "title": "Mephitz",
+      "artist": "litmus* as Ester",
+      "bpm": 195,
+      "folder": "ORIGINAL",
+      "chartTokens": [
+        "S12",
+        "S16",
+        "S18",
+        "S20",
+        "S22",
+        "D15",
+        "D18",
+        "D21",
+        "D24"
+      ],
+      "images": [],
+      "tags": []
+    },
+    {
+      "title": "Falling Stars",
+      "artist": "WyvernP",
+      "bpm": 200,
+      "folder": "ORIGINAL",
+      "chartTokens": [
+        "S9",
+        "S13",
+        "S17",
+        "S20",
+        "S22",
+        "D16",
+        "D20",
+        "D24"
+      ],
+      "images": [],
+      "tags": []
+    },
+    {
+      "title": "Until Defined",
+      "artist": "Palami feat. Dyon Joo & neur6sia",
+      "bpm": 180,
+      "folder": "ORIGINAL",
+      "chartTokens": [
+        "S12",
+        "S15",
+        "S19",
+        "S21",
+        "D16",
+        "D21",
+        "D23",
+        "C2"
+      ],
+      "images": [],
+      "tags": []
+    },
+    {
+      "title": "PHYSALIS",
+      "artist": "TAG",
+      "bpm": 200,
+      "folder": "World Music",
+      "chartTokens": [
+        "S15",
+        "S19",
+        "S22",
+        "S24",
+        "D17",
+        "D20",
+        "D24",
+        "D26"
+      ],
+      "images": [],
+      "tags": [
+        "Premium Mode Exclusive"
+      ]
+    },
+    {
+      "title": "Assault TAXI",
+      "artist": "ASA",
+      "bpm": 154,
+      "folder": "World Music",
+      "chartTokens": [
+        "S13",
+        "S15",
+        "S18",
+        "S21",
+        "D14",
+        "D20",
+        "D23"
+      ],
+      "images": [],
+      "tags": []
+    }
+  ],
+  "chartAdditions": [],
+  "chartRevisions": [
+    {
+      "title": "Hello William",
+      "chartToken": "D20",
+      "note": "Part of the D20 chart was modified; difficulty unchanged."
+    }
+  ],
+  "pendingSongs": [
+    {
+      "title": "Transmission",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Chess and Chase",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Sylaphz",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Pastry mix",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Love Witch",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Galactic Metronome",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Under the Christmas Stars",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Skybound",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "DROP FRONT!ER",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Morrighan",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Galactic Terminus",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "The Last Stand",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "The Deconstruction",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Reincarnate in “A”",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    },
+    {
+      "title": "Burning SuperNova feat. neur6sia",
+      "reason": "R!SE Vol.1 ARCADE MIX, exclusive to Steam Link accounts; official chart levels, artist and jacket pending."
+    }
+  ],
+  "excludedReleases": [
+    {
+      "release": "PHOENIX 2 v1.03",
+      "releasedOn": "2026-11-24",
+      "reason": "Future general release as of 2026-11-19; IAAPA prerelease is not general availability."
+    }
+  ]
+}
