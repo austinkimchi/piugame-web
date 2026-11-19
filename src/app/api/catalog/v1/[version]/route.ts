@@ -1,5 +1,5 @@
 import { getPublicCatalogResponse } from "@/lib/public-catalog";
-import { publicCatalogHttpResponse } from "@/lib/public-catalog-http";
+import { publicCatalogHttpResponse, publicCatalogOptionsResponse } from "@/lib/public-catalog-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,3 +10,7 @@ export async function GET(request: Request, context: { params: Promise<{ version
 }
 
 export const HEAD = GET;
+
+export function OPTIONS() {
+  return publicCatalogOptionsResponse();
+}
