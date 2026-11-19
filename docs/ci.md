@@ -4,7 +4,7 @@
 
 The `Web checks` workflow runs for pull requests and pushes to `main` that change source, tests, scripts, dependencies, build configuration, or workflows. Documentation-only and media-only changes skip automatic execution; `workflow_dispatch` allows an explicit run on any selected ref.
 
-One standard Ubuntu job installs locked dependencies, runs tests and TypeScript checks, and builds without a production database or credentials. It has a 15-minute timeout, retains no artifacts or Actions caches, and cancels an earlier check for the same ref when replaced. The token has read-only repository contents permission.
+One standard Ubuntu job installs locked dependencies, runs tests and TypeScript checks, and builds without a production database or credentials. It has a 15-minute timeout, retains no artifacts or Actions caches, and cancels an earlier check for the same ref when replaced. The ephemeral GitHub token has read-only repository contents and packages permissions. Only the install step receives it to download the private SDK from GitHub Packages; no stored personal access token is needed. The SDK package must grant this repository Actions read access.
 
 Account billing was checked in the authenticated browser on November 19, 2026 before enabling automatic triggers: included compute remained available, and the existing zero-dollar Actions budget blocked paid overage. Preserve that spending control. The workflow itself cannot enforce an account budget or guarantee future allowance; check GitHub Billing again before expanding execution. Do not enable paid usage without the owner's authorization.
 
