@@ -256,11 +256,17 @@ export class Deployment {
   async copy(from, to, names, links = false) {
     await this.guard();
     const deadline = Date.now() + this.config.copyTimeoutMs;
+    const kind = links ? "runtime" : "media";
+    this.lastOperation = `${kind}-source-inventory`;
     for (const name of names) await plainPath(path.join(from, name), { directory: true, missing: true });
     await inventory(from, names, { links, hash: false, deadline });
+    this.lastOperation = `${kind}-destination-inventory`;
     const result = await copyTrees(from, to, names, { links, deadline,
-      copy: (source, destination) => this.command(["/bin/cp", "-a", "--reflink=auto", `${source}/.`, destination],
-        { timeoutMs: Math.max(1, deadline - Date.now()), recovery: true, monitored: true }),
+      copy: async (source, destination) => {
+        await this.command(["/bin/cp", "-a", "--reflink=auto", `${source}/.`, destination],
+          { timeoutMs: Math.max(1, deadline - Date.now()), recovery: true, monitored: true });
+        this.lastOperation = `${kind}-destination-inventory`;
+      },
     });
     await this.guard();
     return result;
@@ -273,10 +279,12 @@ export class Deployment {
     this.pending = pending;
   }
   async snapshotManifest() {
+    this.lastOperation = "snapshot-verification";
+    const deadline = Date.now() + this.config.copyTimeoutMs;
     const manifest = await readJson(path.join(this.snapshot, "manifest.json"));
     if (manifest.schema !== 1 || manifest.id !== this.pending.id || manifest.prior !== this.pending.prior || !Array.isArray(manifest.runtime) || !Array.isArray(manifest.media)) throw new Error("Snapshot does not belong to pending deployment");
-    await verifyInventory(path.join(this.snapshot, "runtime"), ARTIFACT_PATHS, manifest.runtime, { links: true });
-    await verifyInventory(path.join(this.snapshot, "media"), MANUAL_PATHS, manifest.media);
+    await verifyInventory(path.join(this.snapshot, "runtime"), ARTIFACT_PATHS, manifest.runtime, { links: true, deadline });
+    await verifyInventory(path.join(this.snapshot, "media"), MANUAL_PATHS, manifest.media, { deadline });
     return manifest;
   }
   async captureLatest() {
@@ -401,6 +409,7 @@ export class Deployment {
       await this.command([npm, "ci", "--no-audit", "--no-fund"], { cwd: this.stage, install: true, timeoutMs: this.config.installTimeoutMs });
       await this.guard(); await this.checkpoint("stage:install", this);
       await this.command([npm, "run", "build"], { cwd: this.stage, build: true, timeoutMs: this.config.buildTimeoutMs });
+      this.lastOperation = "stage-artifact-inventory";
       for (const name of ARTIFACT_PATHS) await plainPath(path.join(this.stage, name), { directory: true });
       await inventory(this.stage, ARTIFACT_PATHS, { links: true, sync: true, deadline: Date.now() + this.config.copyTimeoutMs });
       await syncDirectory(this.stage);

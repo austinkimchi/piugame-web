@@ -37,13 +37,32 @@ export async function digest(file, deadline = Infinity) {
   return hash.digest("hex");
 }
 
+// A rejected file operation must not let the caller restore/delete a tree
+// while another worker is still hashing or syncing it. Stop dispatching new
+// work on failure, but settle every operation already started before throwing.
+export async function forEachLimited(items, concurrency, action) {
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error("Filesystem concurrency must be between 1 and 8");
+  let next = 0; let failed = false; let failure;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (!failed && next < items.length) {
+      const item = items[next++];
+      try { await action(item); } catch (error) { if (!failed) { failed = true; failure = error; } }
+    }
+  }));
+  if (failed) throw failure;
+}
+
 // Runtime links may be relative and internal to the whole runtime root, so
 // .next -> ../node_modules works after relocation. Absolute or escaping links
 // are refused even when their staging target happens to exist during health.
-export async function inventory(root, names, { links = false, sync = false, hash = true, deadline = Infinity } = {}) {
+export async function inventory(root, names, { links = false, sync = false, hash = true, deadline = Infinity, concurrency = 4 } = {}) {
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error("Filesystem concurrency must be between 1 and 8");
   const entries = [];
+  const files = [];
+  const directories = new Map();
+  const checkDeadline = () => { if (Date.now() > deadline) throw new Error("Filesystem operation timed out"); };
   const visit = async (relative) => {
-    if (Date.now() > deadline) throw new Error("Filesystem operation timed out");
+    checkDeadline();
     const file = path.join(root, relative);
     const info = await lstat(file);
     const item = { path: relative, mode: info.mode & 0o777, type: "directory" };
@@ -57,17 +76,40 @@ export async function inventory(root, names, { links = false, sync = false, hash
       Object.assign(item, { type: "link", target });
     } else if (info.isDirectory()) {
       for (const child of (await readdir(file)).sort()) await visit(path.join(relative, child));
+      if (sync) {
+        const depth = relative.split(path.sep).length;
+        const level = directories.get(depth) ?? [];
+        level.push(file); directories.set(depth, level);
+      }
     } else if (info.isFile()) {
-      Object.assign(item, { type: "file", size: info.size, ...(hash ? { sha256: await digest(file, deadline) } : {}) });
-      if (sync) { const handle = await open(file, "r"); try { await handle.sync(); } finally { await handle.close(); } }
+      Object.assign(item, { type: "file", size: info.size });
+      if (hash || sync) files.push(item);
     } else throw new Error(`Unsupported filesystem entry: ${relative}`);
-    if (sync && info.isDirectory()) await syncDirectory(file);
     entries.push(item);
   };
   for (const name of names) {
     if (await exists(path.join(root, name))) await visit(name);
     else entries.push({ path: name, type: "missing" });
   }
+  await forEachLimited(files, concurrency, async (item) => {
+    checkDeadline();
+    const file = path.join(root, item.path);
+    if (hash) item.sha256 = await digest(file, deadline);
+    if (sync) {
+      checkDeadline();
+      const handle = await open(file, "r");
+      try { await handle.sync(); } finally { await handle.close(); }
+    }
+  });
+  // All file data is durable first. Complete each directory depth before its
+  // parents; bounded parallelism never crosses that durability barrier.
+  for (const depth of [...directories.keys()].sort((a, b) => b - a)) {
+    await forEachLimited(directories.get(depth), concurrency, async (directory) => {
+      checkDeadline();
+      await syncDirectory(directory);
+    });
+  }
+  checkDeadline();
   return entries.sort((a, b) => a.path.localeCompare(b.path, "en"));
 }
 

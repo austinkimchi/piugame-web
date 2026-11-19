@@ -52,7 +52,7 @@ Linux, systemd, Git, GNU `cp` and `flock` are required.
 | `reserveBytes` | 1 GiB free-space reserve |
 | `commandTimeoutMs` | 60,000 |
 | `installTimeoutMs`, `buildTimeoutMs` | 300,000 each |
-| `copyTimeoutMs` | 120,000 per tree-copy operation |
+| `copyTimeoutMs` | 120,000 per tree-copy operation or complete snapshot verification |
 | `stopTimeoutMs` | 100,000 for service stop/start commands |
 | `healthTimeoutMs` | 60,000 readiness retry window |
 | `killGraceMs` | 1,000 before escalation from termination to kill |
@@ -150,6 +150,14 @@ limited to 4 MiB per command. Timeouts terminate the command group and escalate
 to kill after the grace period. If a process cannot be confirmed dead, guardians
 retain the deployment lock for operator inspection rather than permit a second
 writer. A stop timeout is not proof that the service has stopped.
+
+Artifact inventories use four bounded file-I/O workers. Every file still receives
+its checksum and required sync; directory barriers run only after all files are
+durable, with each child depth completed before its parents. A failed operation
+stops dispatching new work and waits for every started operation before returning
+the error. Snapshot verification shares one deadline across runtime and media.
+Failure receipts distinguish staged artifact inventory, source/destination
+inventory and snapshot verification from the install/build commands.
 
 The storage allowance covers `stateDir/recovery/`, not the production application
 or separately retained maintenance backups. Initial admission reserves the
