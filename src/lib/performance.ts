@@ -624,9 +624,16 @@ export async function getPerformanceSessions(
   userIdInput: string | null,
   args: { offset?: number; limit?: number } = {},
 ): Promise<PerformanceSession[]> {
+  return (await getPerformanceSessionsPage(userIdInput, args)).sessions;
+}
+
+export async function getPerformanceSessionsPage(
+  userIdInput: string | null,
+  args: { offset?: number; limit?: number } = {},
+): Promise<{ sessions: PerformanceSession[]; nextOffset: number | null }> {
   const userId = objectIdFromString(userIdInput);
   if (!userId || !hasMongoConfig()) {
-    return [];
+    return { sessions: [], nextOffset: null };
   }
 
   const offset = sessionOffset(args.offset);
@@ -640,6 +647,7 @@ export async function getPerformanceSessions(
   let sessionPlays: Array<WithId<PerformancePlayEventDocument>> = [];
   let sessionIndex = 0;
   let previous: Date | null = null;
+  let hasMore = false;
 
   try {
     for await (const play of cursor) {
@@ -650,6 +658,9 @@ export async function getPerformanceSessions(
         if (sessionIndex >= offset) groupedPlays.push(sessionPlays);
         sessionIndex += 1;
         if (groupedPlays.length >= limit) {
+          // This first play of the next session is enough to prove continuation.
+          // Do not consume or enrich the rest of a session that will not be returned.
+          hasMore = true;
           break;
         }
         sessionPlays = [];
@@ -699,13 +710,16 @@ export async function getPerformanceSessions(
     ]),
   );
 
-  return sessions.map((session) => ({
-    ...session,
-    plays: session.plays.map((play) => ({
-      ...play,
-      songImageUrl: artworkBySong.get(normalizeSongName(play.songName)) ?? null,
+  return {
+    sessions: sessions.map((session) => ({
+      ...session,
+      plays: session.plays.map((play) => ({
+        ...play,
+        songImageUrl: artworkBySong.get(normalizeSongName(play.songName)) ?? null,
+      })),
     })),
-  }));
+    nextOffset: hasMore && Number.isSafeInteger(offset + sessions.length) ? offset + sessions.length : null,
+  };
 }
 
 export async function getCatalogChartRecommendations(

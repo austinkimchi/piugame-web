@@ -148,7 +148,7 @@ function sessionsFixture(rows: Row[], catalog = catalogFixture().catalog) {
     "next/server": { NextResponse: Response },
     "@/lib/mobile-auth-core": mobileAuthCore,
     "@/lib/mobile-auth": { authenticateMobileAccessToken: async (token: string | null) => token === "test-access" ? { userId: userId.toHexString() } : null },
-    "@/lib/performance": { getPerformanceSessions: (id: string, args: { offset?: number; limit?: number }) => { requests.push(args); return performance.getPerformanceSessions(id, args); } },
+    "@/lib/performance": { getPerformanceSessionsPage: (id: string, args: { offset?: number; limit?: number }) => { requests.push(args); return performance.getPerformanceSessionsPage(id, args); } },
     "@/lib/performance-session-pagination": sessionPagination,
   });
   return {
@@ -166,7 +166,7 @@ test("parameterless legacy session requests retain fifty sessions and private ca
   assert.equal(body.nextOffset, 50);
   assert.equal(response.headers.get("cache-control"), "private, no-store");
   assert.equal(response.headers.get("pragma"), "no-cache");
-  assert.deepEqual(fixture.requests, [{ offset: 0, limit: 51 }]);
+  assert.deepEqual(fixture.requests, [{ offset: 0, limit: 50 }]);
 });
 
 test("mobile pagination traverses beyond one thousand sessions exactly once and terminates", async () => {
@@ -200,6 +200,48 @@ test("session pages preserve multi-play boundaries and close a cursor on early e
   assert.equal(fixture.cursors[0].closed, true);
 });
 
+test("continuation reads only one boundary play and never maps the discarded long session", async () => {
+  const returnedRows = Array.from({ length: 20 }, (_, index) => [play(index), play(index, 5)]).flat();
+  const discardedRows = Array.from({ length: 300 }, (_, index) => play(20, index * 5));
+  for (const row of discardedRows) {
+    Object.defineProperty(row, "songName", { get: () => { throw new Error("Discarded session must not be mapped or enriched"); } });
+  }
+  const artworkRequests: string[][] = [];
+  const catalog = {
+    ...catalogFixture().catalog,
+    getSongsByTitles: async (version: string, titles: string[]) => {
+      assert.equal(version, "phoenix2");
+      artworkRequests.push(titles);
+      return new Map();
+    },
+  };
+  const fixture = sessionsFixture([...returnedRows, ...discardedRows, play(90)], catalog);
+  const body = await (await fixture.request("?offset=0&limit=20")).json() as { sessions: Session[]; nextOffset: number | null };
+  assert.equal(body.nextOffset, 20);
+  assert.deepEqual(body.sessions.map((session) => session.plays.map((entry) => entry.id)),
+    Array.from({ length: 20 }, (_, index) => returnedRows.slice(index * 2, index * 2 + 2).map((row) => (row._id as ObjectId).toHexString())));
+  assert.deepEqual(body.sessions.map((session) => session.summary.playCount), Array(20).fill(2));
+  assert.equal(fixture.cursors[0].reads, 41, "40 returned plays plus one boundary proves continuation");
+  assert.equal(fixture.cursors[0].closed, true);
+  assert.deepEqual(artworkRequests, [returnedRows.map((row) => row.songName)]);
+});
+
+test("page boundaries exclude other accounts and versions without splitting the requested session", async () => {
+  const otherUser = new ObjectId();
+  const selectedRows = [play(0), play(0, 10), play(1), play(1, 10), play(2)];
+  const fixture = sessionsFixture([
+    selectedRows[0], play(0, 5, { userId: otherUser }), selectedRows[1],
+    play(0, 20, { piuVersion: "phoenix" }), ...selectedRows.slice(2),
+  ]);
+  const first = await (await fixture.request("?limit=1")).json() as { sessions: Session[]; nextOffset: number | null };
+  const second = await (await fixture.request("?offset=1&limit=1")).json() as { sessions: Session[]; nextOffset: number | null };
+  assert.deepEqual([first.nextOffset, second.nextOffset], [1, 2]);
+  assert.deepEqual(first.sessions[0].plays.map((entry) => entry.id), selectedRows.slice(0, 2).map((row) => (row._id as ObjectId).toHexString()));
+  assert.deepEqual(second.sessions[0].plays.map((entry) => entry.id), selectedRows.slice(2, 4).map((row) => (row._id as ObjectId).toHexString()));
+  assert.deepEqual(fixture.cursors.map((cursor) => cursor.reads), [3, 5]);
+  assert.ok(fixture.cursors.every((cursor) => cursor.closed));
+});
+
 test("empty pages and exact final pages do not manufacture a continuation", async () => {
   const fixture = sessionsFixture(Array.from({ length: 20 }, (_, index) => play(index)));
   assert.equal((await (await fixture.request("?limit=20")).json()).nextOffset, null);
@@ -213,8 +255,8 @@ test("invalid pagination inputs use bounded defaults consistently in route and d
   await fixture.request("?offset=1020&limit=0");
   await fixture.request("?offset=9007199254740992&limit=garbage");
   assert.deepEqual(fixture.requests, [
-    { offset: 0, limit: 51 }, { offset: 0, limit: 51 },
-    { offset: 1020, limit: 2 }, { offset: 0, limit: 51 },
+    { offset: 0, limit: 50 }, { offset: 0, limit: 50 },
+    { offset: 1020, limit: 1 }, { offset: 0, limit: 50 },
   ]);
   assert.equal((await fixture.performance.getPerformanceSessions(userId.toHexString(), { offset: NaN, limit: Infinity })).length, 1);
 });
