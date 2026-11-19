@@ -1,9 +1,40 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chartModesFromFilters, estimateSkillTargets, normalizeSongName, recommendChartToken, type ChartSelectionEvidence } from "../src/lib/chart-recommendation.ts";
+import { catalogChartRecommendationMap, chartRecommendationModeKey, chartModesFromFilters, estimateSkillTargets, normalizeSongName, recommendChartToken, type ChartMode, type ChartSelectionEvidence } from "../src/lib/chart-recommendation.ts";
 
 const NOW = new Date("2026-09-21T20:00:00.000Z");
+
+test("private catalog map preserves the original recommendation for all 16 ordered mode selections", () => {
+  const songs = [
+    { slug: "recent", title: "Recent", chartSummary: ["S15", "D18", "C2"] },
+    { slug: "passed", title: "Passed", chartSummary: ["S15", "S17", "D18", "C2"] },
+    { slug: "new", title: "New", chartSummary: ["S15", "S17", "D18", "C2"] },
+  ];
+  const evidence = [
+    result("Recent", "Double", "18", 970_000, "2026-09-21T12:00:00.000Z"),
+    result("Passed", "Single", "17", 950_000, "2026-08-01T12:00:00.000Z"),
+    result("Passed", "Double", "18", 960_000, "2026-08-02T12:00:00.000Z"),
+    result("Other", "Single", "16", 950_000),
+  ];
+  const map = catalogChartRecommendationMap(songs, evidence, NOW);
+  for (const song of songs) {
+    assert.equal(Object.keys(map[song.slug]).length, 16);
+    for (const [key, token] of Object.entries(map[song.slug])) {
+      assert.equal(token, recommendChartToken({
+        songName: song.title, chartTokens: song.chartSummary,
+        songEvidence: evidence.filter((item) => item.songName === song.title),
+        skillEvidence: evidence, preferredModes: key === "all" ? [] : key.split("") as ChartMode[], now: NOW,
+      }), `${song.slug}/${key}`);
+    }
+  }
+  assert.notEqual(map.passed.S, map.passed.D);
+  assert.equal(map.recent.S, "D18", "recent-play precedence survives mode changes");
+  assert.equal(chartRecommendationModeKey(["doubles", "singles"]), "DS");
+  assert.equal(chartRecommendationModeKey([]), "all");
+  assert.deepEqual(catalogChartRecommendationMap(songs, [], NOW), {});
+  assert.equal(JSON.stringify(map).includes("970000"), false, "private overlay contains tokens, not raw score evidence");
+});
 
 test("chooses the higher chart when two charts are equally close to the proven level", () => {
   assert.equal(

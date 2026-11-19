@@ -17,6 +17,7 @@ interface RecommendChartArgs {
   skillEvidence: ChartSelectionEvidence[];
   preferredModes?: ChartMode[];
   now?: Date;
+  skillTargets?: ReturnType<typeof estimateSkillTargets>;
 }
 
 const RECENT_PLAY_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -33,6 +34,7 @@ export function recommendChartToken({
   skillEvidence,
   preferredModes = [],
   now = new Date(),
+  skillTargets: preparedSkillTargets,
 }: RecommendChartArgs): string | null {
   const availableCharts = chartTokens.map(parseChartToken).filter((chart): chart is ParsedChart => chart !== null);
   if (availableCharts.length === 0) {
@@ -76,7 +78,7 @@ export function recommendChartToken({
     return latestAttempt.chart.token;
   }
 
-  const skillTargets = estimateSkillTargets(skillEvidence);
+  const skillTargets = preparedSkillTargets ?? estimateSkillTargets(skillEvidence);
   const modeOrder = Array.from(new Set([
     ...preferredModes,
     ...Array.from(skillTargets.entries())
@@ -97,6 +99,54 @@ export function recommendChartToken({
   }
 
   return null;
+}
+
+/** Private SSR overlay; never include this in a public catalog snapshot. */
+export type CatalogChartRecommendations = Record<string, Record<string, string | null>>;
+
+export function chartRecommendationModeKey(filters: string[]): string {
+  return chartModesFromFilters(filters).join("") || "all";
+}
+
+export function catalogChartRecommendationMap(
+  songs: ReadonlyArray<{ slug: string; title: string; chartSummary: string[] }>,
+  evidence: ChartSelectionEvidence[],
+  now = new Date(),
+): CatalogChartRecommendations {
+  if (songs.length === 0 || evidence.length === 0) return {};
+  const bySong = new Map<string, ChartSelectionEvidence[]>();
+  for (const item of evidence) {
+    const key = normalizeSongName(item.songName);
+    const entries = bySong.get(key) ?? [];
+    entries.push(item);
+    bySong.set(key, entries);
+  }
+  const modes: ChartMode[] = ["S", "D", "C"];
+  const selections: ChartMode[][] = [[]];
+  function append(prefix: ChartMode[]) {
+    for (const mode of modes) {
+      if (prefix.includes(mode)) continue;
+      const selection = [...prefix, mode];
+      selections.push(selection);
+      append(selection);
+    }
+  }
+  append([]);
+  const skillTargets = estimateSkillTargets(evidence);
+  const result: CatalogChartRecommendations = {};
+  for (const song of songs) {
+    const tokens = Object.fromEntries(selections.map((preferredModes) => [preferredModes.join("") || "all", recommendChartToken({
+      songName: song.title,
+      chartTokens: song.chartSummary,
+      songEvidence: bySong.get(normalizeSongName(song.title)) ?? [],
+      skillEvidence: evidence,
+      skillTargets,
+      preferredModes,
+      now,
+    })]));
+    if (Object.values(tokens).some(Boolean)) result[song.slug] = tokens;
+  }
+  return result;
 }
 
 export function chartModesFromFilters(filters: string[]): ChartMode[] {
