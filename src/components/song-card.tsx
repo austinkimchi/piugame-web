@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import { type MouseEvent, useState } from "react";
 
 import { formatPerformanceGrade, isFailedPerformanceGrade } from "@/lib/performance-format";
+import { usePreviewUnavailable } from "@/lib/preview-availability";
 import type { PublicSong } from "@/lib/types";
 
 const CHART_GRID_COLUMNS = 4;
@@ -26,6 +27,7 @@ interface SongCardProps {
 }
 
 export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, onOpen, onPreviewStart, onPreviewStop }: SongCardProps) {
+  const previewUnavailable = usePreviewUnavailable(song.previewUrl);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const imageLoaded = !song.imageUrl || loadedImageUrl === song.imageUrl;
@@ -155,7 +157,11 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
             animate={isPreviewActive ? { opacity: [0.16, 0.48, 0.16] } : { opacity: 0 }}
             transition={{ duration: 1.1, repeat: isPreviewActive ? Infinity : 0, ease: "easeInOut" }}
           />
-          {song.previewAvailable && !song.recentPlay ? (
+          {song.previewAvailable && !song.recentPlay && previewUnavailable ? (
+            <span className="absolute left-2 top-2 z-20 max-w-[calc(100%-1rem)] bg-white/95 px-2 py-1 text-[10px] font-medium text-[#687260]" role="status">
+              Preview unavailable
+            </span>
+          ) : song.previewAvailable && !song.recentPlay ? (
             <motion.button
               aria-label={isPreviewActive ? `Stop preview for ${song.title}` : previewEnabled ? `Play preview for ${song.title}` : `Song previews are muted for ${song.title}`}
               className={`audio-pill absolute left-2 top-2 z-20 inline-flex size-6 items-center justify-center shadow-[0_10px_24px_rgba(30,34,26,0.18)] disabled:cursor-not-allowed md:size-8 ${
@@ -259,7 +265,7 @@ export function SongCard({ song, previewEnabled, isPreviewActive, sequence = 0, 
             {song.title}
           </h2>
           <p className="mt-0.5 line-clamp-1 text-xs font-semibold leading-4 text-[#66705f]">{song.artist}</p>
-          {song.previewAvailable ? (
+          {song.previewAvailable && !previewUnavailable ? (
             <span className="sr-only">{previewEnabled ? "Preview available" : "Preview muted"}</span>
           ) : null}
         </div>
