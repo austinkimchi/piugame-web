@@ -32,13 +32,14 @@ function existingChartToken(chart) {
   return normalizedToken(chart.token || `${chart.mode}${chart.level}`);
 }
 
-function historyEvent(release, token, type, note) {
+function historyEvent(release, token, type, note, document) {
+  const linkedChart = document.chartLinks?.find(link => typeof link.id === 'string' && link.id.trim() && normalizedToken(String(link.tokens?.[release.version] ?? '').trim().toUpperCase().replace(/^CX/, 'C')) === token);
   return {
     id: `${release.version}:${release.releasedOn}:${token}:${type}`,
     date: release.releasedOn,
     version: release.version,
     type,
-    chartId: `${release.version}:${token}`,
+    chartId: linkedChart?.id.trim().slice(0, 80) ?? `${release.version}:${token}`,
     chartToken: token,
     note: `${release.release}: ${note}`,
   };
@@ -131,7 +132,7 @@ export function planCatalogRelease(release, catalogSnapshot, sourceSnapshot, { a
       const full = change.set.chartsFull ?? document.chartsFull ?? [];
       change.before.chartsFull = document.chartsFull ?? null;
       change.set.chartsFull = [...full, ...additions.filter(t => !full.some(c => existingChartToken(c) === t)).map(chart)];
-      if (unified) addEvents(change, document, additions.map(t => historyEvent(release, t, 'added', entry.note)));
+      if (unified) addEvents(change, document, additions.map(t => historyEvent(release, t, 'added', entry.note, document)));
     }
   }
   for (const entry of release.chartRevisions ?? []) {
@@ -139,7 +140,7 @@ export function planCatalogRelease(release, catalogSnapshot, sourceSnapshot, { a
     if (!entry.note) throw new Error('Chart revisions require an official change description.');
     const document = findSong(catalog, entry);
     if (!document || !document.chartTokensByVersion?.phoenix2?.map(normalizedToken).includes(entry.chartToken)) { plan.blockers.push(`${entry.title}: revised chart missing from PHOENIX 2`); continue; }
-    addEvents(update('catalog', document), document, [historyEvent(release, entry.chartToken, 'changed', entry.note)]);
+    addEvents(update('catalog', document), document, [historyEvent(release, entry.chartToken, 'changed', entry.note, document)]);
   }
   plan.changes.push(...[...updates.values()].filter(change => Object.keys(change.set).length));
   if (plan.pendingSongs.length) plan.blockers.push(`${plan.pendingSongs.length} announced R!SE entries still need official chart evidence`);

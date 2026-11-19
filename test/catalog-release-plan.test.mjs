@@ -34,6 +34,20 @@ test('same-level chart revision changes history only and is idempotent', () => {
   assert.equal(planCatalogRelease(input, snapshot([after]), snapshot([document]), options).changes.length, 0);
 });
 
+test('chart history uses curated cross-version IDs for revisions and additions', () => {
+  const document = row();
+  document.chartLinks = [{ id: 'phoenix:D19', tokens: { phoenix: 'D19', phoenix2: 'D20' } }, { id: 'phoenix:S14', tokens: { phoenix: 'S14', phoenix2: 'S15' } }];
+  const input = { ...release(), chartAdditions: [{ title: 'Existing', chartTokens: ['S15'], note: 'Added.' }], chartRevisions: [{ title: 'Existing', chartToken: 'D20', note: 'Modified.' }] };
+  const plan = planCatalogRelease(input, snapshot([document]), snapshot([document]), options);
+  const change = plan.changes.find(c => c.collection === 'catalog');
+  assert.equal(change.set.chartHistory.find(e => e.chartToken === 'D20').chartId, 'phoenix:D19');
+  assert.equal(change.set.chartHistory.find(e => e.chartToken === 'S15').chartId, 'phoenix:S14');
+  assert.equal(Object.hasOwn(change.set, 'chartLinks'), false);
+  document.chartLinks = [];
+  const fallback = planCatalogRelease(input, snapshot([document]), snapshot([document]), options).changes.find(c => c.collection === 'catalog');
+  assert.equal(fallback.set.chartHistory.find(e => e.chartToken === 'D20').chartId, 'phoenix2:D20');
+});
+
 test('multiple addition entries accumulate and retain original comparison values', () => {
   const document = row();
   const input = { ...release(), chartAdditions: ['S15', 'S17'].map(token => ({ title: 'Existing', chartTokens: [token], note: 'Official additions.' })) };
