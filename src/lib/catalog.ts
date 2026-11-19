@@ -1420,15 +1420,3 @@ export async function updateCatalogSong(slug: string, input: Partial<CatalogEdit
 
   return publicSongFromDocument(updated, piuCatalogVersionFromSeries(MAIN_CATALOG_VERSION), undefined, selectedChartVersion);
 }
-
-export async function getSitemapSongs(limit = 5000): Promise<PublicSong[]> {
-  if (!hasMongoConfig()) {
-    return fallbackSongs(MAIN_CATALOG_VERSION, 0, Math.min(limit, 250));
-  }
-
-  try {
-    return findMongoSongs(MAIN_CATALOG_VERSION, { supportedVersions: MAIN_CATALOG_VERSION }, 0, limit, "series", "asc");
-  } catch {
-    return [];
-  }
-}

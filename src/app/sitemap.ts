@@ -1,28 +1,29 @@
 import type { MetadataRoute } from "next";
 
-import { getSitemapSongs } from "@/lib/catalog";
+import { getPublicCatalogSnapshot } from "@/lib/public-catalog";
 import { absoluteSiteUrl } from "@/lib/site";
 
+// Builds intentionally have no database credentials. Resolve the real public
+// catalog at request time, reusing its shared cache and write invalidation.
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const now = new Date();
-  const songs = await getSitemapSongs();
+  const { songs } = await getPublicCatalogSnapshot("phoenix2");
 
   return [
     {
       url: absoluteSiteUrl("/"),
-      lastModified: now,
       changeFrequency: "daily",
       priority: 1,
     },
     {
       url: absoluteSiteUrl("/privacy"),
-      lastModified: now,
       changeFrequency: "yearly",
       priority: 0.4,
     },
     ...songs.map((song) => ({
       url: absoluteSiteUrl(`/songs/${song.slug}`),
-      lastModified: now,
       changeFrequency: "weekly" as const,
       priority: 0.7,
       images: song.imageUrl ? [absoluteSiteUrl(song.imageUrl)] : undefined,
