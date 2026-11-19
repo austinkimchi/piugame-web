@@ -4,7 +4,7 @@
 
 The `Web checks` workflow runs for pull requests and pushes to `main` that change source, tests, scripts, dependencies, build configuration, or workflows. Documentation-only and media-only changes skip automatic execution; `workflow_dispatch` allows an explicit run on any selected ref.
 
-One standard Ubuntu job installs locked dependencies, runs tests and TypeScript checks, and builds without a production database or credentials. It has a 15-minute timeout, retains no artifacts or Actions caches, and cancels an earlier check for the same ref when replaced. The ephemeral GitHub token has read-only repository contents and packages permissions. Only the install step receives it to download the private SDK from GitHub Packages; no stored personal access token is needed. The SDK package must grant this repository Actions read access.
+One standard Ubuntu job installs locked dependencies, runs tests, lint and TypeScript checks, and builds without a production database or credentials. It has a 15-minute timeout, retains no artifacts or Actions caches, and cancels an earlier check for the same ref when replaced. The ephemeral GitHub token has read-only repository contents and packages permissions. Only the install step receives it to download the private SDK from GitHub Packages; no stored personal access token is needed. The SDK package must grant this repository Actions read access.
 
 Account billing was checked in the authenticated browser on November 19, 2026 before enabling automatic triggers: included compute remained available, and the existing zero-dollar Actions budget blocked paid overage. Preserve that spending control. The workflow itself cannot enforce an account budget or guarantee future allowance; check GitHub Billing again before expanding execution. Do not enable paid usage without the owner's authorization.
 
@@ -13,12 +13,13 @@ For validation without GitHub-hosted runner consumption, use the same checks loc
 ```sh
 npm ci --no-audit --no-fund
 npm test
+npm run lint
 npx --no-install next typegen
 npx --no-install tsc --noEmit --incremental false
 npm run build
 ```
 
-Use a disposable checkout without production environment files. A build without MongoDB tests compilation and fallback rendering, not live database or OAuth behavior.
+Use a disposable Linux checkout with `flock` and Python 3 for the complete test suite. The [catalog writer lock tests](catalog-release-writer.md) require Linux `flock`; the [deployment process tests](deployment-recovery.md#test-prerequisites) use Python's standard-library `fcntl` for real kernel-lock checks. On Linux, the suite explicitly fails if Python 3 or `fcntl` is unavailable. The Linux-prerequisite assertion skips on macOS by platform; that is not full Linux recovery validation. Keep production environment files out of local validation. A build without MongoDB tests compilation and fallback rendering, not live database or OAuth behavior.
 
 Before making this a required merge check, account for path-filtered runs: GitHub can leave a required check pending when its workflow is skipped. Either remove the path filter or introduce an always-running gate before requiring it. A successful run alone does not establish branch protection.
 
@@ -29,6 +30,8 @@ The private `@austinkimchi/piugame-sdk` dependency is hosted on GitHub Packages.
 ## Existing deployment
 
 The origin's systemd timer already deploys GitHub `main`; no second GitHub Actions deployment job is needed. This CI workflow neither deploys nor invokes catalog migrations. Do not put production database credentials, SSH credentials, or migration commands into it.
+
+The [host recovery implementation](deployment-recovery.md) requires a separately reviewed installation. Passing its tests or merging its source does not replace the origin's installed deploy command.
 
 A successful CI run applies only to its tested commit. The current origin watcher does not wait for that result, so review and test the intended revision before merging. Catalog data updates need their own backup, dry run, guarded application, idempotence check, and HTTP/browser verification as described in [maintenance.md](maintenance.md). Code rollback alone does not roll back data or media.
 

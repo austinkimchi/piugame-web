@@ -38,12 +38,13 @@ Read [AGENTS.md](AGENTS.md), then run the relevant checks:
 
 ```sh
 npm test
+npm run lint
 npx --no-install next typegen
 npx --no-install tsc --noEmit --incremental false
 npm run build
 ```
 
-[Web checks](docs/ci.md) validate code changes on Ubuntu. The live site's existing systemd deployment follows `main`; see the [maintenance runbook](docs/maintenance.md) before merging or updating catalog data.
+The full test suite requires Linux, `flock` and Python 3; see [test prerequisites and CI](docs/ci.md). The live site's existing systemd deployment follows `main`; see the [maintenance runbook](docs/maintenance.md) before merging or updating catalog data.
 
 ## Project notes
 
