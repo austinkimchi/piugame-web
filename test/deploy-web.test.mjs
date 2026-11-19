@@ -310,3 +310,33 @@ test("failure halfway through latest-media capture retains live uploads and retr
   assert.equal((await (await testDeployment(f)).deployment.deploy()).outcome, "rolled-back");
   await original(f, { fresh: true });
 });
+
+for (const failure of ["client-timeout", "active-state", "pending-job"]) {
+  test(`unverified initial stop (${failure}) retains evidence without starting or resetting the app`, async (t) => {
+    const f = await fixture(t); let attempted = false;
+    const { deployment, calls } = await testDeployment(f, {
+      beforeCommand: async (args) => {
+        if (args[0] === "/usr/bin/systemctl" && args[2] === "stop") {
+          attempted = true;
+          if (failure === "client-timeout") throw new Error("Deployment command timed out");
+        }
+      },
+      afterCommand: async (args) => {
+        if (args[0] === "/usr/bin/systemctl" && args[2] === "stop") {
+          await writeFile(path.join(f.root, "service.json"), JSON.stringify({ active: failure === "active-state", total: 675,
+            ...(failure === "pending-job" ? { job: "123 piugame-web.service" } : {}) }));
+        }
+      },
+    });
+    await assert.rejects(deployment.deploy(), /Unfinished deployment command evidence/);
+    assert.equal(attempted, true);
+    assert.equal(calls.some((args) => args[2] === "start" || args[1] === "reset" || args[0] === "/bin/cp"), false);
+    assert.equal(JSON.parse(await readFile(pendingPath(f), "utf8")).phase, "preparing");
+    const sentinel = JSON.parse(await readFile(path.join(f.state, "recovery/inflight.json"), "utf8"));
+    assert.equal(sentinel.operation, "systemctl:stop");
+    await original(f);
+    const retry = await testDeployment(f);
+    await assert.rejects(retry.deployment.deploy({ force: true }), /Unfinished deployment command evidence/);
+    assert.deepEqual(retry.calls, []);
+  });
+}

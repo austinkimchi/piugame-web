@@ -118,7 +118,8 @@ export class Deployment {
   async command(args, { cwd = this.config.appDir, timeoutMs = this.config.commandTimeoutMs, build = false, install = false, recovery = false, monitored = false } = {}) {
     const program = path.basename(args[0]);
     const action = program === "systemctl" ? args[2] : args[1];
-    const mutating = program === "npm" || program === "cp" || program === "git" && ["fetch", "clone", "checkout", "update-ref", "reset"].includes(action) || program === "systemctl" && ["start", "stop"].includes(action);
+    const serviceMutation = program === "systemctl" && ["start", "stop"].includes(action);
+    const mutating = program === "npm" || program === "cp" || program === "git" && ["fetch", "clone", "checkout", "update-ref", "reset"].includes(action) || serviceMutation;
     this.lastOperation = program === "npm" ? (install ? "install" : "build") : `${program}:${action ?? "run"}`;
     if (mutating) {
       await this.noInflight();
@@ -149,27 +150,39 @@ export class Deployment {
       throw error;
     } finally {
       clearInterval(timer); await checking;
-      if (mutating && cleanupVerified) { await rm(this.inflightFile); await syncDirectory(this.root); }
+      // A systemd manager job can outlive its client process. service() owns
+      // that sentinel until a separate read-only state/job check completes.
+      if (mutating && cleanupVerified && !serviceMutation) await this.clearInflight();
     }
   }
   async noInflight() {
     if (await exists(this.inflightFile)) throw new Error("Unfinished deployment command evidence at recovery/inflight.json; operator must verify all writers and systemd jobs stopped before recovery");
   }
+  async clearInflight() { await rm(this.inflightFile); await syncDirectory(this.root); }
   git(args, options) { return this.command(["/usr/bin/git", ...args], options); }
   async service(action, recovery = false) {
-    await this.command(["/usr/bin/systemctl", "--user", action, this.config.service], { timeoutMs: this.config.stopTimeoutMs, recovery });
-    const state = await this.command(["/usr/bin/systemctl", "--user", "show", this.config.service, "--property=ActiveState,MainPID,ControlPID,SubState"], { recovery });
+    await this.noInflight();
+    let clientError;
+    try { await this.command(["/usr/bin/systemctl", "--user", action, this.config.service], { timeoutMs: this.config.stopTimeoutMs, recovery }); }
+    catch (error) { if (error.cleanupUncertain) throw error; clientError = error; }
+    const state = await this.command(["/usr/bin/systemctl", "--user", "show", this.config.service, "--property=ActiveState,MainPID,ControlPID,SubState,Job"], { recovery: true });
     const fields = Object.fromEntries(state.split("\n").map((line) => line.split("=")));
-    if (action === "stop" ? !["inactive", "failed"].includes(fields.ActiveState) || fields.MainPID !== "0" || fields.ControlPID !== "0" : fields.ActiveState !== "active" || !/^[1-9]\d*$/.test(fields.MainPID)) throw new Error(`Service ${action} was not verified`);
+    const idle = fields.Job === "" && fields.ControlPID === "0";
+    const stopped = idle && ["inactive", "failed"].includes(fields.ActiveState) && fields.MainPID === "0";
+    const started = idle && fields.ActiveState === "active" && /^[1-9]\d*$/.test(fields.MainPID);
+    if (action === "stop" ? !stopped : !started && !stopped) throw new Error(`Service ${action} was not verified; unresolved command evidence retained`);
+    await this.clearInflight();
+    if (clientError) throw clientError;
+    if (action === "start" && !started) throw new Error("Service start failed with a verified stopped state");
   }
   async active() {
     const result = await this.command(["/usr/bin/systemctl", "--user", "is-active", this.config.service]);
     if (result !== "active") throw new Error("Current application service is not active");
   }
   async requireStopped() {
-    const state = await this.command(["/usr/bin/systemctl", "--user", "show", this.config.service, "--property=ActiveState,MainPID,ControlPID,SubState"], { recovery: true });
+    const state = await this.command(["/usr/bin/systemctl", "--user", "show", this.config.service, "--property=ActiveState,MainPID,ControlPID,SubState,Job"], { recovery: true });
     const fields = Object.fromEntries(state.split("\n").map((line) => line.split("=")));
-    if (!["inactive", "failed"].includes(fields.ActiveState) || fields.MainPID !== "0" || fields.ControlPID !== "0") throw new Error("Service unexpectedly active during an incomplete switch; preserve media and inspect manually");
+    if (!["inactive", "failed"].includes(fields.ActiveState) || fields.MainPID !== "0" || fields.ControlPID !== "0" || fields.Job !== "") throw new Error("Service unexpectedly active during an incomplete switch; preserve media and inspect manually");
   }
   async healthy(expectedTotal) {
     this.lastOperation = "readiness";

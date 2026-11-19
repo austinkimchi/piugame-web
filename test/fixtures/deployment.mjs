@@ -71,7 +71,7 @@ export async function testDeployment(f, options = {}) {
       else if (args[2] === "stop") service.active = false;
       else if (args[2] === "is-active") { if (!service.active) throw new Error("Inactive service"); stdout = "active\n"; }
       else if (args[2] === "show" && args.at(-1).includes("WorkingDirectory")) stdout = `WorkingDirectory=${f.app}\nExecStart=${path.dirname(process.execPath)}/npm run start\nKillMode=control-group\nRestart=on-failure\n`;
-      else stdout = `ActiveState=${service.active ? "active" : "inactive"}\nMainPID=${service.active ? "123" : "0"}\nControlPID=0\nSubState=${service.active ? "running" : "dead"}\n`;
+      else stdout = `ActiveState=${service.active ? "active" : "inactive"}\nMainPID=${service.active ? "123" : "0"}\nControlPID=0\nSubState=${service.active ? "running" : "dead"}\nJob=${service.job ?? ""}\n`;
       await writeFile(serviceFile, JSON.stringify(service));
     } else throw new Error(`Unknown test command ${args[0]}`);
     await options.afterCommand?.(args, cwd);

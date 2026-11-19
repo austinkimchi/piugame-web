@@ -101,7 +101,11 @@ the marker is current, or suppressing a failed commit. State lives under
 `inflight.json` is published durably before a Git mutation, package install/build,
 file-copy command or service start/stop. It records only schema, operation, phase
 and time, without PIDs, arguments, environment or output. The record is cleared
-and the directory synced only after command cleanup is confirmed. Its survival
+and the directory synced only after command cleanup is confirmed. Service
+start/stop additionally require a read-only systemd state check with no pending
+manager job or control process. A failed start with a verified stopped service
+can roll back; an unverified stop retains its record and never issues a restart.
+Its survival
 across a crash deliberately requires inspection; neither `--check` nor `--force`
 can bypass it.
 
