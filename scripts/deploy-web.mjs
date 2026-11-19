@@ -469,12 +469,35 @@ export class Deployment {
       if (again.head !== before.head || again.total !== before.total) throw new Error("Deployment baseline changed while staging");
       await this.git(["update-ref", "refs/piugame-deploy/rollback", before.head]);
       await this.journal("preparing");
-      await this.service("stop");
       await mkdir(this.snapshot, { mode: 0o700 });
-      const runtime = await this.copy(this.config.appDir, path.join(this.snapshot, "runtime"), ARTIFACT_PATHS, true);
+      const runtimeRoot = path.join(this.snapshot, "runtime");
+      // Thousands of dependency fsyncs are the expensive part of a fresh
+      // snapshot. Complete them while the prior application is still serving.
+      // Copy both roots here so relative cross-artifact links remain valid.
+      const preparedRuntime = await this.copy(this.config.appDir, runtimeRoot, ARTIFACT_PATHS, true);
+      await this.checkpoint("snapshot:runtime-prepared", this);
+      const prepared = await this.current();
+      if (prepared.head !== before.head || prepared.total !== before.total) throw new Error("Deployment baseline changed while snapshotting");
+      await this.service("stop");
+      await this.checkpoint("snapshot:stopped", this);
+      // Dependencies must be byte-for-byte unchanged after the verified stop.
+      // Runtime Next caches may change while serving, so capture .next afresh
+      // after stop rather than treating the earlier copy as rollback evidence.
+      const dependencies = preparedRuntime.filter((entry) => inside("node_modules", entry.path));
+      this.lastOperation = "stopped-dependency-verification";
+      await verifyInventory(this.config.appDir, ["node_modules"], dependencies,
+        { links: true, deadline: Date.now() + this.config.copyTimeoutMs });
+      await rm(path.join(runtimeRoot, ".next"), { recursive: true, force: true });
+      const next = await this.copy(this.config.appDir, runtimeRoot, [".next"], true);
+      const runtime = [...dependencies, ...next].sort((left, right) => left.path.localeCompare(right.path, "en"));
       const media = await this.copy(this.config.appDir, path.join(this.snapshot, "media"), MANUAL_PATHS);
       await writeJson(path.join(this.snapshot, "manifest.json"), { schema: 1, id: this.pending.id, prior: before.head, runtime, media });
-      await this.snapshotManifest(); await this.journal("switching");
+      await this.snapshotManifest();
+      await this.checkpoint("snapshot:captured", this);
+      await this.requireStopped();
+      await this.sourceClean();
+      if (await this.git(["rev-parse", "HEAD"]) !== before.head || (await readFile(this.marker, "utf8")).trim() !== before.head) throw new Error("Stopped deployment baseline changed");
+      await this.journal("switching");
       await this.git(["reset", "--hard", candidate]);
       await this.checkpoint("switch:source", this);
       for (const name of ARTIFACT_PATHS) {

@@ -2,7 +2,7 @@
 
 ## Installation status
 
-Installed and verified on **November 19, 2026**: the watcher uses the immutable
+The initial installation was verified on **November 19, 2026**, using the immutable
 bundle from reviewed head `baf9b5631a30bcfaa5280d48f20ba5b73c2371c7`, installed under
 `~/.local/lib/piugame-web-deploy/` outside the application and recovery trees.
 The launcher SHA-256 is `998bd4271c6b16701bd2b2eff02f13d28e8e2c7419a7c90b043c2c5a9bf669e3`.
@@ -100,10 +100,24 @@ files into staging.
   A rollback uses this deployment's snapshot, not an older maintenance backup.
 
 The staging checkout installs locked dependencies and builds while the current
-service remains available. The service then stops while its frozen `.next`,
-dependencies and media are copied and verified. Production source and artifacts
-change only after that snapshot and the `switching` record are durable. This
-reduces downtime; it does not promise zero downtime.
+service remains available. The repository's snapshot preparation also copies,
+hashes and syncs the prior runtime while that service is running. Both runtime
+roots are copied together to preserve relative links between `.next` and
+`node_modules`; these are independent copies, never hard links to live files.
+This optimization needs separate host installation before it changes production
+deployment behavior.
+
+After the verified stop, dependencies are checked against the prepared snapshot.
+The preliminary `.next` copy is replaced with a fresh stopped copy, and manual
+media is captured then, retaining cache writes and uploads accepted during
+preparation. Dependency changes abort before source replacement. The complete
+snapshot is verified, and the service, source and marker are checked again before
+the durable `switching` record permits promotion. The prior application remains
+untouched throughout `preparing`, so failure or an interrupted phase can restart
+it without a source reset. A concurrent cache change that disrupts the preliminary
+copy can fail safely while the old application is still serving. This moves the
+expensive dependency sync outside the stopped interval; it does not promise zero
+downtime or automatic recovery from ambiguous in-flight commands.
 
 ## Operation and recovery
 

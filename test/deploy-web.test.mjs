@@ -39,6 +39,93 @@ test("isolated build promotes coherent artifacts and preserves exact manual medi
   assert.equal(calls.filter((args) => args[0].endsWith("/npm")).length, 2);
 });
 
+test("runtime snapshot durability runs while serving, then captures fresh Next cache and manual uploads after stop", async (t) => {
+  const f = await fixture(t); const copies = []; let changed = false;
+  const { deployment, state } = await testDeployment(f, {
+    beforeCommand: async (args) => {
+      if (args[0] === "/bin/cp" && args.at(-1).includes("snapshot/")) copies.push({ destination: args.at(-1), active: (await state()).active });
+    },
+    checkpoint: async (name) => {
+      if (name !== "snapshot:runtime-prepared") return;
+      changed = true; assert.equal((await state()).active, true);
+      await write(path.join(f.app, ".next/cache/last-request.json"), "latest-cache");
+      for (const relative of MANUAL_PATHS) await write(path.join(f.app, relative, "late-upload.wav"), "uploaded-during-snapshot");
+    },
+  });
+  assert.equal((await deployment.deploy()).outcome, "deployed");
+  assert.equal(changed, true);
+  const runtimeCopies = copies.filter((entry) => entry.destination.includes("snapshot/runtime"));
+  assert.deepEqual(runtimeCopies.map((entry) => [path.basename(entry.destination), entry.active]), [[".next", true], ["node_modules", true], [".next", false]]);
+  assert.ok(copies.filter((entry) => entry.destination.includes("snapshot/media")).every((entry) => !entry.active));
+  assert.equal(await readFile(path.join(f.state, "recovery/snapshot/runtime/.next/cache/last-request.json"), "utf8"), "latest-cache");
+  for (const relative of MANUAL_PATHS) assert.equal(await readFile(path.join(f.app, relative, "late-upload.wav"), "utf8"), "uploaded-during-snapshot");
+});
+
+test("dependency drift after the live snapshot aborts before source reset and preserves the changed original", async (t) => {
+  const f = await fixture(t);
+  const file = path.join(f.app, "node_modules/package/auxiliary.js");
+  await write(file, "original dependency bytes");
+  const { deployment, calls } = await testDeployment(f, { checkpoint: async (name) => {
+    if (name === "snapshot:runtime-prepared") await write(file, "unexpected dependency mutation");
+  } });
+  const result = await deployment.deploy();
+  assert.equal(result.outcome, "rolled-back"); assert.equal(result.failure.reason, "integrity");
+  assert.equal(calls.some((args) => args[1] === "reset"), false);
+  assert.equal(await readFile(file, "utf8"), "unexpected dependency mutation");
+  await original(f);
+});
+
+test("failed live snapshot preparation never stops the serving application", async (t) => {
+  const f = await fixture(t);
+  const { deployment, calls, state } = await testDeployment(f, { beforeCommand: async (args) => {
+    if (args[0] === "/bin/cp" && args.at(-1).endsWith("snapshot/runtime/node_modules")) throw new Error("Snapshot I/O failure");
+  } });
+  assert.equal((await deployment.deploy()).outcome, "rolled-back");
+  assert.equal(calls.some((args) => args[2] === "stop" || args[1] === "reset"), false);
+  assert.equal((await state()).active, true); await original(f);
+});
+
+test("fresh mutable Next files and cross-artifact links survive rollback after a live snapshot", async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.app, ".next/cache/linked.txt"), "old cache");
+  await symlink("../../.next/cache/linked.txt", path.join(f.app, "node_modules/package/cache-link"));
+  await symlink("../node_modules/package/index.js", path.join(f.app, ".next/dependency-link"));
+  const { deployment } = await testDeployment(f, {
+    checkpoint: async (name) => {
+      if (name === "snapshot:runtime-prepared") await write(path.join(f.app, ".next/cache/linked.txt"), "fresh cache");
+    },
+    health: async (version) => { if (version === "new") throw new Error("Candidate unavailable"); },
+  });
+  assert.equal((await deployment.deploy()).outcome, "rolled-back"); await original(f);
+  assert.equal(await readFile(path.join(f.app, "node_modules/package/cache-link"), "utf8"), "fresh cache");
+  assert.equal(await readFile(path.join(f.app, ".next/dependency-link"), "utf8"), "dependency-old");
+});
+
+test("tracked edits during live snapshot preparation remain untouched and never stop the app", async (t) => {
+  const f = await fixture(t);
+  const { deployment, calls, state } = await testDeployment(f, { checkpoint: async (name) => {
+    if (name === "snapshot:runtime-prepared") await write(path.join(f.app, "app.txt"), "operator edit");
+  } });
+  await assert.rejects(deployment.deploy(), /dirty source/);
+  assert.equal(calls.some((args) => args[2] === "stop" || args[1] === "reset"), false);
+  assert.equal(await readFile(path.join(f.app, "app.txt"), "utf8"), "operator edit");
+  assert.equal((await state()).active, true);
+  assert.equal(JSON.parse(await readFile(pendingPath(f), "utf8")).phase, "preparing");
+});
+
+test("unexpected restart after frozen snapshot prevents promotion and preserves later uploads", async (t) => {
+  const f = await fixture(t);
+  const { deployment, calls, state } = await testDeployment(f, { checkpoint: async (name) => {
+    if (name !== "snapshot:captured") return;
+    await writeFile(path.join(f.root, "service.json"), JSON.stringify({ active: true, total: 675 }));
+    await write(path.join(f.app, MANUAL_PATHS[1], "post-snapshot-upload.wav"), "preserve restarted upload");
+  } });
+  assert.equal((await deployment.deploy()).outcome, "rolled-back");
+  assert.equal(calls.some((args) => args[1] === "reset"), false);
+  assert.equal(await readFile(path.join(f.app, MANUAL_PATHS[1], "post-snapshot-upload.wav"), "utf8"), "preserve restarted upload");
+  assert.equal((await state()).active, true); await original(f);
+});
+
 test("unchanged remote uses a periodic full sweep followed by lightweight polls", async (t) => {
   const f = await fixture(t);
   await git(f.origin, "reset", "--hard", f.prior);
@@ -171,7 +258,7 @@ test("rollback failure retains evidence and next invocation recovers before fetc
 });
 
 const runner = fileURLToPath(new URL("./fixtures/deployment.mjs", import.meta.url));
-for (const boundary of ["phase:staging", "phase:preparing", "phase:switching", "switch:source", "switch:.next", "switch:node_modules", "phase:running", "marker:written", "phase:committed"]) {
+for (const boundary of ["phase:staging", "phase:preparing", "snapshot:runtime-prepared", "snapshot:stopped", "snapshot:captured", "phase:switching", "switch:source", "switch:.next", "switch:node_modules", "phase:running", "marker:written", "phase:committed"]) {
   test(`SIGKILL at ${boundary} recovers coherent source/runtime/marker on the next invocation`, async (t) => {
     const f = await fixture(t);
     const child = spawn(process.execPath, [runner, f.root, boundary], { stdio: ["ignore", "pipe", "pipe"] });
@@ -407,7 +494,9 @@ for (const failure of ["client-timeout", "active-state", "pending-job"]) {
     });
     await assert.rejects(deployment.deploy(), /Unfinished deployment command evidence/);
     assert.equal(attempted, true);
-    assert.equal(calls.some((args) => args[2] === "start" || args[1] === "reset" || args[0] === "/bin/cp"), false);
+    const stopIndex = calls.findIndex((args) => args[2] === "stop");
+    assert.equal(calls.slice(0, stopIndex).filter((args) => args[0] === "/bin/cp").length, 2, "Only the live runtime preparation precedes stop");
+    assert.equal(calls.slice(stopIndex + 1).some((args) => args[2] === "start" || args[1] === "reset" || args[0] === "/bin/cp"), false);
     assert.equal(JSON.parse(await readFile(pendingPath(f), "utf8")).phase, "preparing");
     const sentinel = JSON.parse(await readFile(path.join(f.state, "recovery/inflight.json"), "utf8"));
     assert.equal(sentinel.operation, "systemctl:stop");
