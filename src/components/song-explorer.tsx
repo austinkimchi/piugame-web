@@ -1154,27 +1154,19 @@ export function SongExplorer({
         </>
       ) : null}
 
-      <motion.section
+      <section
         ref={searchSectionRef}
         id="search"
         className="min-h-screen border-t border-[#d9ded2] bg-[#eef1e8]"
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.08 }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       >
         {localCatalogPreview ? <p className="mx-auto max-w-7xl px-5 pt-6 text-sm text-[#697362]" role="status">Limited local jacket preview. Connect a development database to load catalog metadata.</p> : null}
         <div className="mx-auto grid max-w-7xl gap-5 px-5 py-8 sm:px-8 lg:grid-cols-[260px_minmax(0,1fr)] lg:px-10">
-          <motion.aside
+          <aside
             ref={filterPanelRef}
             className="hidden self-start border border-[#d6ddcf] bg-white p-4 lg:block"
-            initial={{ opacity: 0, x: -18 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
           >
             {renderFilterPanel()}
-          </motion.aside>
+          </aside>
 
           <AnimatePresence>
             {mobileFiltersOpen ? (
@@ -1437,7 +1429,7 @@ export function SongExplorer({
             </AnimatePresence>
           </div>
         </div>
-      </motion.section>
+      </section>
 
       <SongDetailNotebook
         canFavorite={canFavorite}
