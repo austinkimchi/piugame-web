@@ -2,7 +2,7 @@
 
 import { ChevronDown, ExternalLink, Filter, Link2, ListSortAscending, ListSortDescending, Search, Star, Volume2, VolumeX, X } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { CatalogAdminEditor } from "@/components/catalog-admin-editor";
 import { CatalogSongGrid } from "@/components/catalog-song-grid";
@@ -16,6 +16,7 @@ import { queryCatalog } from "@/lib/catalog-client-query";
 import { catalogCommunitySlug, catalogFavoriteSlugs, updateCatalogFavoriteSlugs } from "@/lib/catalog-private-overlay";
 import { chartRecommendationModeKey, type CatalogChartRecommendations } from "@/lib/chart-recommendation";
 import { piuSeriesMetadata } from "@/lib/catalog-version";
+import { manageDialogFocus } from "@/lib/dialog-focus";
 import { canLoadMoreSongs } from "@/lib/song-pagination";
 import { performanceVersionForCatalog } from "@/lib/piu-version";
 import { confirmPreviewMediaFailure, isPreviewUnavailable } from "@/lib/preview-availability";
@@ -1587,6 +1588,13 @@ function SongDetailNotebook({
   const resizingNotebookRef = useRef(false);
   const pendingNotebookSizeRef = useRef<{ width: number; height: number } | null>(null);
   const [notebookSize, setNotebookSize] = useState(readStoredNotebookSize);
+  const dialogOpen = Boolean(song);
+
+  useLayoutEffect(() => {
+    const dialog = notebookRef.current;
+    if (!dialogOpen || !dialog) return;
+    return manageDialogFocus(dialog, dialog.querySelector<HTMLElement>("[aria-label='Close song details']"));
+  }, [dialogOpen]);
 
   useEffect(() => {
     const element = notebookRef.current;
@@ -1650,17 +1658,14 @@ function SongDetailNotebook({
     }
   }
 
-  return (
-    <AnimatePresence>
-      {song ? (
+  // Remove the dialog immediately on close. Retaining an exiting Motion tree
+  // can leave invisible focusable controls and reuse pointer-events:none when
+  // another song is opened before that tree has finished exiting.
+  return song ? (
         <motion.div
           className="fixed inset-0 z-50 flex items-center justify-center bg-[#171916]/45 px-1.5 py-2 backdrop-blur-sm sm:px-6 sm:py-5"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          // The catalog becomes interactive as soon as the dialog closes. Keep
-          // the fade-out visual, but do not let the exiting backdrop swallow a
-          // fast follow-up click.
-          exit={{ opacity: 0, pointerEvents: "none" }}
           transition={{ duration: 0.18 }}
           role="dialog"
           aria-modal="true"
@@ -1673,10 +1678,10 @@ function SongDetailNotebook({
         >
             <motion.div
               ref={notebookRef}
+              tabIndex={-1}
               className="notebook-modal relative flex h-[min(96vh,880px)] w-[calc(100vw-0.75rem)] flex-col overflow-hidden rounded-2xl border border-[#d6ddcf] bg-[#fbfcf7] shadow-[0_30px_90px_rgba(12,18,10,0.32)] sm:h-[min(92vh,880px)] sm:w-[min(94vw,1180px)]"
               initial={{ opacity: 0, y: 24, scale: 0.96, rotate: -0.4 }}
               animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
-              exit={{ opacity: 0, y: 18, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 260, damping: 28 }}
               style={notebookSize ? { height: notebookSize.height, width: notebookSize.width } : undefined}
               onPointerDown={maybeStartResize}
@@ -1738,9 +1743,7 @@ function SongDetailNotebook({
             <div aria-hidden="true" className="notebook-resize-cue" />
           </motion.div>
         </motion.div>
-      ) : null}
-    </AnimatePresence>
-  );
+  ) : null;
 }
 
 function readStoredNotebookSize(): { width: number; height: number } | null {
