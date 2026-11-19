@@ -127,11 +127,18 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, f
     }
 
     const query = catalogVersion ? `?${new URLSearchParams({ version: catalogVersion }).toString()}` : "";
-    const response = await fetch(`/api/songs/${encodeURIComponent(song.slug)}/catalog${query}`, {
-      method: "PATCH",
-      headers,
-      body: requestBody,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/api/songs/${encodeURIComponent(song.slug)}/catalog${query}`, {
+        method: "PATCH",
+        headers,
+        body: requestBody,
+      });
+    } catch {
+      setStatus("error");
+      setMessage("Could not confirm the update. Your changes are still here; check your connection and try again.");
+      return;
+    }
     const responseBody = (await response.json().catch(() => null)) as { error?: string; song?: PublicSong } | null;
     if (!response.ok || !responseBody?.song) {
       setStatus("error");
@@ -273,7 +280,7 @@ export function CatalogAdminEditor({ song, userIsAdmin, label, catalogVersion, f
               </section>
             </div>
 
-            {message ? <p className="mt-4 text-sm font-bold text-[#9b2b1f]">{message}</p> : null}
+            {message ? <p className="mt-4 text-sm font-bold text-[#9b2b1f]" role="alert">{message}</p> : null}
             <div className="mt-5 flex justify-end gap-2">
               <button className="border border-[#cdd5c5] bg-white px-4 py-2 text-sm font-black text-[#56604e] hover:border-[#171916] hover:text-[#171916]" type="button" onClick={() => setOpen(false)}>
                 Cancel
