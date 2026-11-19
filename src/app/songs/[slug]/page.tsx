@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -6,7 +7,9 @@ import { SongDetailView } from "@/components/song-detail-view";
 import { getCurrentUser, getSongCommunityState, isAdmin } from "@/lib/auth";
 import { getSongBySlug } from "@/lib/catalog";
 import { chartCommunityKey } from "@/lib/chart-community";
-import { isPiuSeriesId, normalizePiuSeriesId } from "@/lib/catalog-version";
+import { piuSeriesMetadata } from "@/lib/catalog-version";
+import { requestedSongVersion, selectedSongChart, songPagePath, songPageVersion } from "@/lib/song-page-url";
+import type { PiuSeriesId } from "@/lib/types";
 import { normalizePiuGameVersion } from "@/lib/piu-version";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { absoluteSiteUrl, siteName, sitePreviewImage } from "@/lib/site";
@@ -19,12 +22,20 @@ interface SongPageProps {
   searchParams?: Promise<{ chart?: string | string[]; version?: string | string[] }>;
 }
 
+const getPublicSongPage = cache(async (slug: string, requestedVersion: PiuSeriesId) => {
+  const baseSong = await getSongBySlug(slug, requestedVersion);
+  if (!baseSong) return null;
+  const catalogVersion = songPageVersion(baseSong, requestedVersion);
+  const song = catalogVersion === requestedVersion ? baseSong : await getSongBySlug(slug, catalogVersion);
+  return song ? { song, catalogVersion } : null;
+});
+
 export async function generateMetadata({ params, searchParams }: SongPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const requestedVersion = normalizeRequestedVersion((await searchParams)?.version);
-  const song = await getSongBySlug(slug, requestedVersion);
+  const query = await searchParams;
+  const page = await getPublicSongPage(slug, requestedSongVersion(query?.version));
 
-  if (!song) {
+  if (!page) {
     return {
       title: "Song Not Found",
       robots: {
@@ -34,9 +45,14 @@ export async function generateMetadata({ params, searchParams }: SongPageProps):
     };
   }
 
-  const title = `${song.title} by ${song.artist}`;
+  const { song, catalogVersion } = page;
+  const selectedChart = selectedSongChart(query?.chart, song.chartSummary);
+  const versionLabel = piuSeriesMetadata(catalogVersion).label;
+  const title = `${song.title}${selectedChart ? ` ${selectedChart}` : ""} by ${song.artist} · ${versionLabel}`;
   const charts = song.chartSummary.length > 0 ? ` Charts: ${song.chartSummary.slice(0, 12).join(", ")}.` : "";
-  const description = `${song.title} by ${song.artist} in the ${siteName} Pump It Up catalog.${charts}`;
+  const description = `${song.title} by ${song.artist} in Pump It Up ${versionLabel} on ${siteName}.${selectedChart ? ` Selected chart: ${selectedChart}.` : ""}${charts}`;
+  const canonicalPath = songPagePath(song, catalogVersion);
+  const sharePath = songPagePath(song, catalogVersion, selectedChart);
   const image = song.imageUrl ? absoluteSiteUrl(song.imageUrl) : absoluteSiteUrl(sitePreviewImage.path);
   const imageAlt = song.imageUrl ? `${song.title} jacket art` : sitePreviewImage.alt;
 
@@ -44,12 +60,12 @@ export async function generateMetadata({ params, searchParams }: SongPageProps):
     title,
     description,
     alternates: {
-      canonical: `/songs/${song.slug}`,
+      canonical: canonicalPath,
     },
     openGraph: {
       title,
       description,
-      url: `/songs/${song.slug}`,
+      url: sharePath,
       siteName,
       images: [
         {
@@ -86,29 +102,21 @@ export default async function SongPage({ params, searchParams }: SongPageProps) 
   }
 
   const { slug } = await params;
+  const query = await searchParams;
+  const page = await getPublicSongPage(slug, requestedSongVersion(query?.version));
+  if (!page) {
+    notFound();
+  }
+  const { song, catalogVersion } = page;
   const user = await getCurrentUser();
-  const requestedVersion = normalizeRequestedVersion((await searchParams)?.version);
-  const baseSong = await getSongBySlug(slug, requestedVersion);
-  if (!baseSong) {
-    notFound();
-  }
-  const preferredVersion = user ? normalizePiuGameVersion(user.preferences.piuGameVersion) : "phoenix2";
-  const catalogVersion = baseSong.supportedVersions.includes(requestedVersion)
-    ? requestedVersion
-    : baseSong.supportedVersions.includes(preferredVersion)
-      ? preferredVersion
-      : baseSong.supportedVersions[0];
-  const song = await getSongBySlug(slug, catalogVersion);
-  if (!song) {
-    notFound();
-  }
-  const selectedChart = normalizeSelectedChart((await searchParams)?.chart, song.chartSummary);
+  const selectedChart = selectedSongChart(query?.chart, song.chartSummary);
   const communityChart = selectedChart ?? song.chartSummary[0] ?? null;
   const communityState = await getSongCommunityState(user, song.slug, communityChart, chartCommunityKey(song, catalogVersion, communityChart));
 
   return (
     <main className="min-h-screen bg-[#f7f8f2] text-[#171916]">
       <SongDetailView
+        key={`${song.slug}:${catalogVersion}:${selectedChart ?? "song"}`}
         song={song}
         community={{
           user,
@@ -121,14 +129,4 @@ export default async function SongPage({ params, searchParams }: SongPageProps) 
       />
     </main>
   );
-}
-
-function normalizeSelectedChart(value: string | string[] | undefined, chartSummary: string[]): string | null {
-  const chart = Array.isArray(value) ? value[0] : value;
-  return chart && chartSummary.includes(chart) ? chart : null;
-}
-
-function normalizeRequestedVersion(value: string | string[] | undefined) {
-  const version = Array.isArray(value) ? value[0] : value;
-  return isPiuSeriesId(version) ? version : normalizePiuSeriesId(undefined);
 }

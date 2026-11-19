@@ -68,9 +68,11 @@ function catalogFixture(rows: Row[] = []) {
         toArray: async () => rows.filter((row) => matches(row, filter)).slice(0, limit),
       };
     },
+    findOne: async (filter: Row) => rows.find((row) => matches(row, filter)) ?? null,
     countDocuments: async (filter: Row) => rows.filter((row) => matches(row, filter)).length,
     distinct: async (field: string, filter: Row) => rows.filter((row) => matches(row, filter)).flatMap((row) => row[field] ?? []),
     aggregate(pipeline: Row[]) {
+      if (pipeline.some((stage) => "$facet" in stage)) return { toArray: async () => [{ folders: [], series: [], total: [{ count: rows.length }] }] };
       const filter = pipeline.find((stage) => "$match" in stage)?.$match as Row;
       filters.push(filter);
       const offset = Number(pipeline.find((stage) => "$skip" in stage)?.$skip ?? 0);
@@ -332,4 +334,18 @@ test("legacy Mongo search shares title aliases without renaming songs or bypassi
   }
   assert.equal((await fixture.catalog.searchSongs({ query: "because", folders: ["K-POP"] })).total, 0);
   assert.equal((await fixture.catalog.searchSongs({ query: "because", supportedVersion: "phoenix" })).total, 0);
+});
+
+
+test("song-page lookup resolves A Nightmare charts by requested version with a stable slug", async () => {
+  const fixture = catalogFixture([{
+    _id: new ObjectId(), songName: "A Nightmare", artist: "Banya", piuVersion: "phoenix2",
+    supportedVersions: ["phoenix", "phoenix2"], chartTokens: ["S3", "S6", "D15"],
+    chartTokensByVersion: { phoenix: ["S3", "S6", "D14"], phoenix2: ["S3", "S6", "D15"] },
+  }]);
+  const phoenix = await fixture.catalog.getSongBySlug("a-nightmare-banya-phoenix2", "phoenix");
+  const phoenix2 = await fixture.catalog.getSongBySlug("a-nightmare-banya-phoenix2", "phoenix2");
+  assert.deepEqual(phoenix?.chartSummary, ["S3", "S6", "D14"]);
+  assert.deepEqual(phoenix2?.chartSummary, ["S3", "S6", "D15"]);
+  assert.equal(phoenix?.slug, phoenix2?.slug);
 });

@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 
 import { getPublicCatalogSnapshot } from "@/lib/public-catalog";
 import { absoluteSiteUrl } from "@/lib/site";
+import { songPagePath } from "@/lib/song-page-url";
 
 // Builds intentionally have no database credentials. Resolve the real public
 // catalog at request time, reusing its shared cache and write invalidation.
@@ -23,7 +24,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.4,
     },
     ...songs.map((song) => ({
-      url: absoluteSiteUrl(`/songs/${song.slug}`),
+      url: absoluteSiteUrl(songPagePath(song, "phoenix2")),
       changeFrequency: "weekly" as const,
       priority: 0.7,
       images: song.imageUrl ? [absoluteSiteUrl(song.imageUrl)] : undefined,
