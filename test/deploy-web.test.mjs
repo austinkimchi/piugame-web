@@ -39,6 +39,82 @@ test("isolated build promotes coherent artifacts and preserves exact manual medi
   assert.equal(calls.filter((args) => args[0].endsWith("/npm")).length, 2);
 });
 
+test("unchanged remote uses a periodic full sweep followed by lightweight polls", async (t) => {
+  const f = await fixture(t);
+  await git(f.origin, "reset", "--hard", f.prior);
+  let healthCalls = 0;
+  const first = await testDeployment(f, { health: async () => { healthCalls++; } });
+  assert.deepEqual(await first.deployment.deploy(), { outcome: "current", commit: f.prior });
+  assert.equal(healthCalls, 1);
+  assert.equal(await exists(path.join(f.state, "integrity-sweep.json")), true);
+  const { deployment, calls } = await testDeployment(f, { health: async () => { healthCalls++; } });
+  assert.deepEqual(await deployment.deploy(), { outcome: "current", commit: f.prior });
+  assert.equal(healthCalls, 1);
+  assert.equal(calls.some((args) => args[0] === "/usr/bin/git" && args[1] === "ls-remote"), true);
+  assert.equal(calls.some((args) => args[0] === "/usr/bin/git" && ["fetch", "ls-tree"].includes(args[1])), false);
+  assert.equal(calls.some((args) => args[0] === "/usr/bin/git" && args[1] === "status" && args.includes("--untracked-files=all")), false);
+});
+
+test("periodic sweep detects runtime drift that lightweight polls intentionally defer", async (t) => {
+  const f = await fixture(t);
+  await git(f.origin, "reset", "--hard", f.prior);
+  let uptimeMs = 1000;
+  const options = { integrityClock: async () => ({ bootId: "00000000-0000-0000-0000-000000000002", uptimeMs }) };
+  assert.equal((await (await testDeployment(f, options)).deployment.deploy()).outcome, "current");
+  await rm(path.join(f.app, ".next/BUILD_ID"));
+  uptimeMs += 1000;
+  assert.equal((await (await testDeployment(f, options)).deployment.deploy()).outcome, "current");
+  uptimeMs += 5 * 60_000;
+  await assert.rejects((await testDeployment(f, options)).deployment.deploy(), /ENOENT|BUILD_ID/);
+});
+
+test("host reboot forces a full sweep before an unchanged result", async (t) => {
+  const f = await fixture(t);
+  await git(f.origin, "reset", "--hard", f.prior);
+  let bootId = "00000000-0000-0000-0000-000000000002";
+  const options = { integrityClock: async () => ({ bootId, uptimeMs: 1000 }) };
+  assert.equal((await (await testDeployment(f, options)).deployment.deploy()).outcome, "current");
+  await rm(path.join(f.app, ".next/BUILD_ID"));
+  bootId = "00000000-0000-0000-0000-000000000003";
+  await assert.rejects((await testDeployment(f, options)).deployment.deploy(), /ENOENT|BUILD_ID/);
+});
+
+test("corrupt integrity sweep state fails closed", async (t) => {
+  const f = await fixture(t);
+  await git(f.origin, "reset", "--hard", f.prior);
+  assert.equal((await (await testDeployment(f)).deployment.deploy()).outcome, "current");
+  await write(path.join(f.state, "integrity-sweep.json"), '{"schema":2}\n');
+  await assert.rejects((await testDeployment(f)).deployment.deploy(), /Invalid integrity sweep record/);
+});
+
+test("remote lookup failure neither claims current nor advances the sweep record", async (t) => {
+  const f = await fixture(t);
+  await git(f.origin, "reset", "--hard", f.prior);
+  assert.equal((await (await testDeployment(f)).deployment.deploy()).outcome, "current");
+  const sweep = await readFile(path.join(f.state, "integrity-sweep.json"));
+  await git(f.origin, "branch", "-m", "unavailable");
+  await assert.rejects((await testDeployment(f)).deployment.deploy());
+  assert.deepEqual(await readFile(path.join(f.state, "integrity-sweep.json")), sweep);
+});
+
+test("lightweight poll fails closed on tracked drift and never contacts the remote", async (t) => {
+  const f = await fixture(t);
+  await git(f.origin, "reset", "--hard", f.prior);
+  await write(path.join(f.app, "app.txt"), "unexpected tracked change");
+  const { deployment, calls } = await testDeployment(f);
+  await assert.rejects(deployment.deploy(), /tracked source/);
+  assert.equal(calls.some((args) => args[0] === "/usr/bin/git" && args[1] === "ls-remote"), false);
+});
+
+test("force bypasses the lightweight shortcut and retains the full deployment path", async (t) => {
+  const f = await fixture(t);
+  await git(f.origin, "reset", "--hard", f.prior);
+  const { deployment, calls } = await testDeployment(f);
+  assert.equal((await deployment.deploy({ force: true })).outcome, "deployed");
+  assert.equal(calls.some((args) => args[0] === "/usr/bin/git" && args[1] === "ls-remote"), false);
+  assert.equal(calls.some((args) => args[0] === "/usr/bin/git" && args[1] === "fetch"), true);
+});
+
 for (const failure of ["install", "build", "snapshot", "switch", "start", "health", "marker"]) {
   test(`${failure} failure restores the exact prior runtime and suppresses the failed SHA`, async (t) => {
     const f = await fixture(t); let fired = false;
@@ -91,6 +167,7 @@ test("rollback failure retains evidence and next invocation recovers before fetc
   const next = await testDeployment(f, { beforeCommand: async (args) => { if (args[1] === "fetch") throw new Error("Network offline"); } });
   assert.equal((await next.deployment.deploy({ force: true })).outcome, "rolled-back");
   assert.equal(next.calls.some((args) => args[1] === "fetch"), false); await original(f);
+  assert.equal(next.calls.some((args) => args[1] === "ls-remote"), false);
 });
 
 const runner = fileURLToPath(new URL("./fixtures/deployment.mjs", import.meta.url));

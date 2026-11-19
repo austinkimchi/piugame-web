@@ -12,12 +12,18 @@ import { ARTIFACT_PATHS, MANUAL_PATHS, atomicWrite, copyTrees, digest, exists, i
 const GiB = 1024 ** 3;
 const sha = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function hostIntegrityClock() {
+  const bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+  const uptimeSeconds = Number((await readFile("/proc/uptime", "utf8")).split(/\s+/, 1)[0]);
+  if (!/^[a-f0-9-]{36}$/.test(bootId) || !Number.isFinite(uptimeSeconds) || uptimeSeconds < 0) throw new Error("Host monotonic clock is unavailable");
+  return { bootId, uptimeMs: Math.floor(uptimeSeconds * 1000) };
+}
 const phases = new Set(["staging", "preparing", "switching", "running", "restoring", "restored", "committed", "recovered"]);
 export const DEFAULTS = Object.freeze({
   appDir: "/home/pkimchi/piugame-web-prod", stateDir: "/home/pkimchi/.local/state/piugame-web",
   service: "piugame-web.service", origin: "http://127.0.0.1:4090", host: "mypiu.austin.kim",
   siteUrl: "https://mypiu.austin.kim",
-  minimumTotal: 300, maxManagedBytes: 6 * GiB, reserveBytes: GiB,
+  minimumTotal: 300, maxManagedBytes: 6 * GiB, reserveBytes: GiB, integritySweepMs: 5 * 60_000,
   commandTimeoutMs: 60_000, installTimeoutMs: 300_000, buildTimeoutMs: 300_000,
   copyTimeoutMs: 120_000, stopTimeoutMs: 100_000, healthTimeoutMs: 60_000, killGraceMs: 1_000,
 });
@@ -103,14 +109,15 @@ export async function readiness(config, artifactRoot, expectedTotal) {
 /** Dependencies are injectable only through this imported API for disposable
  * tests. The installed CLI accepts reviewed path/limit config, not shell hooks. */
 export class Deployment {
-  constructor(config, { lockFd, signal, command = runCommand, health = readiness, checkpoint = async () => {} } = {}) {
+  constructor(config, { lockFd, signal, command = runCommand, health = readiness, checkpoint = async () => {}, integrityClock = hostIntegrityClock } = {}) {
     this.config = configuration(config); this.lockFd = lockFd; this.signal = signal;
-    this.executeCommand = command; this.health = health; this.checkpoint = checkpoint;
+    this.executeCommand = command; this.health = health; this.checkpoint = checkpoint; this.integrityClock = integrityClock;
     this.root = path.join(this.config.stateDir, "recovery");
     this.pendingFile = path.join(this.root, "pending.json");
     this.failedFile = path.join(this.root, "failed.json");
     this.inflightFile = path.join(this.root, "inflight.json");
     this.marker = path.join(this.config.stateDir, "deployed-commit");
+    this.integritySweepFile = path.join(this.config.stateDir, "integrity-sweep.json");
     this.transaction = path.join(this.root, "transaction");
     this.stage = path.join(this.transaction, "stage");
     this.snapshot = path.join(this.root, "snapshot");
@@ -239,6 +246,37 @@ export class Deployment {
     await this.active();
     const total = await this.healthy();
     return { head, total };
+  }
+  async quickCurrent() {
+    if (await exists(path.join(this.config.appDir, ".git/index.lock"))) throw new Error("Unexpected Git index lock; operator inspection required");
+    const status = await this.git(["status", "--porcelain=v2", "--branch", "--untracked-files=no"]);
+    const lines = status.split("\n").filter(Boolean);
+    const identity = lines.find((line) => line.startsWith("# branch.oid "))?.slice("# branch.oid ".length);
+    if (!sha(identity) || lines.some((line) => !line.startsWith("# "))) throw new Error("Current tracked source or Git identity changed");
+    const marker = (await readFile(this.marker, "utf8")).trim();
+    if (identity !== marker) throw new Error("Current source and deployed marker disagree");
+    await this.active();
+    return identity;
+  }
+  async remoteMain() {
+    const output = await this.git(["ls-remote", "--exit-code", "origin", "refs/heads/main"]);
+    const lines = output.split("\n").filter(Boolean);
+    if (lines.length !== 1) throw new Error("Remote main lookup returned an unexpected result");
+    const [commit, reference, extra] = lines[0].split("\t");
+    if (!sha(commit) || reference !== "refs/heads/main" || extra !== undefined) throw new Error("Remote main lookup returned an invalid commit");
+    return commit;
+  }
+  async integritySweepDue(now) {
+    if (!now || !/^[a-f0-9-]{36}$/.test(now.bootId) || !Number.isSafeInteger(now.uptimeMs) || now.uptimeMs < 0) throw new Error("Invalid host monotonic clock");
+    if (!await exists(this.integritySweepFile)) return true;
+    const record = await readJson(this.integritySweepFile);
+    if (record.schema !== 1 || !/^[a-f0-9-]{36}$/.test(record.bootId) || !Number.isSafeInteger(record.uptimeMs) || record.uptimeMs < 0) {
+      throw new Error("Invalid integrity sweep record");
+    }
+    return record.bootId !== now.bootId || now.uptimeMs < record.uptimeMs || now.uptimeMs - record.uptimeMs >= this.config.integritySweepMs;
+  }
+  async recordIntegritySweep(now) {
+    await writeJson(this.integritySweepFile, { schema: 1, bootId: now.bootId, uptimeMs: now.uptimeMs });
   }
   async check() {
     await this.paths();
@@ -379,7 +417,18 @@ export class Deployment {
     // short circuits. Even a marker already naming candidate is not success.
     if (await exists(this.pendingFile)) return this.recover();
     if (await exists(this.transaction)) throw new Error("Unowned deployment transaction directory");
+    let observedRemote;
+    if (!force) {
+      const quickHead = await this.quickCurrent();
+      observedRemote = await this.remoteMain();
+      if (observedRemote === quickHead) {
+        const now = await this.integrityClock();
+        if (!await this.integritySweepDue(now)) return { outcome: "current", commit: quickHead };
+      }
+    }
     const before = await this.current();
+    await this.recordIntegritySweep(await this.integrityClock());
+    if (!force && observedRemote === before.head) return { outcome: "current", commit: before.head };
     await this.git(["fetch", "--prune", "origin", "main"]);
     const candidate = await this.git(["rev-parse", "refs/remotes/origin/main"]);
     if (!sha(candidate)) throw new Error("Invalid fetched candidate commit");

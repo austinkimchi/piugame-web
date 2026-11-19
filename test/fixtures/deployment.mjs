@@ -87,7 +87,8 @@ export async function testDeployment(f, options = {}) {
     if (service.total < 300 || (expectedTotal !== undefined && service.total !== expectedTotal)) throw new Error("Catalog readiness mismatch");
     return service.total;
   };
-  const deployment = new Deployment(f.config, { command, health, checkpoint: options.checkpoint, signal: options.signal, lockFd: options.lockFd ?? 42 });
+  const integrityClock = options.integrityClock ?? (async () => ({ bootId: "00000000-0000-0000-0000-000000000001", uptimeMs: Math.floor(process.uptime() * 1000) }));
+  const deployment = new Deployment(f.config, { command, health, checkpoint: options.checkpoint, signal: options.signal, lockFd: options.lockFd ?? 42, integrityClock });
   return { deployment, calls, state };
 }
 
