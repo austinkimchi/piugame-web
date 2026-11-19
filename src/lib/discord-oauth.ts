@@ -89,8 +89,8 @@ export async function exchangeDiscordCode(args: { code: string; origin: string }
     discordId: userBody.id,
     username: userBody.username,
     displayName: userBody.global_name || userBody.username,
-    email: userBody.email?.toLowerCase() ?? null,
-    emailVerified: userBody.verified === true,
+    email: userBody.verified === true ? userBody.email?.trim().toLowerCase() || null : null,
+    emailVerified: userBody.verified === true && Boolean(userBody.email?.trim()),
     imageUrl: userBody.avatar ? `https://cdn.discordapp.com/avatars/${userBody.id}/${userBody.avatar}.png?size=128` : null,
   };
 }
