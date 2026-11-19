@@ -41,5 +41,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Unnecessary for production
-scripts
+# Local maintenance scripts stay private until individually reviewed.
+/scripts/*
+!/scripts/sync-assets.mjs

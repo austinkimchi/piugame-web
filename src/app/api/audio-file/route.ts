@@ -1,9 +1,7 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
-
-import { type NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +14,9 @@ const AUDIO_EXTENSIONS = new Map([
   [".m4a", "audio/mp4"],
 ]);
 
-const CACHE_CONTROL = "public, max-age=31536000, immutable";
+// Legacy filenames can be replaced by an administrator. Do not pin their bytes
+// in browsers or CDNs for a year after a corrected export is uploaded.
+const CACHE_CONTROL = "public, max-age=0, must-revalidate";
 
 function allowedRoots(): string[] {
   const configuredRoots = String(process.env.AUDIO_PREVIEW_ROOTS ?? "")
@@ -33,9 +33,10 @@ function allowedRoots(): string[] {
   ].map((root) => path.resolve(root));
 }
 
-function audioPathCandidates(input: string): string[] {
-  const decoded = decodeURIComponent(input).replaceAll("\\", "/");
-  const relativePath = decoded
+function audioPathCandidates(input: string): { root: string; candidate: string }[] {
+  // URLSearchParams already decoded this value. A second decode breaks literal
+  // percent signs in song names and can turn filenames into path separators.
+  const relativePath = input.replaceAll("\\", "/")
     .replace(/^\/+/, "")
     .replace(/^data\/audio_preview\//, "")
     .replace(/^data\/audio_previews\//, "")
@@ -48,14 +49,15 @@ function audioPathCandidates(input: string): string[] {
 
   return allowedRoots()
     .map((root) => ({ root, candidate: path.resolve(root, relativePath) }))
-    .filter(({ root, candidate }) => candidate === root || candidate.startsWith(`${root}${path.sep}`))
-    .map(({ candidate }) => candidate);
+    .filter(({ root, candidate }) => candidate.startsWith(`${root}${path.sep}`));
 }
 
 function contentRange(range: string | null, size: number): { start: number; end: number } | null {
-  if (!range) {
+  if (range === null) {
     return { start: 0, end: size - 1 };
   }
+
+  if (size === 0) return null;
 
   const match = range.match(/^bytes=(\d*)-(\d*)$/);
   if (!match) {
@@ -64,10 +66,12 @@ function contentRange(range: string | null, size: number): { start: number; end:
 
   const rawStart = match[1] ?? "";
   const rawEnd = match[2] ?? "";
+  if (!rawStart && !rawEnd) return null;
   const suffixLength = rawStart ? null : Number.parseInt(rawEnd, 10);
-  const suffixStart = suffixLength === null || !Number.isFinite(suffixLength) ? 0 : Math.max(size - suffixLength, 0);
+  if (suffixLength === 0) return null;
+  const suffixStart = suffixLength === null ? 0 : Math.max(size - suffixLength, 0);
   const start = rawStart ? Number.parseInt(rawStart, 10) : suffixStart;
-  const end = rawEnd && rawStart ? Number.parseInt(rawEnd, 10) : size - 1;
+  const end = rawEnd && rawStart ? Math.min(Number.parseInt(rawEnd, 10), size - 1) : size - 1;
 
   if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end >= size || start > end) {
     return null;
@@ -76,19 +80,21 @@ function contentRange(range: string | null, size: number): { start: number; end:
   return { start, end };
 }
 
-export async function GET(request: NextRequest) {
-  const requestPath = request.nextUrl.searchParams.get("path");
+export async function GET(request: Request) {
+  const requestPath = new URL(request.url).searchParams.get("path");
   if (!requestPath) {
-    return NextResponse.json({ error: "Missing audio path." }, { status: 400 });
+    return Response.json({ error: "Missing audio path." }, { status: 400 });
   }
 
   const candidatePaths = audioPathCandidates(requestPath);
   if (candidatePaths.length === 0) {
-    return NextResponse.json({ error: "Audio file not found." }, { status: 404 });
+    return Response.json({ error: "Audio file not found." }, { status: 404 });
   }
 
-  for (const filePath of candidatePaths) {
+  for (const { root, candidate } of candidatePaths) {
     try {
+      const [realRoot, filePath] = await Promise.all([realpath(root), realpath(candidate)]);
+      if (!filePath.startsWith(`${realRoot}${path.sep}`)) continue;
       const file = await stat(filePath);
       if (!file.isFile()) {
         continue;
@@ -117,8 +123,8 @@ export async function GET(request: NextRequest) {
         headers.set("Content-Range", `bytes ${range.start}-${range.end}/${file.size}`);
       }
 
-      const stream = createReadStream(filePath, { start: range.start, end: range.end });
-      return new Response(Readable.toWeb(stream) as ReadableStream, {
+      const body = file.size === 0 ? null : Readable.toWeb(createReadStream(filePath, { start: range.start, end: range.end })) as ReadableStream;
+      return new Response(body, {
         status: request.headers.has("range") ? 206 : 200,
         headers,
       });
@@ -127,5 +133,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ error: "Audio file not found." }, { status: 404 });
+  return Response.json({ error: "Audio file not found." }, { status: 404 });
 }

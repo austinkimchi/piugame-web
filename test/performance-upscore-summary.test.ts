@@ -30,3 +30,22 @@ test("labels an entirely empty history as all-time passed maps", () => {
     value: 0,
   });
 });
+
+test("preserves an unavailable clear count instead of reporting zero clears", () => {
+  const unavailable = { passedMaps: null, upscoresThisMonth: 0, upscoresThisWeek: 0, upscoresToday: 0 };
+  assert.deepEqual(homeUpscoreMetric(unavailable), {
+    key: "all-time",
+    label: "All-time passed maps",
+    value: null,
+  });
+  assert.deepEqual(homeUpscoreMetrics(unavailable), []);
+});
+
+test("still shows known upscores when the all-time clear count is unavailable", () => {
+  const unavailable = { ...base, passedMaps: null, upscoresToday: 0 };
+  assert.deepEqual(homeUpscoreMetric(unavailable), { key: "week", label: "Upscores this week", value: 7 });
+  assert.deepEqual(homeUpscoreMetrics(unavailable), [
+    { key: "week", label: "Upscores this week", value: 7 },
+    { key: "month", label: "Upscores this month", value: 21 },
+  ]);
+});
