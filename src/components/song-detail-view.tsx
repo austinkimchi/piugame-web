@@ -103,6 +103,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
   const [favoriteSaved, setFavoriteSaved] = useState(community?.initialState.saved ?? false);
   const [favoriteSaving, setFavoriteSaving] = useState(false);
   const [compactView, setCompactView] = useState(community?.user?.preferences.songDetailCompactView ?? false);
+  const [failedJacketUrl, setFailedJacketUrl] = useState<string | null>(null);
   const [performanceState, setPerformanceState] = useState<PerformanceLoadState>("idle");
   const [performance, setPerformance] = useState<SongChartPerformance | null>(null);
   const [scoreLinkDraft, setScoreLinkDraft] = useState<CommunityScoreLinkDraft | null>(null);
@@ -205,8 +206,8 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
       }
       transition={{ type: "spring", stiffness: 260, damping: 30 }}
     >
-      {currentSong.imageUrl ? (
-        <Image alt={`${currentSong.title} jacket`} className="object-cover" fill priority sizes={isCompact ? "128px" : "360px"} src={currentSong.imageUrl} />
+      {currentSong.imageUrl && failedJacketUrl !== currentSong.imageUrl ? (
+        <Image alt={`${currentSong.title} jacket`} className="object-cover" fill priority sizes={isCompact ? "128px" : "360px"} src={currentSong.imageUrl} onError={() => setFailedJacketUrl(currentSong.imageUrl)} />
       ) : (
         <div className="flex h-full items-center justify-center font-bold text-[#66705f]">No jacket</div>
       )}
@@ -402,6 +403,7 @@ export function SongDetailView({ song, community, communityReadOnly = false, all
               currentSong.chartSummary.map((chart) => isNotebook ? (
                 <motion.button
                   key={chart}
+                  aria-pressed={selectedChartToken === chart}
                   className={`border px-3 py-1.5 text-sm font-black transition ${selectedChartToken === chart ? "border-[#171916] bg-[#171916] text-white shadow-[0_10px_24px_rgba(29,35,24,0.14)]" : "border-[#d8dfd1] bg-white text-[#3d4638] hover:border-[#28c950] hover:text-[#28c950]"}`}
                   onClick={() => {
                     setSelectedChartToken(chart);
