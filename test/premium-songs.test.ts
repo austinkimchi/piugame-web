@@ -5,7 +5,7 @@ import { isPremiumSong, PREMIUM_SONG_TITLES_BY_VERSION } from "../src/lib/premiu
 
 test("indexes premium songs by release version", () => {
   assert.equal(PREMIUM_SONG_TITLES_BY_VERSION.phoenix.length, 18);
-  assert.equal(PREMIUM_SONG_TITLES_BY_VERSION.phoenix2.length, 3);
+  assert.equal(PREMIUM_SONG_TITLES_BY_VERSION.phoenix2.length, 4);
 
   for (const [version, titles] of Object.entries(PREMIUM_SONG_TITLES_BY_VERSION)) {
     for (const title of titles) {

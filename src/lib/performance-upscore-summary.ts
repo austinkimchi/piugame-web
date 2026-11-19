@@ -1,7 +1,7 @@
 export interface HomeUpscoreMetric {
   key: "today" | "week" | "month" | "all-time";
   label: string;
-  value: number;
+  value: number | null;
 }
 
 export function homeUpscoreMetrics(args: {
@@ -14,9 +14,9 @@ export function homeUpscoreMetrics(args: {
     { key: "today", label: "Upscores today", value: args.upscoresToday },
     { key: "week", label: "Upscores this week", value: args.upscoresThisWeek },
     { key: "month", label: "Upscores this month", value: args.upscoresThisMonth },
-    { key: "all-time", label: "All-time passed maps", value: args.passedMaps ?? 0 },
+    { key: "all-time", label: "All-time passed maps", value: args.passedMaps },
   ];
-  return metrics.filter((metric) => metric.value > 0);
+  return metrics.filter((metric) => metric.value !== null && metric.value > 0);
 }
 
 export function homeUpscoreMetric(args: Parameters<typeof homeUpscoreMetrics>[0]): HomeUpscoreMetric {
@@ -31,5 +31,5 @@ export function homeUpscoreMetric(args: Parameters<typeof homeUpscoreMetrics>[0]
   if (args.upscoresThisMonth > 0) {
     return metrics.find((metric) => metric.key === "month")!;
   }
-  return metrics.find((metric) => metric.key === "all-time") ?? { key: "all-time", label: "All-time passed maps", value: args.passedMaps ?? 0 };
+  return metrics.find((metric) => metric.key === "all-time") ?? { key: "all-time", label: "All-time passed maps", value: args.passedMaps };
 }
