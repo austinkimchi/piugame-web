@@ -97,8 +97,6 @@ Evidence so far: roughly 68 KB gzipped for the Phoenix 2 public DTO versus up to
 
 Release gate: finish reviews/CI, rebase stacked branches after the parent squash, verify their exact new heads, merge, observe the automatic rollout, measure public and signed-in behavior, then clean branches. Do not remove pagination from inherently private recent/recommendation feeds merely because public catalog transport is changing.
 
-**Public catalog CORS follow-up — candidate tested, not merged/deployed:** the isolated `feature-public-catalog-cors` branch from `96d0b365` limits anonymous wildcard CORS to `/api/catalog/v1`, adds database-free OPTIONS, and preserves private APIs. Chromium 153.0.8010.12 passed a real two-origin loopback test of GET/HEAD/304, If-None-Match preflight, readable errors, and blocked credentialed/private reads. See [the public API contract and portable browser qualification](public-catalog-api.md#browser-qualification); deployment verification remains separate.
-
 ## 9. Mobile images, device update, loading and UI tests
 
 **Artwork fix completed:** Home recent-play rows and their detail presentation now use the existing catalog fallback when server/local snapshots omit images, preserving server and snapshot precedence. [Mobile #49](https://github.com/austinkimchi/piugame-mobile/pull/49) passed 36 targeted tests, iOS CI, automated review and signed-in Simulator before/after checks. Home and detail screenshots are saved locally.
