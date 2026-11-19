@@ -13,6 +13,7 @@ import * as performanceFormat from "../src/lib/performance-format.ts";
 import * as sessionCore from "../src/lib/performance-session.ts";
 import * as sessionPagination from "../src/lib/performance-session-pagination.ts";
 import * as piuVersion from "../src/lib/piu-version.ts";
+import { selectedSongChart, songPagePath, songPageVersion } from "../src/lib/song-page-url.ts";
 
 type Performance = typeof import("../src/lib/performance.ts");
 type Catalog = typeof import("../src/lib/catalog.ts");
@@ -348,4 +349,40 @@ test("song-page lookup resolves A Nightmare charts by requested version with a s
   assert.deepEqual(phoenix?.chartSummary, ["S3", "S6", "D14"]);
   assert.deepEqual(phoenix2?.chartSummary, ["S3", "S6", "D15"]);
   assert.equal(phoenix?.slug, phoenix2?.slug);
+});
+
+test("versioned canonical links round-trip colliding historical artists in either document order", async () => {
+  const historical = {
+    _id: new ObjectId(), songName: "ヨロピク ピクヨロ！ Yoropiku Pikuyoro !",
+    artist: "バクステ外神田一丁目 Bakusute Sotokanda Icchome", piuVersion: "phoenix",
+    supportedVersions: ["phoenix"], chartTokens: ["S3", "D5"],
+    chartTokensByVersion: { phoenix: ["S3", "D5"] },
+  };
+  const current = {
+    _id: new ObjectId(), songName: historical.songName, artist: "Bakusute Sotokanda Icchome", piuVersion: "phoenix2",
+    supportedVersions: ["phoenix2"], chartTokens: ["S3", "D6"],
+    chartTokensByVersion: { phoenix2: ["S3", "D6"] },
+  };
+  const slug = "yoropiku-pikuyoro-bakusute-sotokanda-icchome-phoenix2";
+  for (const rows of [[historical, current], [current, historical]]) {
+    const { catalog } = catalogFixture(rows);
+    assert.equal((await catalog.getSongBySlug(slug))?.artist, rows[0].artist, "Unversioned community/editor identity must retain legacy selection");
+    for (const [version, chart, expected] of [["phoenix", "D5", historical], ["phoenix2", "D6", current]] as const) {
+      const song = await catalog.getSongBySlug(slug, version);
+      assert.ok(song);
+      assert.equal(song.artist, expected.artist);
+      assert.equal(songPageVersion(song, version), version);
+      assert.equal(selectedSongChart(chart, song.chartSummary), chart);
+      const canonical = new URL(songPagePath(song, version), "https://example.com");
+      const resolved = await catalog.getSongBySlug(canonical.pathname.slice("/songs/".length), version);
+      assert.deepEqual(resolved?.chartSummary, expected.chartTokens);
+      assert.equal(resolved?.artist, expected.artist);
+    }
+    const sourceAlias = await catalog.getSongBySlug(slug.replace(/-phoenix2$/, "-phoenix"), "phoenix");
+    assert.ok(sourceAlias);
+    const aliasCanonical = new URL(songPagePath(sourceAlias, "phoenix"), "https://example.com");
+    const roundTrip = await catalog.getSongBySlug(aliasCanonical.pathname.slice("/songs/".length), "phoenix");
+    assert.equal(roundTrip?.artist, historical.artist);
+    assert.deepEqual(roundTrip?.chartSummary, ["S3", "D5"]);
+  }
 });
