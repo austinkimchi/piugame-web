@@ -44,3 +44,6 @@ next-env.d.ts
 # Local maintenance scripts stay private until individually reviewed.
 /scripts/*
 !/scripts/sync-assets.mjs
+!/scripts/deploy-web.mjs
+!/scripts/deploy-command.mjs
+!/scripts/deploy-files.mjs

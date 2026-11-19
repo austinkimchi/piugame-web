@@ -102,7 +102,9 @@ Use the owner's authorized account for necessary signed-in smoke tests without p
 
 ## Deploy and recover
 
-Run relevant tests, the TypeScript check, and a build on the candidate revision before merging. The `main` watcher makes merging a production action. Retain the prior commit, recoverable database backup, and media backup, then verify the timer deployed the expected commit.
+Run relevant tests, lint, the TypeScript check, and a build on the candidate revision before merging. The `main` watcher makes merging a production action. Retain the prior commit, recoverable database backup, and media backup, then verify the timer deployed the expected commit.
+
+The [deployment recovery guide](deployment-recovery.md) describes the reviewed code and its separate host-installation requirements. Code in the repository does not establish that the host watcher uses it; verify the installed command before relying on pending recovery or automatic code rollback.
 
 Read-only origin checks include:
 
