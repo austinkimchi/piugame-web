@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import test, { type TestContext } from "node:test";
 import { ObjectId } from "mongodb";
 import ts from "typescript";
+import * as mongoIndexes from "../src/lib/mongo-indexes.ts";
 
 type Auth = typeof import("../src/lib/auth.ts");
 type User = Awaited<ReturnType<Auth["upsertDiscordUser"]>>;
@@ -130,6 +131,7 @@ function authFixture(initial: User[] = []) {
       getMongoClient: async () => ({ db: () => ({ collection: (name: string) => name === (process.env.COMMUNITY_USERS_COLLECTION ?? "users") ? userCollection : collection }) }),
     },
     "@/lib/credential-crypto": {},
+    "@/lib/mongo-indexes": mongoIndexes,
     "@/lib/performance-user-lock": {},
     "@/lib/piu-account": {},
     "@/lib/performance": {},

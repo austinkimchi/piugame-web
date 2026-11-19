@@ -23,6 +23,22 @@ Use a disposable Linux checkout with `flock` and Python 3 for the complete test 
 
 Before making this a required merge check, account for path-filtered runs: GitHub can leave a required check pending when its workflow is skipped. Either remove the path filter or introduce an always-running gate before requiring it. A successful run alone does not establish branch protection.
 
+### Optional fresh-database check
+
+This test requires a separate disposable MongoDB 5.0.8 standalone server. It never
+starts a server or reads `MONGODB_URI`. Set `MONGO_BOOTSTRAP_RUN_INTEGRATION=1` and
+`MONGO_BOOTSTRAP_TEST_URI` to `mongodb://127.0.0.1:<ephemeral-port>` (not port 27017,
+with no credentials or database path), then run:
+
+```sh
+node --experimental-strip-types --test test/mongo-bootstrap.integration.test.ts
+```
+
+The test creates a nonce database, exercises the actual auth and performance index
+initialization plus legacy-index cleanup, and verifies removal of its owned
+database. Normal CI skips this opt-in test; unit tests still check that only
+MongoDB error 26 is treated as an empty index list.
+
 ### Local package access
 
 The private `@austinkimchi/piugame-sdk` dependency is hosted on GitHub Packages. Local `npm ci` requires an account with package access and a `GITHUB_PACKAGES_TOKEN` environment variable, which the checked-in `.npmrc` references. Follow [GitHub's npm authentication instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry#authenticating-to-github-packages) for a token with `read:packages` access. Keep its value outside the repository. CI maps its ephemeral `GITHUB_TOKEN` to the same variable during installation.

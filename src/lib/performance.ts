@@ -9,6 +9,7 @@ import { getSongsByTitles } from "@/lib/catalog";
 import type { CryptoPayloadV1 } from "@/lib/credential-crypto";
 import { decryptCredential } from "@/lib/credential-crypto";
 import { getMongoClient, hasMongoConfig } from "@/lib/mongodb";
+import { existingMongoIndexes } from "@/lib/mongo-indexes";
 import type { MobilePerformanceImport } from "@/lib/mobile-sync-schema";
 import { mobileUserSnapshotFence, performanceProfileSnapshotFence } from "@/lib/mobile-sync-ordering";
 import { performanceChartTokenCandidates, performanceChartTokenCandidatesFromPlay, performanceChartTokenKey } from "@/lib/performance-chart-key";
@@ -379,7 +380,7 @@ async function ensurePerformanceIndexes(args: {
 }
 
 async function dropLegacyPerformanceVersionIndexes<T extends PerformanceProfileDocument | PerformancePlayEventDocument | PerformanceChartStatDocument>(collection: Collection<T>): Promise<void> {
-  const indexes = await collection.indexes();
+  const indexes = await existingMongoIndexes(collection);
   const legacyIndexes = indexes.filter(
     (index) =>
       index.name !== "_id_" &&

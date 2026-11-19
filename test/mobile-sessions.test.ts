@@ -9,6 +9,7 @@ import * as chartRecommendation from "../src/lib/chart-recommendation.ts";
 import * as catalogVersion from "../src/lib/catalog-version.ts";
 import * as catalogSearchAliases from "../src/lib/catalog-search-aliases.ts";
 import * as mobileAuthCore from "../src/lib/mobile-auth-core.ts";
+import * as mongoIndexes from "../src/lib/mongo-indexes.ts";
 import * as performanceFormat from "../src/lib/performance-format.ts";
 import * as sessionCore from "../src/lib/performance-session.ts";
 import * as sessionPagination from "../src/lib/performance-session-pagination.ts";
@@ -135,6 +136,7 @@ function sessionsFixture(rows: Row[], catalog = catalogFixture().catalog, select
     "@/lib/piu-client": { createPiuClient: () => { throw new Error("Session reads must not contact PIUGAME"); } },
     "@/lib/chart-recommendation": chartRecommendation,
     "@/lib/catalog": catalog,
+    "@/lib/mongo-indexes": mongoIndexes,
     "@/lib/mongodb": { hasMongoConfig: () => true, getMongoClient: async () => ({ db: () => ({ collection: () => collection }) }) },
     "@/lib/performance-format": performanceFormat,
     "@/lib/performance-session": sessionCore,
