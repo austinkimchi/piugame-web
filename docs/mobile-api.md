@@ -47,3 +47,38 @@ The endpoint enforces these boundaries:
 Successful new imports return HTTP 201. An exact replay returns the original receipt with HTTP 200 and `duplicateRequest: true`.
 
 The browser extension can retrieve the signed-in user's linked PIUGAME username and selected release from `GET /api/mobile/v1/extension/context`. This endpoint accepts only the existing same-origin MyPIU session cookie and never returns PIUGAME credentials.
+
+## Private catalog overlay
+
+Fetch public song metadata from the [public catalog API](public-catalog-api.md), then request account personalization separately:
+
+```http
+GET /api/mobile/v1/catalog/overlay?version=phoenix2
+Authorization: Bearer <access-token>
+```
+
+The required `version` is exactly `phoenix` or `phoenix2`. This endpoint covers the supported catalog view; historical series, duplicate version parameters, and any `removed` parameter return HTTP 400. Browser session cookies and client-provided account IDs cannot select an account.
+
+The response implements `MobileCatalogOverlay` from `src/lib/mobile-catalog-overlay-types.ts`:
+
+```json
+{
+  "schemaVersion": 1,
+  "version": "phoenix2",
+  "favoriteSlugs": ["example-artist-phoenix"],
+  "recommendations": {
+    "example-artist-phoenix": {
+      "all": "S18", "S": "S18", "SD": "S18", "SDC": "S18",
+      "SC": "S18", "SCD": "S18", "D": "S18", "DS": "S18",
+      "DSC": "S18", "DC": "S18", "DCS": "S18", "C": "S18",
+      "CS": "S18", "CSD": "S18", "CD": "S18", "CDS": "S18"
+    }
+  }
+}
+```
+
+Favorites use the selected public snapshot's slugs, including source-version Phoenix aliases for existing saved songs. Only favorites present in that snapshot are returned. Recommendations are keyed by public song slug, then ordered preferred chart modes: `all`, `S`, `D`, `C`, `SD`, `SC`, `DS`, `DC`, `CS`, `CD`, `SDC`, `SCD`, `DSC`, `DCS`, `CSD`, and `CDS`. Each value is a chart token or `null`; songs without recommendations are omitted. Mode keys express preference order, not a strict chart filter: recent play evidence can select a chart outside the preferred mode. The endpoint reuses the web recommendation helper and does not change ranked recommendation feeds. Raw scores, play evidence, account profiles, notes, and filesystem paths are never returned.
+
+Successful requests read the public snapshot once, favorites once, and private recommendation evidence once through the shared helper. Every handled response uses `Cache-Control: private, no-store`, `Pragma: no-cache`, and `Vary: Authorization`. There is no private server cache, ETag, or 304 response. Invalid, expired, revoked, or deleted-account tokens return HTTP 401; unavailable dependencies return HTTP 503 with `catalog_overlay_unavailable`, never a successful empty fallback.
+
+Keep the overlay separate from the public catalog cache. Scope in-memory client state by authenticated account and version, clear it on logout/account changes, and discard requests completed under an old account or version. After a successful favorite update, reconcile the returned legacy slug with the public alias and reject older overlay responses that would undo that update. Refresh recommendations after a performance import. These client rules are required even when a canceled request still delivers a response.
