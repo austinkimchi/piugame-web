@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import type { PublicUser } from "@/lib/auth";
 
-export function AccountIntegrationsPanel({ user, discordReady }: { user: PublicUser; discordReady: boolean }) {
+export function AccountIntegrationsPanel({ user, appleReady, discordReady }: { user: PublicUser; appleReady: boolean; discordReady: boolean }) {
   const [piuUsername, setPiuUsername] = useState(user.piuProfile?.piuUsername ?? "");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -46,9 +46,25 @@ export function AccountIntegrationsPanel({ user, discordReady }: { user: PublicU
     <section className="border border-[#d8dfd0] bg-white p-3">
       <div className="mb-3">
         <p className="text-sm font-black text-[#171916]">Linked accounts</p>
-        <p className="mt-1 text-xs font-bold text-[#66705f]">Connect Discord and your Pump It Up profile.</p>
+        <p className="mt-1 text-xs font-bold text-[#66705f]">Connect Apple, Discord, and your Pump It Up profile.</p>
       </div>
       <div className="space-y-3">
+        <div className="border border-[#d8dfd0] bg-[#fbfcf7] p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-black text-[#171916]">Apple</p>
+              <p className="mt-1 truncate text-xs font-bold text-[#66705f]">
+                {user.authProviders.includes("apple") ? "Connected" : "Use the same account on iPhone and web"}
+              </p>
+            </div>
+            {user.authProviders.includes("apple") ? (
+              <span className="shrink-0 border border-[#b9d9bf] bg-[#effbf1] px-3 py-2 text-xs font-black text-[#247238]">Linked</span>
+            ) : (
+              <a className={`shrink-0 px-3 py-2 text-xs font-black ${appleReady ? "bg-black text-white hover:bg-[#242424]" : "bg-[#d6ddcf] text-[#66705f]"}`} href={appleReady ? "/api/auth/apple/login?next=/" : undefined} aria-disabled={!appleReady}>Link</a>
+            )}
+          </div>
+        </div>
+
         <div className="border border-[#d8dfd0] bg-[#fbfcf7] p-3">
           <div className="mb-3 flex items-center justify-between gap-2 text-sm font-black text-[#171916]">
             <span className="flex items-center gap-2"><Gamepad2 aria-hidden="true" size={17} />Pump It Up</span>

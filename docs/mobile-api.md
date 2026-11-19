@@ -22,6 +22,8 @@ Authorization parameters:
 
 Token requests use `application/x-www-form-urlencoded` or JSON with `grant_type=authorization_code`, `client_id`, `code`, `code_verifier`, `redirect_uri`, `installation_id`, and optional `app_version`.
 
+On iOS, the native Sign in with Apple button uses a token-exchange request to the same endpoint. It sends `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, `subject_token_type=urn:ietf:params:oauth:token-type:id_token`, the Apple identity token as `subject_token`, the original nonce, `client_id=mypiu-ios`, `installation_id`, and optional name and app-version fields. The server validates Apple's signature, issuer, app audience, expiration, and nonce before issuing a MyPIU access token.
+
 Access tokens are random, stored only as SHA-256 hashes, expire after 90 days, and can be revoked with `DELETE /api/mobile/v1/token`. `GET /api/mobile/v1/me` returns the authenticated MyPIU account and linked PIUGAME identity.
 
 ## Performance import

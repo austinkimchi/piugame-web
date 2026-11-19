@@ -21,7 +21,7 @@ export const PREMIUM_SONG_TITLES_BY_VERSION = {
     "Super Akuma Emperor",
     "TRICKL4SH 220",
   ],
-  phoenix2: ["Legendary Dominion", "QUATTUORUX", "L (PIU EDIT)"],
+  phoenix2: ["Legendary Dominion", "QUATTUORUX", "L (PIU EDIT)", "PHYSALIS"],
 } as const satisfies Record<PiuCatalogVersion, readonly string[]>;
 
 const PREMIUM_SONG_TITLE_INDEXES: Record<PiuCatalogVersion, Set<string>> = {
