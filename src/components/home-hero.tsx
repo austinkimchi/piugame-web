@@ -92,7 +92,7 @@ export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel =
             Supports Song Previews
           </motion.span>
           <motion.div
-            className="hero-chip hero-chip-delayed relative"
+            className="hero-chip hero-chip-delayed relative ml-auto sm:ml-0"
             tabIndex={-1}
             whileHover={{ y: -3, scale: 1.03 }}
             whileTap={{ scale: 0.98 }}
@@ -117,7 +117,7 @@ export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel =
             </button>
             {openVersionMenu ? (
               <div
-                className="absolute left-0 top-full z-30 min-w-40 border border-[#cdd5c5] bg-white p-1 shadow-[0_14px_34px_rgba(29,35,24,0.14)]"
+                className="absolute right-0 top-full z-30 min-w-40 border border-[#cdd5c5] bg-white p-1 shadow-[0_14px_34px_rgba(29,35,24,0.14)]"
                 aria-label="Catalog version"
                 id={versionMenuId}
                 ref={versionMenuRef}
