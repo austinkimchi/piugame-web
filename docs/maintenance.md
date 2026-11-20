@@ -1,6 +1,6 @@
 # MyPIU maintenance runbook
 
-Deployment last verified: **November 19, 2026 at 23:25 UTC**, with production running `924061bf` on Node 24.22.3 and the separately installed recovery driver from reviewed head `bc4bbb3`. The October catalog release was applied using commit `844e43d`; the initial audit used `146d4ce`. Counts below describe the completed catalog update, not permanent expected totals. Recheck deployment and database state before changing production. The [maintenance task ledger](maintenance-plan.md) tracks every original request, completed work and remaining gaps.
+Deployment last verified: **November 20, 2026 at 00:03 UTC**, with production running `532bbc46` on Node 24.22.3 and the separately installed recovery driver from reviewed head `bc4bbb3`. Origin/public checks and signed-in song-notebook regression checks passed; all 63 manual-audio hashes and the environment hash were unchanged. The October catalog release was applied using commit `844e43d`; the initial audit used `146d4ce`. Counts below describe the completed catalog update, not permanent expected totals. Recheck deployment and database state before changing production. The [maintenance task ledger](maintenance-plan.md) tracks every original request, completed work and remaining gaps.
 
 ## Production and data ownership
 
