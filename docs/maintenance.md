@@ -23,6 +23,8 @@ The installed driver checks origin HTML, built static bytes and catalog readines
 
 Use a branch or isolated worktree. The development and production checkouts are distinct, and development may contain unique uncommitted maintenance scripts. Preserve them. The Mac mobile checkout also has pre-existing Xcode signing/project edits; use an isolated mobile worktree for new work.
 
+The [development stage guide](development-stage.md) records the isolated catalog-only Next.js dev service, localhost tunnel, guarded staging pull and hot-refresh checks. Account authentication and integrations are not configured there; keep production credentials and session cookies out of that stage.
+
 ## Architecture and code map
 
 MyPIU uses the Next.js App Router, React, and the MongoDB Node driver. PIUGAME parsing comes from the [PIUGAME SDK](https://github.com/austinkimchi/piugame-sdk); native clients and extensions live in [piugame-mobile](https://github.com/austinkimchi/piugame-mobile). Use the current `package-lock.json` and installed package versions for build decisions: the initial November 19 production audit recorded Next.js 16.2.12, React 19.2.4, and SDK 1.3.3, while later dependency installation resolved Next.js 16.3.0.
