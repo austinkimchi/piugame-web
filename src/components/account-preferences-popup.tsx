@@ -2,11 +2,13 @@
 
 import { Check, RefreshCw, UserRound, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { PublicUser } from "@/lib/auth";
 import type { PiuCatalogVersion } from "@/lib/types";
 import { AccountIntegrationsPanel } from "@/components/account-integrations";
+import { requestAccountPreferences } from "@/lib/account-preference-request";
+import { manageDialogFocus } from "@/lib/dialog-focus";
 
 const VERSION_OPTIONS: Array<{ value: PiuCatalogVersion; label: string }> = [
   { value: "phoenix", label: "Phoenix" },
@@ -20,6 +22,13 @@ export function AccountPreferencesPopup({ user, appleReady, discordReady }: { us
   const [piuGameVersion, setPiuGameVersion] = useState<PiuCatalogVersion>(user.preferences.piuGameVersion);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!open || !dialog) return;
+    return manageDialogFocus(dialog, dialog.querySelector("[aria-label='Close account preferences popup']"));
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -54,20 +63,18 @@ export function AccountPreferencesPopup({ user, appleReady, discordReady }: { us
   async function savePreferences(preferences: { performanceAutoRefresh?: boolean; piuGameVersion?: PiuCatalogVersion }, revert: () => void): Promise<boolean> {
     setSaving(true);
     setStatus("");
-    const response = await fetch("/api/account/preferences", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(preferences),
-    });
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    setSaving(false);
-    if (!response.ok) {
-      revert();
-      setStatus(body?.error ?? "Could not save preference.");
-      return false;
+    try {
+      const result = await requestAccountPreferences(preferences);
+      if (!result.ok) {
+        revert();
+        setStatus(result.error);
+        return false;
+      }
+      setStatus("Saved");
+      return true;
+    } finally {
+      setSaving(false);
     }
-    setStatus("Saved");
-    return true;
   }
 
   return (
@@ -95,7 +102,7 @@ export function AccountPreferencesPopup({ user, appleReady, discordReady }: { us
             }
           }}
         >
-          <div aria-labelledby="account-preferences-title" aria-modal="true" className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto border border-[#cdd5c5] bg-[#fbfcf7] p-4 shadow-[0_28px_90px_rgba(17,19,15,0.24)]" role="dialog">
+          <div ref={dialogRef} tabIndex={-1} aria-labelledby="account-preferences-title" aria-modal="true" className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto border border-[#cdd5c5] bg-[#fbfcf7] p-4 shadow-[0_28px_90px_rgba(17,19,15,0.24)]" role="dialog">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h2 id="account-preferences-title" className="text-xl font-black text-[#11130f]">Account preferences</h2>
@@ -147,6 +154,7 @@ export function AccountPreferencesPopup({ user, appleReady, discordReady }: { us
                   const selected = piuGameVersion === option.value;
                   return (
                     <button
+                      aria-pressed={selected}
                       className={`min-h-11 border px-3 py-2 text-center transition ${
                         selected ? "border-[#28c950] bg-[#ecfff0] text-[#071109]" : "border-[#d8dfd0] bg-[#fbfcf7] text-[#56604e] hover:border-[#171916] hover:text-[#171916]"
                       }`}
@@ -163,7 +171,7 @@ export function AccountPreferencesPopup({ user, appleReady, discordReady }: { us
                   );
                 })}
               </div>
-              {status ? <p className={`mt-2 text-xs font-bold ${status === "Saved" ? "text-[#1b8f40]" : "text-[#9b2b1f]"}`}>{status}</p> : null}
+              {status ? <p role={status === "Saved" ? "status" : "alert"} className={`mt-2 text-xs font-bold ${status === "Saved" ? "text-[#1b8f40]" : "text-[#9b2b1f]"}`}>{status}</p> : null}
             </div>
             <div className="mt-3">
               <AccountIntegrationsPanel appleReady={appleReady} discordReady={discordReady} user={user} />

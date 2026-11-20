@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { PiuCatalogVersion } from "@/lib/types";
+import { requestAccountPreferences } from "@/lib/account-preference-request";
 
 const VERSION_OPTIONS: Array<{ label: string; value: PiuCatalogVersion }> = [
   { label: "Phoenix", value: "phoenix" },
@@ -35,6 +36,7 @@ export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel =
   const router = useRouter();
   const [openVersionMenu, setOpenVersionMenu] = useState(false);
   const [savingVersion, setSavingVersion] = useState(false);
+  const [versionError, setVersionError] = useState("");
   const [selectedVersion, setSelectedVersion] = useState(catalogVersion);
   const versionMenuCloseTimeoutRef = useRef<number | null>(null);
 
@@ -72,19 +74,20 @@ export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel =
     const previousVersion = selectedVersion;
     setSelectedVersion(nextVersion);
     setSavingVersion(true);
-    const response = await fetch("/api/account/preferences", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ piuGameVersion: nextVersion }),
-    });
-    setSavingVersion(false);
-    if (!response.ok) {
-      setSelectedVersion(previousVersion);
-      return;
-    }
+    setVersionError("");
+    try {
+      const result = await requestAccountPreferences({ piuGameVersion: nextVersion });
+      if (!result.ok) {
+        setSelectedVersion(previousVersion);
+        setVersionError(result.error);
+        return;
+      }
 
-    setOpenVersionMenu(false);
-    router.refresh();
+      setOpenVersionMenu(false);
+      router.refresh();
+    } finally {
+      setSavingVersion(false);
+    }
   }
 
   return (
@@ -150,6 +153,7 @@ export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel =
               </div>
             ) : null}
           </motion.div>
+          {versionError ? <p className="w-full text-sm font-bold text-[#9b2b1f]" role="alert">{versionError}</p> : null}
         </motion.div>
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
           <motion.div variants={heroItem} className="hero-copy">

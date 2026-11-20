@@ -1,6 +1,6 @@
 # MyPIU maintenance runbook
 
-Deployment last verified: **November 19, 2026 at 23:25 UTC**, with production running `924061bf` on Node 24.22.3 and the separately installed recovery driver from reviewed head `bc4bbb3`. The October catalog release was applied using commit `844e43d`; the initial audit used `146d4ce`. Counts below describe the completed catalog update, not permanent expected totals. Recheck deployment and database state before changing production. The [maintenance task ledger](maintenance-plan.md) tracks every original request, completed work and remaining gaps.
+Deployment last verified: **November 20, 2026 at 00:03 UTC**, with production running `532bbc46` on Node 24.22.3 and the separately installed recovery driver from reviewed head `bc4bbb3`. Origin/public checks and signed-in song-notebook regression checks passed; all 63 manual-audio hashes and the environment hash were unchanged. The October catalog release was applied using commit `844e43d`; the initial audit used `146d4ce`. Counts below describe the completed catalog update, not permanent expected totals. Recheck deployment and database state before changing production. The [maintenance task ledger](maintenance-plan.md) tracks every original request, completed work and remaining gaps.
 
 ## Production and data ownership
 
@@ -22,6 +22,8 @@ At Austin’s request, the timer returned to one-minute polling on November 19 a
 The installed driver checks origin HTML, built static bytes and catalog readiness, and provides durable recovery for its documented phases. All 69 isolated Linux deployment/files/process tests passed. Its first ordinary promotion after moving snapshot preparation before stop was fully stopped for 19.048 seconds; the validated marker followed 20.631 seconds after stop. See the [deployment record](deployment-recovery.md) for HTTP sampling limits, the prior-driver comparison and preservation checks. A real live post-promotion rollback was not deliberately exercised, and a successful build or running process alone is insufficient evidence that a release works. Authenticated Cloudflare inspection confirms the proxied hostname uses the healthy `slimx` tunnel on slim7prox, route 7 to `http://localhost:4090`. The separate `piugame-web` Worker has only its workers.dev hostname and no custom domains/routes. Its stale build failed with private SDK package E401; automatic Worker builds were disabled and the persisted setting verified. The active origin/deployer, DNS, tunnel and credentials were unchanged by that Cloudflare inspection. Audit the remaining Worker use and retire or repair it separately; keep its plain build credential out of reports.
 
 Use a branch or isolated worktree. The development and production checkouts are distinct, and development may contain unique uncommitted maintenance scripts. Preserve them. The Mac mobile checkout also has pre-existing Xcode signing/project edits; use an isolated mobile worktree for new work.
+
+The [development stage guide](development-stage.md) records the isolated catalog-only Next.js dev service, localhost tunnel, guarded staging pull and hot-refresh checks. Account authentication and integrations are not configured there; keep production credentials and session cookies out of that stage.
 
 ## Architecture and code map
 
