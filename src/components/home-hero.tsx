@@ -3,10 +3,11 @@
 import { Search, Sparkles, Volume2 } from "lucide-react";
 import { MotionConfig, motion, type Variants } from "motion/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { PiuCatalogVersion } from "@/lib/types";
 import { requestAccountPreferences } from "@/lib/account-preference-request";
+import { manageVersionMenu } from "@/lib/version-menu-focus";
 
 const VERSION_OPTIONS: Array<{ label: string; value: PiuCatalogVersion }> = [
   { label: "Phoenix", value: "phoenix" },
@@ -38,33 +39,14 @@ export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel =
   const [savingVersion, setSavingVersion] = useState(false);
   const [versionError, setVersionError] = useState("");
   const [selectedVersion, setSelectedVersion] = useState(catalogVersion);
-  const versionMenuCloseTimeoutRef = useRef<number | null>(null);
+  const versionMenuId = useId();
+  const versionTriggerRef = useRef<HTMLButtonElement>(null);
+  const versionMenuRef = useRef<HTMLDivElement>(null);
 
-  function keepVersionMenuOpen() {
-    if (versionMenuCloseTimeoutRef.current !== null) {
-      window.clearTimeout(versionMenuCloseTimeoutRef.current);
-      versionMenuCloseTimeoutRef.current = null;
-    }
-    setOpenVersionMenu(true);
-  }
-
-  function closeVersionMenuSoon() {
-    if (versionMenuCloseTimeoutRef.current !== null) {
-      window.clearTimeout(versionMenuCloseTimeoutRef.current);
-    }
-    versionMenuCloseTimeoutRef.current = window.setTimeout(() => {
-      setOpenVersionMenu(false);
-      versionMenuCloseTimeoutRef.current = null;
-    }, 160);
-  }
-
-  useEffect(() => {
-    return () => {
-      if (versionMenuCloseTimeoutRef.current !== null) {
-        window.clearTimeout(versionMenuCloseTimeoutRef.current);
-      }
-    };
-  }, []);
+  useLayoutEffect(() => {
+    if (!openVersionMenu || !versionMenuRef.current || !versionTriggerRef.current) return;
+    return manageVersionMenu(versionMenuRef.current, versionTriggerRef.current, () => setOpenVersionMenu(false));
+  }, [openVersionMenu]);
 
   async function changeVersion(nextVersion: PiuCatalogVersion) {
     if (!canChangeVersion || nextVersion === selectedVersion || savingVersion) {
@@ -111,17 +93,23 @@ export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel =
           </motion.span>
           <motion.div
             className="hero-chip hero-chip-delayed relative"
+            tabIndex={-1}
             whileHover={{ y: -3, scale: 1.03 }}
             whileTap={{ scale: 0.98 }}
-            onMouseEnter={keepVersionMenuOpen}
-            onMouseLeave={closeVersionMenuSoon}
           >
             <button
+              aria-controls={openVersionMenu ? versionMenuId : undefined}
               aria-expanded={openVersionMenu}
               aria-haspopup="menu"
               className="inline-flex items-center gap-2 border border-[#cdd5c5] bg-white px-3 py-1.5 text-[#596153] transition hover:border-[#28c950] hover:text-[#1f7a43] focus:outline-none focus:ring-2 focus:ring-[#28c950]/45"
               onClick={() => setOpenVersionMenu((current) => !current)}
-              onFocus={keepVersionMenuOpen}
+              onKeyDown={(event) => {
+                if (!openVersionMenu && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+                  event.preventDefault();
+                  setOpenVersionMenu(true);
+                }
+              }}
+              ref={versionTriggerRef}
               type="button"
             >
               <Sparkles aria-hidden="true" size={16} />
@@ -130,19 +118,22 @@ export function HomeHero({ accountSlot, canChangeVersion = false, catalogLabel =
             {openVersionMenu ? (
               <div
                 className="absolute left-0 top-full z-30 min-w-40 border border-[#cdd5c5] bg-white p-1 shadow-[0_14px_34px_rgba(29,35,24,0.14)]"
+                aria-label="Catalog version"
+                id={versionMenuId}
+                ref={versionMenuRef}
                 role="menu"
-                onMouseEnter={keepVersionMenuOpen}
               >
                 {VERSION_OPTIONS.map((option) => {
                   const selected = option.value === selectedVersion;
                   return (
                     <button
-                      aria-pressed={selected}
+                      aria-checked={selected}
                       className={`flex w-full items-center justify-between gap-4 px-3 py-2 text-left text-sm font-black transition ${selected ? "bg-[#ecfff0] text-[#1f7a43]" : "text-[#3d4638] hover:bg-[#f5f7f0]"} disabled:cursor-not-allowed disabled:opacity-55`}
                       disabled={!canChangeVersion || savingVersion}
                       key={option.value}
                       onClick={() => void changeVersion(option.value)}
                       role="menuitemradio"
+                      tabIndex={-1}
                       type="button"
                     >
                       {option.label}
